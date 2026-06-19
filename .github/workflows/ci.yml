@@ -20,6 +20,8 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --exclude dorado-gui --all-targets -- -D warnings
       - run: cargo test --workspace --exclude dorado-gui
+      # Exercise the optional RustCrypto `cipher` trait impls too.
+      - run: cargo test -p dorado --features cipher
       # Make sure the benchmarks keep compiling (do not run them in CI).
       - run: cargo bench -p dorado --no-run
 

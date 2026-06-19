@@ -50,6 +50,11 @@ pub mod chacha20poly1305;
 pub mod poly1305;
 pub mod skein;
 
+// RustCrypto `cipher` trait impls for ecosystem interop, behind the optional
+// `cipher` feature. The impls register globally; the module stays private.
+#[cfg(feature = "cipher")]
+mod rustcrypto;
+
 /// The largest state width (Nw), for the 1024-bit variant. Used to size the
 /// fixed permutation scratch buffer so the round loop needs no heap allocation.
 const MAX_NW: usize = 16;

@@ -39,7 +39,9 @@ hashers (`Skein512`, `blake3::Hasher`) and their `*_into` one-shots, and the
 in-place ChaCha20-Poly1305 AEAD. The hashers stream, so an input larger than memory
 can be hashed (the `gyotaku` CLI reads files in fixed buffers). Only the
 `Vec`-returning convenience wrappers require `alloc`. The default `zeroize` feature
-wipes each cipher's key schedule on drop.
+wipes each cipher's key schedule on drop. The optional `cipher` feature implements
+the RustCrypto block-cipher traits for the Threefish variants, for interop with
+generic modes and AEADs (`dorado = { ..., features = ["cipher"] }`).
 
 ### Library
 

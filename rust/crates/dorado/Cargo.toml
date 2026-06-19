@@ -17,10 +17,15 @@ default = ["alloc", "zeroize"]
 alloc = []
 # Wipe each cipher's expanded key schedule from memory on drop.
 zeroize = ["dep:zeroize"]
+# Implement the RustCrypto `cipher` traits for the Threefish variants, for
+# ecosystem interop (generic modes, etc.). Off by default; pulls in `cipher`.
+cipher = ["dep:cipher"]
 
 [dependencies]
 # Optional: zero key material on drop. no_std-compatible (no default features).
 zeroize = { version = "1", default-features = false, optional = true }
+# Optional: RustCrypto block-cipher trait impls (the `cipher` feature).
+cipher = { version = "0.4", optional = true }
 
 # Used only by the differential test harness (tests/diff.rs), which checks this
 # implementation against the RustCrypto reference. Not shipped to downstream users.

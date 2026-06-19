@@ -6,12 +6,16 @@ on top of it (KDFs, an authenticated chunked container, a CLI, a GUI, and a
 standalone Skein hashing tool). It is unaudited; for real data, prefer an audited
 crate.
 
-This repository is a modular monorepo with two parts:
+This repository is a modular monorepo:
 
-- **[`rust/`](rust/)** — the Cargo workspace: the cipher and primitives library,
-  the construction engine, and the frontends (the `dorado` CLI, the `dorado-gui`
-  app, and the `gyotaku` Skein hashing tool). Start with [`rust/README.md`](rust/README.md);
-  design docs are in [`rust/docs/`](rust/docs/).
+- **[`rust/`](rust/)** — the primary implementation: a Cargo workspace with the
+  cipher and primitives library, the construction engine, and the frontends (the
+  `dorado` CLI, the `dorado-gui` app, and the `gyotaku` Skein hashing tool). Start
+  with [`rust/README.md`](rust/README.md); design docs are in [`rust/docs/`](rust/docs/).
+- **[`go/`](go/)** — a Go port that matches the Rust implementation: the same
+  from-scratch primitives against the same vectors, the same on-disk format (the
+  two are byte-for-byte cross-compatible), and the same CLIs (no GUI). See
+  [`go/README.md`](go/README.md).
 - **[`web/`](web/)** — the landing page that advertises the app, an
   [Astro](https://astro.build/) site. See [`web/README.md`](web/README.md).
 

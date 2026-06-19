@@ -1,17 +1,23 @@
 # CLAUDE.md
 
-This is the dorado monorepo. It has two parts, each with its own `CLAUDE.md` that
-carries the real detail:
+This is the dorado monorepo. It has several parts:
 
-- `rust/` — the Cargo workspace (the Threefish cipher, the primitives library, the
-  construction engine, and the `dorado` / `dorado-gui` / `gyotaku` frontends). All
-  Rust work, invariants, and verification steps are in `rust/CLAUDE.md`. Run cargo
-  from inside `rust/`.
+- `rust/` — the primary implementation: a Cargo workspace (the Threefish cipher,
+  the primitives library, the construction engine, and the `dorado` /
+  `dorado-gui` / `gyotaku` frontends). All Rust work, invariants, and verification
+  steps are in `rust/CLAUDE.md`. Run cargo from inside `rust/`.
+- `go/` — a Go port (module `github.com/alleato-llc/dorado/go`) that mirrors the
+  Rust implementation: same from-scratch primitives, same on-disk format
+  (byte-for-byte cross-compatible, verified by decrypting each other's files),
+  same CLIs, no GUI. Interop is via stdlib interfaces (`cipher.Block`,
+  `cipher.AEAD`, `hash.Hash`). Run go from inside `go/`. When changing the wire
+  format or an algorithm, keep `rust/` and `go/` in sync or cross-compatibility
+  breaks.
 - `web/` — the Astro landing page that advertises the app. Site conventions are in
   `web/CLAUDE.md`. Run npm from inside `web/`.
 
-CI for both lives at the repo root in `.github/workflows/ci.yml`. The root
-`LICENSE` (MIT) covers the whole repository.
+CI lives at the repo root in `.github/workflows/ci.yml`. The root `LICENSE` (MIT)
+covers the whole repository.
 
 ## Conventions (whole repo)
 

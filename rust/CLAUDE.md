@@ -209,12 +209,13 @@ which is what the chunk-size and KDF-cost bounds guarantee.
 
 Candidate future work, not commitments:
 
-- Optionally implement the RustCrypto `digest` traits for the hashers (the
-  incremental `Skein512`/`blake3::Hasher` map onto `Update`/`FixedOutput`).
+- (No specific items queued. Past candidates are recorded below.)
 
-Done (was roadmap): RustCrypto `cipher` trait impls for the three Threefish
-variants behind the optional `cipher` feature (`src/rustcrypto.rs`); `no_std` for
-the cipher crate at all three levels
+Done (was roadmap): RustCrypto trait impls behind optional features in
+`src/rustcrypto.rs` — `cipher` (block-cipher traits for the three Threefish
+variants) and `digest` (BLAKE3 as a 32-byte `Digest` on `blake3::Hasher`, and
+Skein fixed-output wrappers `Skein512_256`/`Skein512_512`); `no_std` for the
+cipher crate at all three levels
 (`#![cfg_attr(not(test), no_std)]` plus the `alloc` feature; bare-metal CI for the
 allocator and no-allocator builds); incremental, allocation-free hashers
 (`Skein512`, `blake3::Hasher`, `Poly1305`) with one-shot `*_into` wrappers, so

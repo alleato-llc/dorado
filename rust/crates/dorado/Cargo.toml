@@ -20,12 +20,17 @@ zeroize = ["dep:zeroize"]
 # Implement the RustCrypto `cipher` traits for the Threefish variants, for
 # ecosystem interop (generic modes, etc.). Off by default; pulls in `cipher`.
 cipher = ["dep:cipher"]
+# Implement the RustCrypto `digest` traits for the hashers (BLAKE3 and Skein).
+# Off by default; pulls in `digest`.
+digest = ["dep:digest"]
 
 [dependencies]
 # Optional: zero key material on drop. no_std-compatible (no default features).
 zeroize = { version = "1", default-features = false, optional = true }
 # Optional: RustCrypto block-cipher trait impls (the `cipher` feature).
 cipher = { version = "0.4", optional = true }
+# Optional: RustCrypto hash trait impls (the `digest` feature).
+digest = { version = "0.10", optional = true }
 
 # Used only by the differential test harness (tests/diff.rs), which checks this
 # implementation against the RustCrypto reference. Not shipped to downstream users.

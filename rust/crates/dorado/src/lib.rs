@@ -50,10 +50,14 @@ pub mod chacha20poly1305;
 pub mod poly1305;
 pub mod skein;
 
-// RustCrypto `cipher` trait impls for ecosystem interop, behind the optional
-// `cipher` feature. The impls register globally; the module stays private.
-#[cfg(feature = "cipher")]
+// RustCrypto trait impls for ecosystem interop, behind the optional `cipher`
+// (block cipher) and `digest` (hashes) features. The impls register globally;
+// the module stays private, and the new digest wrapper types are re-exported.
+#[cfg(any(feature = "cipher", feature = "digest"))]
 mod rustcrypto;
+
+#[cfg(feature = "digest")]
+pub use rustcrypto::digest_impls::{Skein512_256, Skein512_512};
 
 /// The largest state width (Nw), for the 1024-bit variant. Used to size the
 /// fixed permutation scratch buffer so the round loop needs no heap allocation.

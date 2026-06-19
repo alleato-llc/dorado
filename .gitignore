@@ -13,3 +13,8 @@
 /web/node_modules
 /web/dist
 /web/.astro
+
+# TypeScript port (ts/).
+/ts/node_modules
+/ts/coverage
+/ts/dist

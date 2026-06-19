@@ -8,9 +8,14 @@ edition.workspace = true
 license.workspace = true
 
 [features]
-# Wipe each cipher's expanded key schedule from memory on drop. On by default;
-# `--no-default-features` gives the bare, dependency-free, no_std core.
-default = ["zeroize"]
+# default = std/no_std with an allocator and key-schedule zeroization.
+# `--no-default-features` gives the bare allocation-free, dependency-free core
+# (Threefish + CTR + ChaCha20 + Poly1305 + the `*_into` hash functions).
+default = ["alloc", "zeroize"]
+# `alloc` enables the owned-buffer conveniences: the `Vec`-returning Skein/BLAKE3
+# wrappers and the ChaCha20-Poly1305 AEAD.
+alloc = []
+# Wipe each cipher's expanded key schedule from memory on drop.
 zeroize = ["dep:zeroize"]
 
 [dependencies]

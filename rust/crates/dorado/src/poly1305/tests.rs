@@ -35,3 +35,20 @@ fn empty_and_partial_blocks() {
     let _ = mac(&key, &[0u8; 17]); // one block + 1
     let _ = mac(&key, &[0u8; 64]); // several blocks
 }
+
+#[test]
+fn incremental_matches_one_shot_at_awkward_splits() {
+    let key = [0x24u8; 32];
+    let msg: Vec<u8> = (0..200u16).map(|i| i as u8).collect();
+    let want = mac(&key, &msg);
+
+    // Feeding the same bytes in any chunking must give the same tag, including
+    // splits that land mid-block and a leftover partial final block.
+    for step in [1usize, 3, 7, 16, 31, 64] {
+        let mut p = Poly1305::new(&key);
+        for chunk in msg.chunks(step) {
+            p.update(chunk);
+        }
+        assert_eq!(p.finalize(), want, "mismatch at step {step}");
+    }
+}

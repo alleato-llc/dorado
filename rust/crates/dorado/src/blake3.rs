@@ -7,6 +7,7 @@
 //! Domain-separation flags keep chunks, parents, the root, and keyed mode
 //! distinct. The compression is a BLAKE2s-style ARX mixing function.
 
+#[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 
 const BLOCK_LEN: usize = 64;
@@ -127,10 +128,12 @@ impl Output {
         full[..8].try_into().unwrap()
     }
 
-    fn root_output(&self, out_len: usize) -> Vec<u8> {
-        let mut out = Vec::with_capacity(out_len);
+    /// Fill `out` with the root output (an extendable-output function for
+    /// `out.len() > 32`). Allocation-free: writes into the caller's buffer.
+    fn root_output_into(&self, out: &mut [u8]) {
         let mut counter = 0u64;
-        while out.len() < out_len {
+        let mut written = 0;
+        while written < out.len() {
             let words = compress(
                 &self.input_cv,
                 &self.block,
@@ -139,46 +142,89 @@ impl Output {
                 self.flags | ROOT,
             );
             for w in &words {
-                out.extend_from_slice(&w.to_le_bytes());
+                if written >= out.len() {
+                    break;
+                }
+                let bytes = w.to_le_bytes();
+                let n = core::cmp::min(4, out.len() - written);
+                out[written..written + n].copy_from_slice(&bytes[..n]);
+                written += n;
             }
             counter += 1;
         }
-        out.truncate(out_len);
-        out
     }
 }
 
-/// Process one chunk (up to CHUNK_LEN bytes) into its final-block `Output`.
-fn chunk_output(chunk: &[u8], chunk_counter: u64, key: &[u32; 8], base_flags: u32) -> Output {
-    let mut cv = *key;
-    let n_blocks = chunk.len().div_ceil(BLOCK_LEN).max(1);
-    for i in 0..n_blocks {
-        let start = i * BLOCK_LEN;
-        let end = (start + BLOCK_LEN).min(chunk.len());
-        let block_bytes = &chunk[start..end];
-        let mut flags = base_flags;
-        if i == 0 {
-            flags |= CHUNK_START;
-        }
-        if i == n_blocks - 1 {
-            return Output {
-                input_cv: cv,
-                block: words_from_block(block_bytes),
-                counter: chunk_counter,
-                block_len: block_bytes.len() as u32,
-                flags: flags | CHUNK_END,
-            };
-        }
-        let full = compress(
-            &cv,
-            &words_from_block(block_bytes),
+/// One chunk being absorbed block by block. Holds only fixed-size state, so a
+/// chunk can be built incrementally without keeping its 1024 bytes around.
+struct ChunkState {
+    cv: [u32; 8],
+    chunk_counter: u64,
+    block: [u8; BLOCK_LEN],
+    block_len: usize,
+    blocks_compressed: u64,
+    flags: u32,
+}
+
+impl ChunkState {
+    fn new(key: &[u32; 8], chunk_counter: u64, flags: u32) -> Self {
+        ChunkState {
+            cv: *key,
             chunk_counter,
-            BLOCK_LEN as u32,
+            block: [0u8; BLOCK_LEN],
+            block_len: 0,
+            blocks_compressed: 0,
             flags,
-        );
-        cv = full[..8].try_into().unwrap();
+        }
     }
-    unreachable!("a chunk always has at least one block")
+
+    fn len(&self) -> usize {
+        BLOCK_LEN * self.blocks_compressed as usize + self.block_len
+    }
+
+    /// CHUNK_START applies only to a chunk's first block.
+    fn start_flag(&self) -> u32 {
+        if self.blocks_compressed == 0 {
+            CHUNK_START
+        } else {
+            0
+        }
+    }
+
+    fn update(&mut self, mut input: &[u8]) {
+        while !input.is_empty() {
+            // Compress a full block only once we know more data follows it, so
+            // the final block of the chunk is handled by `output` (CHUNK_END).
+            if self.block_len == BLOCK_LEN {
+                let block_words = words_from_block(&self.block);
+                let out = compress(
+                    &self.cv,
+                    &block_words,
+                    self.chunk_counter,
+                    BLOCK_LEN as u32,
+                    self.flags | self.start_flag(),
+                );
+                self.cv = out[..8].try_into().unwrap();
+                self.blocks_compressed += 1;
+                self.block = [0u8; BLOCK_LEN];
+                self.block_len = 0;
+            }
+            let take = core::cmp::min(BLOCK_LEN - self.block_len, input.len());
+            self.block[self.block_len..self.block_len + take].copy_from_slice(&input[..take]);
+            self.block_len += take;
+            input = &input[take..];
+        }
+    }
+
+    fn output(&self) -> Output {
+        Output {
+            input_cv: self.cv,
+            block: words_from_block(&self.block[..self.block_len]),
+            counter: self.chunk_counter,
+            block_len: self.block_len as u32,
+            flags: self.flags | self.start_flag() | CHUNK_END,
+        }
+    }
 }
 
 fn parent_output(left: [u32; 8], right: [u32; 8], key: &[u32; 8], base_flags: u32) -> Output {
@@ -194,62 +240,144 @@ fn parent_output(left: [u32; 8], right: [u32; 8], key: &[u32; 8], base_flags: u3
     }
 }
 
-/// The largest power of two not exceeding `n`.
-fn largest_power_of_two_leq(n: usize) -> usize {
-    let mut p = 1;
-    while p * 2 <= n {
-        p *= 2;
-    }
-    p
-}
-
-/// The byte boundary at which to split a multi-chunk input: the largest
-/// power-of-two number of whole chunks strictly less than the total.
-fn left_len(content_len: usize) -> usize {
-    let full_chunks = (content_len - 1) / CHUNK_LEN;
-    largest_power_of_two_leq(full_chunks) * CHUNK_LEN
-}
-
-/// Hash a subtree to a chaining value (never the root).
-fn subtree_cv(input: &[u8], chunk_counter: u64, key: &[u32; 8], flags: u32) -> [u32; 8] {
-    if input.len() <= CHUNK_LEN {
-        return chunk_output(input, chunk_counter, key, flags).chaining_value();
-    }
-    let mid = left_len(input.len());
-    let left = subtree_cv(&input[..mid], chunk_counter, key, flags);
-    let right = subtree_cv(
-        &input[mid..],
-        chunk_counter + (mid / CHUNK_LEN) as u64,
-        key,
-        flags,
-    );
+fn parent_cv(left: [u32; 8], right: [u32; 8], key: &[u32; 8], flags: u32) -> [u32; 8] {
     parent_output(left, right, key, flags).chaining_value()
 }
 
-fn hash_internal(input: &[u8], key: &[u32; 8], flags: u32, out_len: usize) -> Vec<u8> {
-    let output = if input.len() <= CHUNK_LEN {
-        chunk_output(input, 0, key, flags)
-    } else {
-        let mid = left_len(input.len());
-        let left = subtree_cv(&input[..mid], 0, key, flags);
-        let right = subtree_cv(&input[mid..], (mid / CHUNK_LEN) as u64, key, flags);
-        parent_output(left, right, key, flags)
-    };
-    output.root_output(out_len)
+/// Incremental BLAKE3 hash/MAC: a chunk-stack streaming hasher. Feed input with
+/// `update` (in any chunking) and write the digest with `finalize_into`.
+/// Allocation-free and fixed-size, so it can hash an input larger than memory.
+/// `finalize_into` writes any length (an extendable-output function for more
+/// than 32 bytes) and may be called more than once.
+pub struct Hasher {
+    chunk_state: ChunkState,
+    key: [u32; 8],
+    // The subtree-chaining-value stack. BLAKE3's maximum input is 2^64 bytes,
+    // so the tree is at most 54 levels deep.
+    cv_stack: [[u32; 8]; 54],
+    cv_stack_len: usize,
+    flags: u32,
+}
+
+impl Hasher {
+    /// Start an unkeyed hash.
+    pub fn new() -> Self {
+        Self::with_key(IV, 0)
+    }
+
+    /// Start a keyed MAC under a 32-byte `key`.
+    pub fn new_keyed(key: &[u8; 32]) -> Self {
+        let mut key_words = [0u32; 8];
+        for (i, w) in key_words.iter_mut().enumerate() {
+            *w = u32::from_le_bytes(key[i * 4..i * 4 + 4].try_into().unwrap());
+        }
+        Self::with_key(key_words, KEYED_HASH)
+    }
+
+    fn with_key(key: [u32; 8], flags: u32) -> Self {
+        Hasher {
+            chunk_state: ChunkState::new(&key, 0, flags),
+            key,
+            cv_stack: [[0u32; 8]; 54],
+            cv_stack_len: 0,
+            flags,
+        }
+    }
+
+    fn push_stack(&mut self, cv: [u32; 8]) {
+        self.cv_stack[self.cv_stack_len] = cv;
+        self.cv_stack_len += 1;
+    }
+
+    fn pop_stack(&mut self) -> [u32; 8] {
+        self.cv_stack_len -= 1;
+        self.cv_stack[self.cv_stack_len]
+    }
+
+    /// Merge a finished chunk's chaining value into the stack: combine with the
+    /// top of the stack while the running chunk count is even, then push. This
+    /// builds the same tree as the recursive whole-input form.
+    fn add_chunk_cv(&mut self, mut new_cv: [u32; 8], mut total_chunks: u64) {
+        while total_chunks & 1 == 0 {
+            let left = self.pop_stack();
+            new_cv = parent_cv(left, new_cv, &self.key, self.flags);
+            total_chunks >>= 1;
+        }
+        self.push_stack(new_cv);
+    }
+
+    /// Feed input bytes (any chunking).
+    pub fn update(&mut self, mut input: &[u8]) {
+        while !input.is_empty() {
+            if self.chunk_state.len() == CHUNK_LEN {
+                let chunk_cv = self.chunk_state.output().chaining_value();
+                let total_chunks = self.chunk_state.chunk_counter + 1;
+                self.add_chunk_cv(chunk_cv, total_chunks);
+                self.chunk_state = ChunkState::new(&self.key, total_chunks, self.flags);
+            }
+            let take = core::cmp::min(CHUNK_LEN - self.chunk_state.len(), input.len());
+            self.chunk_state.update(&input[..take]);
+            input = &input[take..];
+        }
+    }
+
+    /// Write the digest into `out` (any length; an XOF for `out.len() > 32`).
+    pub fn finalize_into(&self, out: &mut [u8]) {
+        // Fold the current chunk against the stack from the top down; the last
+        // parent produced is the root.
+        let mut output = self.chunk_state.output();
+        let mut remaining = self.cv_stack_len;
+        while remaining > 0 {
+            remaining -= 1;
+            output = parent_output(
+                self.cv_stack[remaining],
+                output.chaining_value(),
+                &self.key,
+                self.flags,
+            );
+        }
+        output.root_output_into(out);
+    }
+}
+
+impl Default for Hasher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// BLAKE3 hash of `input` into the caller-provided `out` buffer (an
+/// extendable-output function for `out.len() > 32`). Allocation-free.
+pub fn hash_into(out: &mut [u8], input: &[u8]) {
+    let mut h = Hasher::new();
+    h.update(input);
+    h.finalize_into(out);
+}
+
+/// BLAKE3 keyed MAC under a 32-byte `key`, into the caller-provided `out`
+/// buffer. Allocation-free (works without `alloc`).
+pub fn keyed_mac_into(out: &mut [u8], key: &[u8; 32], input: &[u8]) {
+    let mut h = Hasher::new_keyed(key);
+    h.update(input);
+    h.finalize_into(out);
 }
 
 /// BLAKE3 hash of `input`, producing `out_len` bytes (XOF for `out_len > 32`).
+/// Convenience wrapper over [`hash_into`] (requires the `alloc` feature).
+#[cfg(feature = "alloc")]
 pub fn hash(out_len: usize, input: &[u8]) -> Vec<u8> {
-    hash_internal(input, &IV, 0, out_len)
+    let mut out = alloc::vec![0u8; out_len];
+    hash_into(&mut out, input);
+    out
 }
 
 /// BLAKE3 keyed MAC under a 32-byte `key`, producing `out_len` tag bytes.
+/// Convenience wrapper over [`keyed_mac_into`] (requires the `alloc` feature).
+#[cfg(feature = "alloc")]
 pub fn keyed_mac(key: &[u8; 32], out_len: usize, input: &[u8]) -> Vec<u8> {
-    let mut key_words = [0u32; 8];
-    for (i, w) in key_words.iter_mut().enumerate() {
-        *w = u32::from_le_bytes(key[i * 4..i * 4 + 4].try_into().unwrap());
-    }
-    hash_internal(input, &key_words, KEYED_HASH, out_len)
+    let mut out = alloc::vec![0u8; out_len];
+    keyed_mac_into(&mut out, key, input);
+    out
 }
 
 #[cfg(test)]

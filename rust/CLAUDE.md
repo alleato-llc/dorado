@@ -117,11 +117,36 @@ cipher's expanded key schedule: with the default `zeroize` feature, each
 `lib.rs`). `--no-default-features` drops the `zeroize` dependency for the bare,
 dependency-free core.
 
-The cipher crate is `no_std` via `#![cfg_attr(not(test), no_std)]` plus `extern
-crate alloc` (the Threefish/CTR core is allocation-free; only the `Vec`-returning
-hashers need `alloc`). It is `std` under `cargo test` so the differential harness
-is unaffected. A truly allocation-free build (no `alloc`) would need `*_into`
-buffer APIs for the hashers; not done.
+The cipher crate is `no_std` via `#![cfg_attr(not(test), no_std)]`, and supports
+all three environment levels through the `alloc` feature (default on):
+
+- std (default, on an OS) and no_std + alloc (no OS, has an allocator) are the same
+  build; the std binaries link the no_std crate fine.
+- no_std without an allocator (`--no-default-features`) is the bare core:
+  `extern crate alloc` is itself `#[cfg(feature = "alloc")]`, so the allocator is
+  not linked and any stray allocation is a compile error. CI builds this for a
+  bare-metal target.
+
+To make that work, the hashers are incremental and allocation-free. Each exposes a
+fixed-size streaming type (`skein::Skein512`, `blake3::Hasher`, `poly1305::Poly1305`)
+with `new`/`update`/`finalize`, plus one-shot `*_into` functions that write into a
+caller buffer; the `Vec`-returning `hash`/`mac` are thin `#[cfg(feature = "alloc")]`
+wrappers over them. Because the hashers stream, an input larger than RAM can be
+hashed (the `gyotaku` CLI does this, reading files in fixed buffers). The
+ChaCha20-Poly1305 AEAD has allocation-free `seal_in_place`/`open_in_place` (it feeds
+the incremental Poly1305 piece by piece instead of assembling a buffer); the
+`Vec`-returning `seal`/`open` are the `alloc` wrappers. Threefish/CTR, ChaCha20, and
+Poly1305 are allocation-free throughout. It is `std` under `cargo test` so the
+differential harness is unaffected.
+
+The incremental hashers share the hold-back-the-final-block pattern: `update`
+processes only blocks it knows are not last, and `finalize` handles the final
+(often partial) block. Skein's output length is fixed at `new` (it is folded into
+the config block that seeds the chaining value); BLAKE3 is a free XOF so its length
+is chosen at `finalize`. BLAKE3 streaming uses the chunk-stack algorithm (a
+fixed-size CV stack, merged on the chunk counter's trailing zeros), which builds the
+same tree as the recursive whole-input form; the differential test spans many chunk
+counts to guard it.
 
 ## Hard invariants
 
@@ -184,17 +209,18 @@ which is what the chunk-size and KDF-cost bounds guarantee.
 
 Candidate future work, not commitments:
 
-- A fully allocation-free core (tier 3): gate the `Vec`-returning hashers
-  (`skein`/`blake3`/`chacha20poly1305`) behind an `alloc` feature and add `*_into`
-  buffer APIs, so Threefish + CTR + Poly1305 run with no allocator at all. The core
-  is already allocation-free; this is the API split, not new crypto.
 - Optionally implement the RustCrypto `cipher` crate traits for ecosystem
   interop.
 
-Done (was roadmap): `no_std` for the cipher crate (`#![cfg_attr(not(test),
-no_std)]` + `alloc`, bare-metal CI build); library key-schedule zeroization (default
-`zeroize` feature); criterion throughput benchmarks (`benches/throughput.rs`);
-format v4 label binding.
+Done (was roadmap): `no_std` for the cipher crate at all three levels
+(`#![cfg_attr(not(test), no_std)]` plus the `alloc` feature; bare-metal CI for the
+allocator and no-allocator builds); incremental, allocation-free hashers
+(`Skein512`, `blake3::Hasher`, `Poly1305`) with one-shot `*_into` wrappers, so
+inputs larger than RAM can be hashed (the `gyotaku` CLI streams files); an
+allocation-free ChaCha20-Poly1305 AEAD (`seal_in_place`/`open_in_place` over the
+incremental Poly1305); library key-schedule zeroization (default `zeroize`
+feature); criterion throughput benchmarks (`benches/throughput.rs`); format v4
+label binding.
 
 Done (was roadmap): Skein's UBI chaining mode is built on the block cipher
 (`src/skein.rs`); Skein-512 is now the default container MAC and is also exposed as

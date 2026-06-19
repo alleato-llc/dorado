@@ -41,8 +41,10 @@ jobs:
             libxcursor-dev libxrandr-dev libxi-dev libgl1-mesa-dev
       - run: cargo clippy -p dorado-gui --all-targets -- -D warnings
 
-  # Prove the cipher library still builds without std, on a bare-metal target.
-  # If anything in `dorado` pulls in std, this fails to compile.
+  # Prove the cipher library builds without std on a bare-metal target, at both
+  # levels: with an allocator (default) and fully allocation-free
+  # (--no-default-features). If anything leaks std, or alloc into the no-alloc
+  # build, these fail to compile.
   nostd:
     runs-on: ubuntu-latest
     defaults:
@@ -54,6 +56,7 @@ jobs:
         with:
           targets: thumbv7em-none-eabi
       - run: cargo build -p dorado --target thumbv7em-none-eabi
+      - run: cargo build -p dorado --no-default-features --target thumbv7em-none-eabi
 
   # Check dependencies against the RustSec advisory database.
   audit:

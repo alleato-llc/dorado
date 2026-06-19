@@ -30,10 +30,16 @@ cargo build -p dorado-gyotaku  # just the gyotaku hashing tool
 cargo bench -p dorado        # cipher and hash throughput (criterion)
 ```
 
-The `dorado` primitives crate is `no_std` (it needs an allocator, not an OS), so it
-builds for bare-metal targets, for example `cargo build -p dorado --target
-thumbv7em-none-eabi`. Its one default dependency, `zeroize`, wipes each cipher's key
-schedule on drop; `--no-default-features` drops it for a fully dependency-free core.
+The `dorado` primitives crate is `no_std` and supports three environment levels.
+With the default `alloc` feature it runs anywhere with an allocator (no OS needed),
+so it builds for bare-metal targets, for example `cargo build -p dorado --target
+thumbv7em-none-eabi`. With `--no-default-features` it is fully allocation-free, with
+the heap not even linked: Threefish, CTR, ChaCha20, Poly1305, the incremental
+hashers (`Skein512`, `blake3::Hasher`) and their `*_into` one-shots, and the
+in-place ChaCha20-Poly1305 AEAD. The hashers stream, so an input larger than memory
+can be hashed (the `gyotaku` CLI reads files in fixed buffers). Only the
+`Vec`-returning convenience wrappers require `alloc`. The default `zeroize` feature
+wipes each cipher's key schedule on drop.
 
 ### Library
 

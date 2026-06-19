@@ -64,11 +64,7 @@ fn run() -> Result<(), String> {
 
     let out_len = out_len_from_bits(cli.bits)?;
     if cli.files.is_empty() {
-        let mut buf = Vec::new();
-        io::stdin()
-            .read_to_end(&mut buf)
-            .map_err(|e| e.to_string())?;
-        let digest = hex(&dorado::skein::hash(out_len, &buf));
+        let digest = digest_reader(io::stdin().lock(), out_len).map_err(|e| e.to_string())?;
         // Keep stdin output bare (just the digest) unless tagged.
         if cli.tag {
             println!("{}", tag_line(&digest, "-"));
@@ -77,12 +73,33 @@ fn run() -> Result<(), String> {
         }
     } else {
         for path in &cli.files {
-            let data = fs::read(path).map_err(|e| format!("{path}: {e}"))?;
-            let digest = hex(&dorado::skein::hash(out_len, &data));
+            let digest = digest_file(path, out_len).map_err(|e| format!("{path}: {e}"))?;
             println!("{}", format_line(cli.tag, &digest, path));
         }
     }
     Ok(())
+}
+
+/// Stream-hash a reader into a hex digest, in constant memory (so files larger
+/// than RAM are fine). Uses the incremental Skein hasher.
+fn digest_reader(mut reader: impl Read, out_len: usize) -> io::Result<String> {
+    let mut h = dorado::skein::Skein512::new(out_len);
+    let mut buf = [0u8; 64 * 1024];
+    loop {
+        let n = reader.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        h.update(&buf[..n]);
+    }
+    let mut out = vec![0u8; out_len];
+    h.finalize_into(&mut out);
+    Ok(hex(&out))
+}
+
+/// Stream-hash a file by path.
+fn digest_file(path: &str, out_len: usize) -> io::Result<String> {
+    digest_reader(fs::File::open(path)?, out_len)
 }
 
 /// Verify the digests listed in each checksum file. Prints "name: OK" or
@@ -102,9 +119,8 @@ fn run_check(files: &[String]) -> Result<(), String> {
             // The digest length in the file fixes the output length to recompute.
             let out_len = expected.len() / 2;
             checked += 1;
-            match fs::read(&name) {
-                Ok(data) => {
-                    let got = hex(&dorado::skein::hash(out_len, &data));
+            match digest_file(&name, out_len) {
+                Ok(got) => {
                     if got.eq_ignore_ascii_case(&expected) {
                         println!("{name}: OK");
                     } else {

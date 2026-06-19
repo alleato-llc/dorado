@@ -57,3 +57,30 @@ fn rejects_tampering_and_wrong_aad() {
     bad_tag[0] ^= 1;
     assert!(open(&key, &nonce, aad, &ct, &bad_tag).is_err());
 }
+
+#[test]
+fn in_place_matches_the_allocating_forms_and_round_trips() {
+    let key = [0x33u8; 32];
+    let nonce = [0x44u8; 12];
+    let aad = b"associated";
+    let plaintext = b"in-place allocation-free AEAD path";
+
+    // seal_in_place must agree with the Vec-returning seal.
+    let mut buf = plaintext.to_vec();
+    let tag = seal_in_place(&key, &nonce, aad, &mut buf);
+    let (ct, tag2) = seal(&key, &nonce, aad, plaintext);
+    assert_eq!(buf, ct);
+    assert_eq!(tag, tag2);
+
+    // open_in_place round-trips and decrypts in place.
+    open_in_place(&key, &nonce, aad, &mut buf, &tag).unwrap();
+    assert_eq!(&buf[..], &plaintext[..]);
+
+    // Tampering is rejected, and the buffer is left as the (untouched) ciphertext.
+    let mut bad = ct.clone();
+    bad[0] ^= 1;
+    assert_eq!(
+        open_in_place(&key, &nonce, aad, &mut bad, &tag),
+        Err(AuthError)
+    );
+}

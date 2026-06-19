@@ -5,6 +5,7 @@
 //!
 //! Verified differentially against the RustCrypto `skein` crate (see tests).
 
+#[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 
 use crate::Threefish512;
@@ -76,39 +77,158 @@ fn config_block(out_bits: u64) -> [u8; 32] {
     c
 }
 
-/// Produce `out_len` output bytes from the final chaining value by running the
-/// output UBI over an incrementing counter.
-fn output(g: &[u8; 64], out_len: usize) -> Vec<u8> {
-    let mut out = Vec::with_capacity(out_len);
+/// Fill `out` from the final chaining value by running the output UBI over an
+/// incrementing counter. Allocation-free: writes directly into the caller's
+/// buffer.
+fn output_into(g: &[u8; 64], out: &mut [u8]) {
     let mut counter: u64 = 0;
-    while out.len() < out_len {
+    let mut written = 0;
+    while written < out.len() {
         let mut block = *g;
         ubi(&mut block, &counter.to_le_bytes(), T_OUT);
-        out.extend_from_slice(&block);
+        let n = core::cmp::min(BLOCK, out.len() - written);
+        out[written..written + n].copy_from_slice(&block[..n]);
+        written += n;
         counter += 1;
     }
-    out.truncate(out_len);
+}
+
+/// Incremental Skein-512 hash/MAC. Feed the message with `update` (in any
+/// chunking) and write the digest with `finalize_into`. Allocation-free and
+/// fixed-size, so it can hash an input larger than memory on a heap-less device.
+///
+/// The output length must be fixed at construction, because Skein folds it into
+/// the configuration block that seeds the chaining value: `finalize_into` writes
+/// exactly the `out_len` passed to `new`/`new_mac`.
+pub struct Skein512 {
+    g: [u8; 64],
+    out_len: usize,
+    /// Message bytes not yet committed to a UBI block.
+    buffer: [u8; BLOCK],
+    buffer_len: usize,
+    /// Total message bytes committed so far (the UBI tweak position).
+    position: u64,
+    /// True until the first message block is processed.
+    first: bool,
+}
+
+impl Skein512 {
+    /// Start an unkeyed hash producing `out_len` bytes.
+    pub fn new(out_len: usize) -> Self {
+        let mut g = [0u8; 64];
+        ubi(&mut g, &config_block((out_len as u64) * 8), T_CFG);
+        Self::with_config(g, out_len)
+    }
+
+    /// Start a keyed MAC producing `out_len` bytes, absorbing `key` first.
+    pub fn new_mac(key: &[u8], out_len: usize) -> Self {
+        let mut g = [0u8; 64];
+        if !key.is_empty() {
+            ubi(&mut g, key, T_KEY);
+        }
+        ubi(&mut g, &config_block((out_len as u64) * 8), T_CFG);
+        Self::with_config(g, out_len)
+    }
+
+    fn with_config(g: [u8; 64], out_len: usize) -> Self {
+        Skein512 {
+            g,
+            out_len,
+            buffer: [0u8; BLOCK],
+            buffer_len: 0,
+            position: 0,
+            first: true,
+        }
+    }
+
+    /// Commit one message block of `nbytes` real bytes (`block` zero-padded to a
+    /// full block). The last block of the message must set `last`.
+    fn commit_block(&mut self, block: &[u8; BLOCK], nbytes: usize, last: bool) {
+        self.position += nbytes as u64;
+        let cipher = Threefish512::new(&self.g, &tweak(self.position, T_MSG, self.first, last));
+        let mut enc = *block;
+        cipher.encrypt_block(&mut enc);
+        for i in 0..BLOCK {
+            self.g[i] = enc[i] ^ block[i];
+        }
+        self.first = false;
+    }
+
+    /// Feed message bytes. The final block is held back (never processed here),
+    /// since only `finalize_into` knows which block is last.
+    pub fn update(&mut self, mut data: &[u8]) {
+        if data.is_empty() {
+            return;
+        }
+        // Top off a partial buffer; flush it as a non-final block only once we
+        // know more data follows it.
+        if self.buffer_len > 0 {
+            let take = (BLOCK - self.buffer_len).min(data.len());
+            self.buffer[self.buffer_len..self.buffer_len + take].copy_from_slice(&data[..take]);
+            self.buffer_len += take;
+            data = &data[take..];
+            if self.buffer_len == BLOCK && !data.is_empty() {
+                let full = self.buffer;
+                self.commit_block(&full, BLOCK, false);
+                self.buffer_len = 0;
+            }
+        }
+        // Commit whole blocks straight from the input, but always keep the last
+        // <= BLOCK bytes back for the final block.
+        while data.len() > BLOCK {
+            let block: [u8; BLOCK] = data[..BLOCK].try_into().unwrap();
+            self.commit_block(&block, BLOCK, false);
+            data = &data[BLOCK..];
+        }
+        if !data.is_empty() {
+            self.buffer[..data.len()].copy_from_slice(data);
+            self.buffer_len = data.len();
+        }
+    }
+
+    /// Process the final message block and write the digest into `out`, which
+    /// must be exactly `out_len` bytes.
+    pub fn finalize_into(mut self, out: &mut [u8]) {
+        debug_assert_eq!(out.len(), self.out_len, "out length must equal out_len");
+        let mut block = [0u8; BLOCK];
+        block[..self.buffer_len].copy_from_slice(&self.buffer[..self.buffer_len]);
+        self.commit_block(&block, self.buffer_len, true);
+        output_into(&self.g, out);
+    }
+}
+
+/// Skein-512 hash of `msg` into the caller-provided `out` buffer. The output
+/// length is `out.len()`. Allocation-free (works without `alloc`).
+pub fn hash_into(out: &mut [u8], msg: &[u8]) {
+    let mut h = Skein512::new(out.len());
+    h.update(msg);
+    h.finalize_into(out);
+}
+
+/// Skein-512 MAC (keyed hash) into the caller-provided `out` buffer. Processes
+/// `key` through a Key UBI first. Allocation-free (works without `alloc`).
+pub fn mac_into(out: &mut [u8], key: &[u8], msg: &[u8]) {
+    let mut h = Skein512::new_mac(key, out.len());
+    h.update(msg);
+    h.finalize_into(out);
+}
+
+/// Skein-512 hash of `msg` with `out_len` output bytes. Convenience wrapper over
+/// [`hash_into`] that allocates the result (requires the `alloc` feature).
+#[cfg(feature = "alloc")]
+pub fn hash(out_len: usize, msg: &[u8]) -> Vec<u8> {
+    let mut out = alloc::vec![0u8; out_len];
+    hash_into(&mut out, msg);
     out
 }
 
-/// Skein-512 hash of `msg` with `out_len` output bytes.
-pub fn hash(out_len: usize, msg: &[u8]) -> Vec<u8> {
-    let mut g = [0u8; 64];
-    ubi(&mut g, &config_block((out_len as u64) * 8), T_CFG);
-    ubi(&mut g, msg, T_MSG);
-    output(&g, out_len)
-}
-
-/// Skein-512 MAC: a keyed hash. Processes `key` through a Key UBI before the
-/// configuration and message, producing `out_len` tag bytes.
+/// Skein-512 MAC: a keyed hash producing `out_len` tag bytes. Convenience
+/// wrapper over [`mac_into`] that allocates (requires the `alloc` feature).
+#[cfg(feature = "alloc")]
 pub fn mac(key: &[u8], out_len: usize, msg: &[u8]) -> Vec<u8> {
-    let mut g = [0u8; 64];
-    if !key.is_empty() {
-        ubi(&mut g, key, T_KEY);
-    }
-    ubi(&mut g, &config_block((out_len as u64) * 8), T_CFG);
-    ubi(&mut g, msg, T_MSG);
-    output(&g, out_len)
+    let mut out = alloc::vec![0u8; out_len];
+    mac_into(&mut out, key, msg);
+    out
 }
 
 #[cfg(test)]

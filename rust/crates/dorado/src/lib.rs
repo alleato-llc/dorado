@@ -36,9 +36,12 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
-// The cipher core is allocation-free, but the hash/AEAD helpers return owned
-// buffers, so the crate needs `alloc` (an allocator, not a full std/OS). Under
-// `cargo test` the crate is std, so the existing test harness is unaffected.
+// The whole crate is allocation-free at its core: Threefish, CTR, ChaCha20,
+// Poly1305, the `*_into` hash functions, and the AEAD `*_in_place` functions all
+// work without a heap. `alloc` (an allocator, not a full std/OS) is only needed
+// for the owned-buffer conveniences: the `Vec`-returning hash and AEAD wrappers.
+// Under `cargo test` the crate is std.
+#[cfg(feature = "alloc")]
 extern crate alloc;
 
 pub mod blake3;

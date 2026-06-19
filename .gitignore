@@ -1,0 +1,5 @@
+/target
+
+# This is a library crate, so the lock file is not committed; downstream
+# binaries resolve and pin their own dependency versions.
+Cargo.lock

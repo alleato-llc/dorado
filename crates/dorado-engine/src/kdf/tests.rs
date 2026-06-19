@@ -63,3 +63,38 @@ fn scrypt_derives_more_than_64_bytes() {
     .unwrap();
     assert!(out.iter().any(|&b| b != 0), "output should be filled");
 }
+
+#[test]
+fn validate_accepts_sane_and_rejects_absurd_params() {
+    // Defaults are fine.
+    validate(&KdfParams::Argon2id {
+        m_cost: 64 * 1024,
+        t_cost: 3,
+        p_cost: 1,
+    })
+    .unwrap();
+    validate(&KdfParams::Pbkdf2 {
+        rounds: 600_000,
+        prf: PrfId::HmacSha256,
+    })
+    .unwrap();
+
+    // Absurd costs (as a crafted header might carry) are rejected.
+    assert!(validate(&KdfParams::Argon2id {
+        m_cost: 1 << 30, // ~1 TiB
+        t_cost: 3,
+        p_cost: 1,
+    })
+    .is_err());
+    assert!(validate(&KdfParams::Scrypt {
+        log_n: 40,
+        r: 8,
+        p: 1,
+    })
+    .is_err());
+    assert!(validate(&KdfParams::Pbkdf2 {
+        rounds: u32::MAX,
+        prf: PrfId::HmacSha256,
+    })
+    .is_err());
+}

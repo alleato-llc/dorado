@@ -1,5 +1,10 @@
+# Build output (the main workspace and the separate fuzz workspace).
 /target
+/fuzz/target
 
-# This is a library crate, so the lock file is not committed; downstream
-# binaries resolve and pin their own dependency versions.
-Cargo.lock
+# Fuzzing corpora and crash artifacts.
+/fuzz/corpus
+/fuzz/artifacts
+
+# Cargo.lock is committed: this workspace ships binaries (the CLI and GUI), so a
+# pinned, reproducible dependency set is wanted.

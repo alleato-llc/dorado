@@ -81,5 +81,46 @@ pub fn derive(
     }
 }
 
+/// Reject KDF parameters whose cost is unreasonably large. Decryption reads the
+/// cost from an untrusted file header, so without this a crafted file could
+/// request gigabytes of memory or a multi-minute derivation (a denial of
+/// service). The caps are generous, well above any sane real-world setting.
+pub fn validate(params: &KdfParams) -> Result<(), String> {
+    match *params {
+        KdfParams::Argon2id {
+            m_cost,
+            t_cost,
+            p_cost,
+        } => {
+            if m_cost > 1 << 21 {
+                return Err("argon2 memory cost too large".into()); // > 2 GiB
+            }
+            if t_cost > 64 {
+                return Err("argon2 time cost too large".into());
+            }
+            if p_cost > 16 {
+                return Err("argon2 parallelism too large".into());
+            }
+        }
+        KdfParams::Scrypt { log_n, r, p } => {
+            if log_n > 21 {
+                return Err("scrypt cost (log2 N) too large".into());
+            }
+            if r > 32 {
+                return Err("scrypt block factor r too large".into());
+            }
+            if p > 16 {
+                return Err("scrypt parallelism p too large".into());
+            }
+        }
+        KdfParams::Pbkdf2 { rounds, .. } => {
+            if rounds > 50_000_000 {
+                return Err("pbkdf2 rounds too large".into());
+            }
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests;

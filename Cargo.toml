@@ -1,64 +1,21 @@
-[package]
-name = "dorado"
+# Workspace: the cipher library, the shared construction, and two frontends.
+[workspace]
+resolver = "2"
+members = [
+    "crates/dorado",
+    "crates/dorado-engine",
+    "crates/dorado-cli",
+    "crates/dorado-gui",
+]
+exclude = ["fuzz"]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2021"
-description = "A from-scratch implementation of the Threefish tweakable block cipher (256/512/1024-bit), the cipher at the core of the Skein hash function."
 license = "MIT"
-keywords = ["cryptography", "cipher", "threefish", "block-cipher", "arx"]
-categories = ["cryptography"]
-# repository = "https://github.com/grits-collective/dorado"
-# authors = ["Grits Collective LLC"]
 
-# The binaries pull runtime dependencies; the library has none by default.
-# `password` is the shared crypto construction (KDFs, MAC, container); the `cli`
-# and `gui` frontends add their own UI dependencies on top.
-[features]
-password = [
-    "dep:argon2",
-    "dep:scrypt",
-    "dep:pbkdf2",
-    "dep:sha2",
-    "dep:hmac",
-    "dep:rand",
-    "dep:zeroize",
-]
-cli = ["password", "dep:clap", "dep:rpassword"]
-gui = ["password", "dep:iced"]
-
-[dependencies]
-clap = { version = "4", features = ["derive"], optional = true }
-# Password-based key derivation for the CLI (one crate per KDF we support).
-argon2 = { version = "0.5", optional = true }
-scrypt = { version = "0.11", optional = true }
-pbkdf2 = { version = "0.12", optional = true, features = ["hmac"] }
-sha2 = { version = "0.10", optional = true }
-# Encrypt-then-MAC authentication for the password container.
-hmac = { version = "0.12", optional = true }
-# No-echo interactive password prompt, and random salts/IVs for the CLI.
-rpassword = { version = "7", optional = true }
-rand = { version = "0.8", optional = true }
-# Wipe passwords and derived key material from memory when they go out of scope.
-zeroize = { version = "1", optional = true }
-# Cross-platform GUI demo (the `gui` binary only). The tokio executor enables
-# timer subscriptions (the progress animation).
-iced = { version = "0.12", optional = true, features = ["tokio"] }
-
-# Used only by the differential test harness (tests/diff.rs), which checks this
-# implementation against the RustCrypto reference. Not shipped to downstream users.
-[dev-dependencies]
-threefish = "0.5"
-cipher = "0.4"
-rand = "0.8"
-
-# Command-line tool. Built only when the `cli` feature is enabled, so a plain
-# `cargo build` or a library dependency never compiles clap.
-[[bin]]
-name = "dorado"
-path = "src/main.rs"
-required-features = ["cli"]
-
-# GUI demo. Built only when the `gui` feature is enabled.
-[[bin]]
-name = "dorado-gui"
-path = "src/gui.rs"
-required-features = ["gui"]
+# Optimized binaries: link-time optimization and a single codegen unit speed up
+# the tight cipher/CTR loops noticeably.
+[profile.release]
+lto = true
+codegen-units = 1

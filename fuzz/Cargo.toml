@@ -1,0 +1,27 @@
+# Fuzzing harness (cargo-fuzz). Its own workspace, excluded from the main one,
+# because it needs a nightly toolchain and the libFuzzer runtime.
+#
+# Run with a nightly toolchain:
+#   cargo install cargo-fuzz
+#   cargo +nightly fuzz run decrypt
+[package]
+name = "dorado-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+dorado-engine = { path = "../crates/dorado-engine" }
+
+[[bin]]
+name = "decrypt"
+path = "fuzz_targets/decrypt.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

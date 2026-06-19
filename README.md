@@ -2,41 +2,34 @@
 
 ## About
 
-Dorado is a from-scratch implementation of Threefish, the tweakable block cipher at
-the core of the Skein hash function. It supports all three block sizes (256, 512,
-and 1024 bits) with both encryption and decryption, and follows the Skein 1.3
-specification (including the round-3 NIST tweak to the key-schedule constant C240).
+Dorado is a from-scratch implementation of Threefish, the tweakable block cipher at the core of the Skein hash function. It supports all three block sizes (256, 512, and 1024 bits) with both encryption and decryption, and follows the Skein 1.3 specification (including the round-3 NIST tweak to the key-schedule constant C240).
 
-Threefish is the third cipher in Bruce Schneier's Blowfish then Twofish then
-Threefish line, and the cipher underneath Skein, a NIST SHA-3 finalist. It is a
-pure ARX design: addition, rotation by a constant, and xor, with no S-boxes or
-lookup tables.
+Threefish is the third cipher in Bruce Schneier's Blowfish then Twofish then Threefish line, and the cipher underneath Skein, a NIST SHA-3 finalist. It is a pure ARX design: addition, rotation by a constant, and xor, with no S-boxes or lookup tables.
 
-The name keeps the fish theme going: a dorado is a fish, better known by its other
-name, the mahi-mahi. That is also where the `.mahi` extension for password-mode
-files comes from (see the command-line tool below).
+The name keeps the fish theme going: a dorado is a fish, better known by its other name, the mahi-mahi. That is also where the `.mahi` extension for password-mode files comes from (see the command-line tool below).
 
-This is an educational, unaudited implementation. For real data, prefer an audited
-crate. See the security note below.
+This is an educational, unaudited implementation. For real data, prefer an audited crate. See the security note below.
+
+## Project layout
+
+This is a Cargo workspace of four crates:
+
+- `crates/dorado` — the cipher library (Threefish + CTR), zero runtime dependencies.
+- `crates/dorado-engine` — the shared construction (KDFs, the authenticated chunked container, raw CTR). Depends on `dorado`.
+- `crates/dorado-cli` — the command-line frontend (produces the `dorado` binary).
+- `crates/dorado-gui` — the iced graphical frontend (produces `dorado-gui`).
 
 ## Using dorado
 
-The library is the cipher plus CTR mode, with zero runtime dependencies. The
-command-line tool is optional, behind the `cli` feature.
-
 ```
-cargo build                  # library only
-cargo test                   # known-answer + differential + CTR tests
-cargo build --features cli   # also build the CLI
-cargo test  --features cli   # also run the KDF/header/MAC/framing tests
+cargo build --workspace      # everything
+cargo test  --workspace      # all tests
+cargo build -p dorado        # just the cipher library (no runtime deps)
 ```
 
 ### Library
 
-One type per block size: `Threefish256`, `Threefish512`, `Threefish1024`. Each is
-built from a key and a 16-byte tweak and works on a fixed-size block in place. Keys,
-tweaks, and blocks are little-endian. Key and block sizes are 32, 64, and 128 bytes
-respectively.
+One type per block size: `Threefish256`, `Threefish512`, `Threefish1024`. Each is built from a key and a 16-byte tweak and works on a fixed-size block in place. Keys, tweaks, and blocks are little-endian. Key and block sizes are 32, 64, and 128 bytes respectively.
 
 ```rust
 use dorado::Threefish256;
@@ -56,108 +49,66 @@ cipher.ctr_apply(&iv, &mut data);
 
 ### Command-line tool
 
-The tool runs over stdin/stdout or files, streaming in constant memory. It takes
-the key two ways.
+The tool runs over stdin/stdout or files, streaming in constant memory. It takes the key two ways.
 
-Build it once (the `cli` feature is required):
+Build it once:
 
 ```
-cargo build --release --features cli
+cargo build --release -p dorado-cli
 ```
 
-That produces the binary at `target/release/dorado`, which the examples below call
-directly. To put `dorado` on your PATH, run `cargo install --path . --features cli`.
-During development you can skip the build step and substitute
-`cargo run --features cli --` for the binary path, which compiles and runs in one
-go (for example `cargo run --features cli -- encrypt --password --in plain --out cipher`).
+That produces the binary at `target/release/dorado`, which the examples below call directly. To put `dorado` on your PATH, run `cargo install --path crates/dorado-cli`. During development you can skip the build step and substitute `cargo run -p dorado-cli --` for the binary path, which compiles and runs in one go (for example `cargo run -p dorado-cli -- encrypt --password --in plain --out cipher`).
 
-With a raw key you supply the key bytes (hex) and the IV. Output is bare,
-unauthenticated CTR ciphertext. The key length selects the variant. Use
-`--key-file <path>` to keep the key off the process list.
+With a raw key you supply the key bytes (hex) and the IV. Output is bare, unauthenticated CTR ciphertext. The key length selects the variant. Use `--key-file <path>` to keep the key off the process list.
 
 ```
 target/release/dorado encrypt --key <hex> --iv <hex> --in plain --out cipher
 target/release/dorado decrypt --key <hex> --iv <hex> --in cipher --out plain
 ```
 
-With a password the tool derives the key with a KDF and writes an authenticated,
-self-describing file. Decryption only needs the password, and reports a wrong
-password or a tampered or truncated file as an error. These files use the `.mahi`
-extension by convention (a nod to dorado's namesake, the mahi-mahi fish); the tool
-reads them by content, not by name, so the extension is not required.
+With a password the tool derives the key with a KDF and writes an authenticated, self-describing file. Decryption only needs the password, and reports a wrong password or a tampered or truncated file as an error. These files use the `.mahi`
+extension by convention (a nod to dorado's namesake, the mahi-mahi fish); the tool reads them by content, not by name, so the extension is not required.
 
 ```
 target/release/dorado encrypt --password --in notes.txt --out notes.txt.mahi
 target/release/dorado decrypt --password --in notes.txt.mahi --out notes.txt
 ```
 
-`--password-stdin` reads the password from stdin for scripting (data must then come
-from `--in`). The KDF defaults to Argon2id (`--kdf argon2id|scrypt|pbkdf2`), the
-variant to 256 (`--variant`), and the chunk size to 64 KiB (`--chunk-kib`). Run with
-`--help` for the full list of KDF cost flags. Defaults should be tuned and measured
-on your own hardware.
+`--password-stdin` reads the password from stdin for scripting (data must then come from `--in`). The KDF defaults to Argon2id (`--kdf argon2id|scrypt|pbkdf2`), the variant to 256 (`--variant`), and the chunk size to 64 KiB (`--chunk-kib`). Run with `--help` for the full list of KDF cost flags. Defaults should be tuned and measured on your own hardware.
 
 ### GUI demo
 
-There is also a small graphical demo behind the `gui` feature, built on
-[iced](https://iced.rs/). It is the password tool in a window: pick a source (typed
-text or a file) and a direction (encrypt or decrypt), enter a password, and run. A
-collapsible Options panel exposes the variant, KDF and its cost parameters, chunk
-size, and an optional tweak. The key derivation runs on a background thread so the
-window stays responsive; build with `--release` for snappy performance, since the
-KDF is deliberately slow and a debug build makes it much slower.
+The `dorado-gui` crate is a small graphical demo built on [iced](https://iced.rs/). It is the password tool in a window: pick a source (typed text or a file) and a direction (encrypt or decrypt), enter a password, and run. A collapsible Options panel exposes the variant, KDF and its cost parameters, chunk size, and an optional tweak. The key derivation runs on a background thread so the window stays responsive; build with `--release` for snappy performance, since the KDF is deliberately slow and a debug build makes it much slower.
 
 ```
-cargo run --features gui --bin dorado-gui
+cargo run --release -p dorado-gui
 ```
 
-The GUI is a separate binary that shares the same construction as the CLI, so it is
-for the same educational purpose and carries the same caveats. iced pulls in a large
-graphics stack, which is why it is optional and off by default.
+The GUI is a separate binary that shares the same construction as the CLI, so it is for the same educational purpose and carries the same caveats. iced pulls in a large graphics stack, which is why it is its own crate.
 
 ## How it works
 
 Dorado is built in layers, each wrapped around the one below:
 
-- **Threefish is the algorithm**: the block cipher itself, which transforms one
-  fixed-size block. This is what the library implements and what the test vectors
-  check.
-- **CTR is a mode**: a generic recipe that wraps the cipher to handle any length.
-  It only calls the cipher and contains no cipher internals.
-- **The frontends add the rest**: key derivation from a password, encrypt-then-MAC
-  authentication (HMAC-SHA256), and a streaming chunked file format, all standard
-  constructions on top of CTR. This shared construction lives in one place and is
-  used by both the CLI and the GUI demo.
+- **Threefish is the algorithm**: the block cipher itself, which transforms one   fixed-size block. This is what the library implements and what the test vectors   check.
+- **CTR is a mode**: a generic recipe that wraps the cipher to handle any length. It only calls the cipher and contains no cipher internals.
+- **The frontends add the rest**: key derivation from a password, encrypt-then-MAC authentication (HMAC-SHA256), and a streaming chunked file format, all standard constructions on top of CTR. This shared construction lives in one place and is used by both the CLI and the GUI demo.
 
-The hash function Skein would be another construction on Threefish, a sibling of
-CTR. See the documentation below for the full picture, threat model, and wire
-format.
+The hash function Skein would be another construction on Threefish, a sibling of CTR. See the documentation below for the full picture, threat model, and wire format.
 
 ## Security note
 
-This is an educational, unaudited implementation with no broader key management.
-The library API exposes only the unauthenticated cipher and CTR. In the CLI,
-password files are authenticated (encrypt-then-MAC), so tampering, a wrong password,
-reordered or dropped chunks, and truncation are detected; raw-key mode is bare CTR
-with no integrity, by design. The CLI wipes passwords and derived keys from memory
-when they go out of scope.
+This is an educational, unaudited implementation with no broader key management. The library API exposes only the unauthenticated cipher and CTR. In the CLI,password files are authenticated (encrypt-then-MAC), so tampering, a wrong password, reordered or dropped chunks, and truncation are detected; raw-key mode is bare CTR with no integrity, by design. The CLI wipes passwords and derived keys from memory when they go out of scope.
 
-Dorado is not described as secure, production-ready, or guaranteed constant-time.
-The ARX design uses only data-independent operations (no secret-dependent table
-lookups or branches), so a straightforward build behaves in constant time on
-typical hardware, but that is a property of the design, not a promise. The full
-threat model, including what is not defended, is in `docs/overview.md`.
+Dorado is not described as secure, production-ready, or guaranteed constant-time. The ARX design uses only data-independent operations (no secret-dependent table lookups or branches), so a straightforward build behaves in constant time on typical hardware, but that is a property of the design, not a promise. The full threat model, including what is not defended, is in `docs/overview.md`.
 
 ## Documentation
 
 The `docs/` directory has three documents, by depth:
 
-- `docs/overview.md`: the conceptual tour for a general technologist, with diagrams
-  of the layers and the encrypt and decrypt flows, and the threat model.
-- `docs/spec.md`: the precise, byte-level wire format and cipher constants, the
-  single source of truth for the on-disk container.
-- `docs/glossary.md`: definitions of the concepts used here (block cipher, CTR, KDF,
-  MAC, AEAD, and more) for a technical reader who is not a cryptographer.
+- `docs/overview.md`: the conceptual tour for a general technologist, with diagrams of the layers and the encrypt and decrypt flows, and the threat model.
+- `docs/spec.md`: the precise, byte-level wire format and cipher constants, the single source of truth for the on-disk container.
+- `docs/glossary.md`: definitions of the concepts used here (block cipher, CTR, KDF, MAC, AEAD, and more) for a technical reader who is not a cryptographer.
 
 ## License
 

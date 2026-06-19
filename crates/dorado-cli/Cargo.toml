@@ -1,0 +1,18 @@
+[package]
+name = "dorado-cli"
+description = "Command-line frontend for dorado (educational, unaudited)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "dorado"
+path = "src/main.rs"
+
+[dependencies]
+dorado-engine = { path = "../dorado-engine" }
+clap = { version = "4", features = ["derive"] }
+# No-echo interactive password prompt.
+rpassword = "7"
+# Wipe passwords and raw keys from memory.
+zeroize = "1"

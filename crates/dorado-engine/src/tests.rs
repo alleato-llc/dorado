@@ -79,3 +79,71 @@ fn block_transform_round_trips() {
     assert_eq!(pt, block);
     assert_ne!(ct, block);
 }
+
+#[test]
+fn block_transform_rejects_bad_lengths() {
+    let tweak = [0u8; 16];
+    assert!(
+        block_transform(&[0u8; 7], &tweak, &[0u8; 7], false).is_err(),
+        "an invalid key length must fail"
+    );
+    assert!(
+        block_transform(&[0u8; 32], &tweak, &[0u8; 16], false).is_err(),
+        "a block not matching the variant block size must fail"
+    );
+}
+
+// --- Streaming security properties: tampering and truncation must be rejected,
+// never silently accepted. These exercise the chunked authenticated format.
+
+#[test]
+fn rejects_truncation() {
+    let opts = PasswordOptions {
+        chunk_size: 64, // force several frames
+        ..fast_opts()
+    };
+    let pw = b"pw";
+    let pt: Vec<u8> = (0..200u32).map(|i| i as u8).collect();
+    let ct = encrypt_password_bytes(pw, &opts, &pt).unwrap();
+
+    // Dropping trailing bytes (a partial tag, a whole final frame, etc.) must
+    // always error: a missing authenticated last chunk is detected.
+    for cut in [1usize, 33, 80, 150] {
+        let truncated = &ct[..ct.len() - cut];
+        assert!(
+            decrypt_password_bytes(pw, truncated).is_err(),
+            "truncation by {cut} bytes must fail"
+        );
+    }
+}
+
+#[test]
+fn rejects_header_tampering() {
+    let opts = fast_opts();
+    let pw = b"pw";
+    let ct = encrypt_password_bytes(pw, &opts, b"a short secret").unwrap();
+
+    // Flip a salt byte: the header parses fine, but it changes the derived key
+    // and is bound into chunk 0's tag, so verification must fail.
+    let mut tampered = ct.clone();
+    tampered[20] ^= 1;
+    assert!(decrypt_password_bytes(pw, &tampered).is_err());
+}
+
+#[test]
+fn rejects_early_chunk_tampering() {
+    let opts = PasswordOptions {
+        chunk_size: 64,
+        ..fast_opts()
+    };
+    let pw = b"pw";
+    let pt: Vec<u8> = (0..200u32).map(|i| i as u8).collect();
+    let ct = encrypt_password_bytes(pw, &opts, &pt).unwrap();
+
+    // Flip a byte roughly inside the first chunk's ciphertext; its tag must
+    // reject it before any later chunk is decrypted.
+    let mut tampered = ct.clone();
+    let pos = ct.len() / 3;
+    tampered[pos] ^= 1;
+    assert!(decrypt_password_bytes(pw, &tampered).is_err());
+}

@@ -10,13 +10,10 @@
 //!     password into encryption and MAC keys, and the output is an authenticated
 //!     chunked container (see the `engine` module).
 //!
-//! This is a thin frontend; the construction lives in `engine`. This tool is
-//! educational and unaudited; do not use it to protect real data.
+//! This is a thin frontend; the construction lives in the `dorado-engine` crate.
+//! This tool is educational and unaudited; do not use it to protect real data.
 
-mod engine;
-mod format;
-mod kdf;
-mod mac;
+#![forbid(unsafe_code)]
 
 use std::fs;
 use std::io::{self, BufReader, BufWriter, Read, Write};
@@ -25,8 +22,8 @@ use std::process::ExitCode;
 use clap::{ArgGroup, Args as ClapArgs, Parser, Subcommand};
 use zeroize::{Zeroize, Zeroizing};
 
-use format::Variant;
-use kdf::{KdfParams, PrfId};
+use dorado_engine as engine;
+use dorado_engine::{KdfParams, PrfId, Variant};
 
 #[derive(Parser)]
 #[command(

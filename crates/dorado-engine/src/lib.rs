@@ -1,14 +1,17 @@
-//! The cryptographic construction shared by the `dorado` (CLI) and `dorado-gui`
-//! binaries: raw-key CTR and the authenticated, chunked password container.
+//! The cryptographic construction over the `dorado` cipher, shared by the CLI
+//! and GUI frontends: raw-key CTR and the authenticated, chunked password
+//! container.
 //!
 //! It is decoupled from any UI. Streaming functions work over `Read`/`Write`
 //! (used by the CLI for constant-memory file handling); in-memory wrappers
-//! return `Vec<u8>` (used by the GUI). The cipher itself lives in the library.
+//! return `Vec<u8>` (used by the GUI). The cipher itself lives in the `dorado`
+//! crate.
 
-// This module is compiled into both binaries, and each frontend uses a different
-// subset of the API (the CLI streams; the GUI uses the in-memory wrappers), so
-// some functions look unused from one binary's point of view.
-#![allow(dead_code)]
+#![forbid(unsafe_code)]
+
+mod format;
+mod kdf;
+mod mac;
 
 use std::io::{Cursor, Read, Write};
 
@@ -17,9 +20,12 @@ use zeroize::Zeroizing;
 
 use dorado::{Threefish1024, Threefish256, Threefish512};
 
-use crate::format::{Header, MacId, Variant};
-use crate::kdf::{self, KdfParams};
-use crate::mac;
+use crate::format::{Header, MacId};
+use crate::kdf::{derive, validate};
+
+// Types the frontends need to build options and labels.
+pub use crate::format::Variant;
+pub use crate::kdf::{KdfParams, PrfId};
 
 /// Domain separator mixed into every frame tag.
 const FRAME_DOMAIN: &[u8; 8] = b"DRDOchnk";
@@ -74,7 +80,7 @@ pub fn encrypt_password_stream(
 
     // Derive an encryption key and a separate MAC key from one KDF output.
     let mut keymat = Zeroizing::new(vec![0u8; variant.key_len() + mac::KEY_LEN]);
-    kdf::derive(&opts.kdf, password, &salt, &mut keymat)?;
+    derive(&opts.kdf, password, &salt, &mut keymat)?;
     let (enc_key, mac_key) = keymat.split_at(variant.key_len());
 
     let header = Header {
@@ -141,9 +147,11 @@ pub fn decrypt_password_stream(
             header.chunk_size
         ));
     }
+    // Bound the cost before deriving: the params come from an untrusted header.
+    validate(&header.kdf)?;
 
     let mut keymat = Zeroizing::new(vec![0u8; header.variant.key_len() + mac::KEY_LEN]);
-    kdf::derive(&header.kdf, password, &header.salt, &mut keymat)?;
+    derive(&header.kdf, password, &header.salt, &mut keymat)?;
     let (enc_key, mac_key) = keymat.split_at(header.variant.key_len());
     let cipher = Cipher::new(header.variant, enc_key, &header.tweak)?;
     let blocks_per_chunk = (header.chunk_size as usize / block_len) as u64;
@@ -464,5 +472,4 @@ pub fn parse_tweak(s: &str) -> Result<[u8; 16], String> {
 }
 
 #[cfg(test)]
-#[path = "engine/tests.rs"]
 mod tests;

@@ -1,0 +1,15 @@
+[package]
+name = "dorado-gui"
+description = "Graphical frontend for dorado (educational, unaudited)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "dorado-gui"
+path = "src/main.rs"
+
+[dependencies]
+dorado-engine = { path = "../dorado-engine" }
+# The tokio executor enables timer subscriptions (the progress animation).
+iced = { version = "0.12", features = ["tokio"] }

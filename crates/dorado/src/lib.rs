@@ -12,6 +12,12 @@
 //! NOTE: This is an educational implementation. For production use, prefer an
 //! audited crate.
 
+#![forbid(unsafe_code)]
+
+/// The largest state width (Nw), for the 1024-bit variant. Used to size the
+/// fixed permutation scratch buffer so the round loop needs no heap allocation.
+const MAX_NW: usize = 16;
+
 /// Key-schedule constant (Skein 1.3). Guarantees the extended key word is never
 /// all-zero and frustrates rotational cryptanalysis.
 const C240: u64 = 0x1BD1_1BDA_A9FC_1A22;
@@ -69,7 +75,9 @@ fn encrypt(
     rounds: usize,
 ) {
     let nw = state.len();
-    let mut scratch = vec![0u64; nw];
+    // Fixed-size stack scratch (sliced to `nw`) so there is no per-call heap
+    // allocation; CTR encrypts one block per output block.
+    let mut scratch = [0u64; MAX_NW];
 
     for r in 0..rounds {
         if r % 4 == 0 {
@@ -88,7 +96,7 @@ fn encrypt(
         for i in 0..nw {
             scratch[i] = state[perm[i]];
         }
-        state.copy_from_slice(&scratch);
+        state.copy_from_slice(&scratch[..nw]);
     }
     // Final subkey.
     add_subkey(state, ek, et, rounds / 4);
@@ -104,7 +112,7 @@ fn decrypt(
     rounds: usize,
 ) {
     let nw = state.len();
-    let mut scratch = vec![0u64; nw];
+    let mut scratch = [0u64; MAX_NW];
 
     sub_subkey(state, ek, et, rounds / 4);
     for r in (0..rounds).rev() {
@@ -112,7 +120,7 @@ fn decrypt(
         for i in 0..nw {
             scratch[perm[i]] = state[i];
         }
-        state.copy_from_slice(&scratch);
+        state.copy_from_slice(&scratch[..nw]);
         // Inverse MIX.
         for j in 0..nw / 2 {
             let y0 = state[2 * j];

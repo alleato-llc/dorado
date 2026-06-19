@@ -1,0 +1,20 @@
+[package]
+name = "dorado-engine"
+description = "Password-based authenticated container construction over the dorado Threefish cipher (educational, unaudited)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+dorado = { path = "../dorado" }
+# Password-based key derivation (one crate per KDF).
+argon2 = "0.5"
+scrypt = "0.11"
+pbkdf2 = { version = "0.12", features = ["hmac"] }
+sha2 = "0.10"
+# Encrypt-then-MAC authentication.
+hmac = "0.12"
+# Random salts and IVs.
+rand = "0.8"
+# Wipe derived key material from memory when it goes out of scope.
+zeroize = "1"

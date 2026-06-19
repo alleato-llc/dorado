@@ -1,13 +1,18 @@
 # CLAUDE.md
 
-## What this crate is
+## What this is
 
-Dorado is a from-scratch implementation of the Threefish tweakable block cipher
-(256, 512, and 1024-bit variants), the cipher at the core of the Skein hash
-function. It follows the Skein 1.3 specification. The scope is deliberately
-narrow and educational: the block cipher, CTR mode for arbitrary-length data, and
-(in the CLI only) password-based key derivation. There is no AEAD, no
-authentication, and no broader key management. CTR provides confidentiality only.
+Dorado is a Cargo workspace of four crates:
+
+- `crates/dorado` — the cipher library: a from-scratch Threefish (256/512/1024)
+  following Skein 1.3, plus CTR mode. Zero runtime dependencies.
+- `crates/dorado-engine` — the construction over the cipher: the three KDFs, the
+  authenticated chunked password container, and raw CTR. Depends on `dorado`.
+- `crates/dorado-cli` — clap frontend; produces the `dorado` binary.
+- `crates/dorado-gui` — iced frontend; produces `dorado-gui`.
+
+Educational and unaudited. The cipher provides confidentiality only; the engine
+adds authentication (encrypt-then-MAC) for password files.
 
 ## Architecture
 
@@ -38,26 +43,20 @@ blocks (the IV as a big-endian counter, incremented by `ctr_increment`) and xors
 the keystream into the data. The counter is public, so the carry branch in
 `ctr_increment` is not secret-dependent.
 
-There are two binaries: the CLI (`src/main.rs`, feature `cli`) and the iced GUI demo
-(`src/gui.rs`, feature `gui`). Both are thin frontends over a shared construction in
-`src/engine.rs`, which in turn uses three modules: `src/kdf.rs` (Argon2id, scrypt,
-PBKDF2-HMAC-SHA256 behind one `derive` call), `src/format.rs` (the container header
-and streaming reader; magic `DRDO`, version, variant, KDF id and params, MAC id,
-chunk size, salt, tweak, IV), and `src/mac.rs` (encrypt-then-MAC with HMAC-SHA256).
-The feature graph is `password` (the crypto deps: KDFs, hmac, rand, zeroize), with
-`cli = password + clap + rpassword` and `gui = password + iced`. The library stays
-dependency-free; a plain build compiles neither binary.
+The `dorado-engine` crate is the shared construction; both frontends are thin
+clients of it (`use dorado_engine as engine`). Its `lib.rs` is the engine API; it
+uses three private modules: `kdf.rs` (Argon2id, scrypt, PBKDF2-HMAC-SHA256 behind
+one `derive` call, plus a `validate` that bounds untrusted cost params),
+`format.rs` (the container header and streaming reader; magic `DRDO`, version,
+variant, KDF id and params, MAC id, chunk size, salt, tweak, IV), and `mac.rs`
+(encrypt-then-MAC with HMAC-SHA256). It re-exports `Variant`, `KdfParams`, and
+`PrfId` for the frontends. Because it is a real library crate, there is no
+dead-code hack: a different subset of its public API is used by each frontend, and
+that is fine. It exposes streaming functions over `Read`/`Write` (the CLI, for
+constant-memory files), in-memory `*_bytes` wrappers (the GUI), and a single-block
+`block_transform` (exercised by tests). Keep new shared logic in `dorado-engine`.
 
-These four modules (`engine`, `format`, `kdf`, `mac`) are not in the library; each
-binary declares them with `mod`, so they are compiled into whichever binary is
-built (hence the `#![allow(dead_code)]` in `engine`: each frontend uses a different
-subset of its API). `engine` exposes streaming functions over `Read`/`Write` (the
-CLI, for constant-memory files) and in-memory `*_bytes` wrappers (the GUI, which is
-password-only and runs the KDF on a background thread to stay responsive), plus a
-single-block `block_transform` helper that is currently only exercised by tests.
-Keep new shared logic in `engine` so both frontends get it.
-
-`engine` has two key paths, both streamable in constant memory. Raw key: bare,
+The engine has two key paths, both streamable in constant memory. Raw key: bare,
 unauthenticated CTR with a running counter, no header. Password: the KDF output is
 split into a separate encryption key and MAC key, then the data is processed in
 fixed-size chunks (`--chunk-kib`, default 64 KiB, stored in the header). Each chunk
@@ -84,8 +83,8 @@ dependency and a `Drop`/`ZeroizeOnDrop` impl on the variant structs.
 
 These must never be violated:
 
-- The in-crate known-answer tests, the CTR tests, and the differential tests must
-  stay green.
+- The whole suite must stay green: the cipher's known-answer/CTR/differential
+  tests and the engine's construction and streaming-security tests.
 - Do not modify the rotation tables, the permutation tables, `C240`, the round
   counts, or the MIX and key-schedule arithmetic. These values are verified
   against official test vectors. If you ever change one, you must re-run the full
@@ -98,34 +97,36 @@ These must never be violated:
 ## How to verify
 
 ```
-cargo test
+cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+cargo fmt --all --check
 ```
 
-This runs the cipher's known-answer and CTR tests, plus the differential harness
-(`tests/diff.rs`). The differential harness checks dorado against the RustCrypto
-`threefish` crate over random inputs and needs the dev-dependencies declared in
-`Cargo.toml`. CTR mode has no official vectors, so its tests anchor it to the
-verified block cipher (keystream equals the block cipher on successive counters) and
-check round-trips at non-block-multiple lengths. The CLI's header, KDF, MAC, and
-counter tests run only with `cargo test --features cli`.
+The cipher crate has the known-answer and CTR tests plus the differential harness
+(`crates/dorado/tests/diff.rs`, vs the RustCrypto `threefish` crate over random
+inputs). The engine crate has the KDF/header/MAC tests and the construction tests:
+password round-trip, wrong-password, tampering, multi-chunk, and the streaming
+security properties (truncation, header tampering, early-chunk tampering), plus the
+KDF-cost `validate` bounds.
 
-Unit tests live in their own files, not inline with the implementation: the cipher
-tests are in `src/tests.rs`, and each binary module's tests sit beside it
-(`src/kdf/tests.rs`, `src/format/tests.rs`, `src/mac/tests.rs`, `src/engine/tests.rs`).
-Each source file declares its tests with `#[cfg(test)] mod tests;`. The `engine`
-tests cover the in-memory password round-trip (including wrong-password, tampering,
-and multi-chunk) and `block_transform`, so the construction is now unit-tested, not
-just exercised by hand. Keep new unit tests in these files rather than inline. Build the CLI with `cargo build --features cli`, and
-lint everything with `cargo clippy --all-targets --features cli` and
-`cargo fmt --check`.
+Unit tests live in their own files, not inline: cipher tests in
+`crates/dorado/src/tests.rs`, engine tests in `crates/dorado-engine/src/tests.rs`,
+and each engine module's tests beside it (`kdf/tests.rs`, `format/tests.rs`,
+`mac/tests.rs`). Each source file declares them with `#[cfg(test)] mod tests;`.
+
+Audit-readiness: every crate sets `#![forbid(unsafe_code)]`. CI
+(`.github/workflows/ci.yml`) runs fmt/clippy/test and `cargo audit`. A fuzz target
+(`fuzz/fuzz_targets/decrypt.rs`, run with `cargo +nightly fuzz run decrypt`) feeds
+arbitrary bytes to `decrypt_password_bytes`; it must never panic or over-allocate,
+which is what the chunk-size and KDF-cost bounds guarantee.
 
 ## Roadmap
 
 Candidate future work, not commitments:
 
-- Make the crate `no_std` by replacing the per-call heap scratch buffer in
-  `encrypt` / `decrypt` with a fixed-size stack buffer. Note the CLI's KDF,
-  format, and MAC code would stay `std`-only.
+- Finish `no_std` for the cipher crate. The per-call heap scratch is already gone
+  (a fixed `[u64; MAX_NW]` stack buffer), so the remaining work is the `no_std`
+  attribute and confirming no other `std` use. The engine stays `std`-only.
 - Build Skein's UBI chaining mode on top of the block cipher to get the hash
   function. A Skein-based MAC could then replace HMAC in the container for a
   single-primitive design.

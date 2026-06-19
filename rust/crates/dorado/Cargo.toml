@@ -1,0 +1,38 @@
+[package]
+name = "dorado"
+description = "A from-scratch implementation of the Threefish tweakable block cipher (256/512/1024-bit), the cipher at the core of the Skein hash function."
+keywords = ["cryptography", "cipher", "threefish", "block-cipher", "arx"]
+categories = ["cryptography"]
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+# Wipe each cipher's expanded key schedule from memory on drop. On by default;
+# `--no-default-features` gives the bare, dependency-free, no_std core.
+default = ["zeroize"]
+zeroize = ["dep:zeroize"]
+
+[dependencies]
+# Optional: zero key material on drop. no_std-compatible (no default features).
+zeroize = { version = "1", default-features = false, optional = true }
+
+# Used only by the differential test harness (tests/diff.rs), which checks this
+# implementation against the RustCrypto reference. Not shipped to downstream users.
+[dev-dependencies]
+threefish = "0.5"
+cipher = "0.4"
+rand = "0.8"
+# Reference implementations for differential testing (test-only).
+skein = "0.1"
+digest = "0.10"
+blake3 = "1"
+# Benchmarks. Trimmed: drop the plotters/rayon weight, keep the bench harness and
+# its run-over-run regression tracking.
+criterion = { version = "0.5", default-features = false, features = [
+    "cargo_bench_support",
+] }
+
+[[bench]]
+name = "throughput"
+harness = false

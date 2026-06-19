@@ -1,10 +1,15 @@
-# Build output (the main workspace and the separate fuzz workspace).
-/target
-/fuzz/target
+# Rust build output (the main workspace and the separate fuzz workspace).
+/rust/target
+/rust/fuzz/target
 
 # Fuzzing corpora and crash artifacts.
-/fuzz/corpus
-/fuzz/artifacts
+/rust/fuzz/corpus
+/rust/fuzz/artifacts
 
-# Cargo.lock is committed: this workspace ships binaries (the CLI and GUI), so a
+# Cargo.lock is committed: this workspace ships binaries (the CLIs and GUI), so a
 # pinned, reproducible dependency set is wanted.
+
+# Web landing page (web/).
+/web/node_modules
+/web/dist
+/web/.astro

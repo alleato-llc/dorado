@@ -1,0 +1,212 @@
+---
+import Layout from "../layouts/Layout.astro";
+
+// Update this to the real repository URL once it is published.
+const REPO = "https://github.com/nycjv321/dorado";
+
+const tools = [
+  {
+    name: "dorado",
+    badge: "CLI",
+    body: "Encrypt and decrypt over files or stdin, streaming in constant memory. Raw-key CTR, or a password-derived authenticated container.",
+  },
+  {
+    name: "dorado-gui",
+    badge: "app",
+    body: "The password tool in a window, built with iced. Pick a source and a direction, enter a password, run. Key derivation runs off the UI thread.",
+  },
+  {
+    name: "gyotaku",
+    badge: "hash",
+    body: "A standalone Skein-512 hashing tool, like sha256sum but Skein. Named for the Japanese art of fish-printing: a fingerprint of a file.",
+  },
+];
+
+const primitives = [
+  {
+    name: "Threefish",
+    badge: "256 · 512 · 1024",
+    body: "The tweakable ARX block cipher at the core of Skein, all three sizes, encrypt and decrypt, following the Skein 1.3 spec. No S-boxes, no lookup tables.",
+  },
+  {
+    name: "CTR mode",
+    body: "Turns the block cipher into any-length encryption. The same routine encrypts and decrypts; the counter is public.",
+  },
+  {
+    name: "Key derivation",
+    body: "Argon2id, scrypt, or PBKDF2-HMAC-SHA256, with cost parameters stored in the header and bounded on decrypt to refuse a hostile file.",
+  },
+  {
+    name: "MAC menu",
+    badge: "3 from scratch",
+    body: "Authentication via Skein-512 (default), HMAC-SHA256, or keyed BLAKE3. All produce 32-byte tags and are bound into the header.",
+  },
+];
+---
+
+<Layout
+  title="dorado — Threefish, from scratch"
+  description="An educational, from-scratch Rust implementation of Threefish (the cipher behind Skein), with a small honest tool stack: CTR, password containers, and a Skein hash tool."
+>
+  <section class="hero">
+    <div class="wrap">
+      <span class="eyebrow">Educational · Unaudited · Zero-dependency core</span>
+      <h1>dorado</h1>
+      <p class="tagline">Threefish, built from scratch in Rust.</p>
+      <p class="lead">
+        The tweakable block cipher at the heart of the Skein hash function, all
+        three sizes, with a small and honest tool stack on top: counter mode, an
+        authenticated streaming password container, and a Skein hashing tool.
+      </p>
+      <div class="cta">
+        <a class="btn primary" href={REPO}>View the source</a>
+        <a class="btn ghost" href={`${REPO}/blob/main/rust/docs/overview.md`}>
+          Read the docs
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <section id="tools">
+    <div class="wrap">
+      <h2>Three tools, one cipher</h2>
+      <p class="sub">
+        Everything is built on the same Threefish core. The cryptography lives in
+        a zero-dependency library; the frontends are thin clients of one shared
+        construction.
+      </p>
+      <div class="grid">
+        {
+          tools.map((t) => (
+            <div class="card">
+              <h3>
+                {t.name}
+                <span class="badge">{t.badge}</span>
+              </h3>
+              <p>{t.body}</p>
+            </div>
+          ))
+        }
+      </div>
+    </div>
+  </section>
+
+  <section id="layers">
+    <div class="wrap">
+      <h2>How it works</h2>
+      <p class="sub">
+        Each layer is a thin step above the one below. The cipher is the
+        foundation; everything else is standard machinery wrapped around it.
+      </p>
+      <div class="layers">
+        <div class="layer">
+          <div>
+            <b>Threefish is the algorithm.</b>
+            <span>
+              {" "}A keyed, reversible scramble of one fixed-size block, with a
+              non-secret tweak. Verified against official test vectors.
+            </span>
+          </div>
+        </div>
+        <div class="layer">
+          <div>
+            <b>CTR is a mode.</b>
+            <span>
+              {" "}A generic recipe that wraps the cipher to handle any length. It
+              only calls the cipher and holds no cipher internals.
+            </span>
+          </div>
+        </div>
+        <div class="layer">
+          <div>
+            <b>The tools add the rest.</b>
+            <span>
+              {" "}Key derivation from a password, encrypt-then-MAC
+              authentication, and a chunked streaming file format, so tampering, a
+              wrong password, reordering, and truncation are all detected.
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid" style="margin-top: 1rem;">
+        {
+          primitives.map((p) => (
+            <div class="card">
+              <h3>
+                {p.name}
+                {p.badge && <span class="badge">{p.badge}</span>}
+              </h3>
+              <p>{p.body}</p>
+            </div>
+          ))
+        }
+      </div>
+    </div>
+  </section>
+
+  <section id="verified">
+    <div class="wrap">
+      <h2>How we know it works</h2>
+      <p class="sub">
+        Confidence comes from several independent checks. None of this is a
+        security claim; it is evidence that the code matches the specifications it
+        targets.
+      </p>
+      <ul class="checks">
+        <li>
+          <b>Known-answer tests</b> against official Threefish vectors for each
+          block size.
+        </li>
+        <li>
+          <b>Differential testing</b> against the RustCrypto crates: Threefish,
+          and the from-scratch Skein-512 and BLAKE3, over many random inputs.
+        </li>
+        <li>
+          <b>RFC 8439 vectors</b> for the ChaCha20, Poly1305, and
+          ChaCha20-Poly1305 primitives.
+        </li>
+        <li>
+          <b>Construction tests</b> for round-trips, wrong passwords, tampering,
+          truncation, and every MAC.
+        </li>
+        <li>
+          <b>Fuzzing and <code>#![forbid(unsafe_code)]</code></b> across every
+          crate, with a fuzz target over the decrypt parser.
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="source">
+    <div class="wrap">
+      <h2>Try it</h2>
+      <p class="sub">
+        The Rust workspace lives in <code>rust/</code>. Build the binaries and run
+        them; everything streams in constant memory.
+      </p>
+      <pre class="snippet mono"><code>cd rust
+cargo build --release --workspace
+
+# password-encrypt a file (authenticated)
+target/release/dorado encrypt --password --in notes.txt --out notes.txt.mahi
+
+# Skein-hash a file
+target/release/gyotaku notes.txt</code></pre>
+
+      <div class="note" style="margin-top: 1.5rem;">
+        <b>Honest by design.</b> dorado is educational and unaudited. It is not
+        described as secure, production-ready, or guaranteed constant-time. The
+        cipher provides confidentiality only; the password container adds
+        authentication. For real data, prefer an audited tool.
+      </div>
+
+      <div class="cta" style="justify-content: flex-start; margin-top: 1.5rem;">
+        <a class="btn primary" href={REPO}>Browse the code</a>
+        <a class="btn ghost" href={`${REPO}/blob/main/rust/docs/spec.md`}>
+          Read the wire format
+        </a>
+      </div>
+    </div>
+  </section>
+</Layout>

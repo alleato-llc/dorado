@@ -1,0 +1,22 @@
+# Workspace: the cipher library, the shared construction, and two frontends.
+[workspace]
+resolver = "2"
+members = [
+    "crates/dorado",
+    "crates/dorado-engine",
+    "crates/dorado-cli",
+    "crates/dorado-gui",
+    "crates/dorado-gyotaku",
+]
+exclude = ["fuzz"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+# Optimized binaries: link-time optimization and a single codegen unit speed up
+# the tight cipher/CTR loops noticeably.
+[profile.release]
+lto = true
+codegen-units = 1

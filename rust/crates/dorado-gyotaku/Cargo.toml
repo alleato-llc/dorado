@@ -1,0 +1,14 @@
+[package]
+name = "dorado-gyotaku"
+description = "gyotaku: a standalone Skein-512 file hashing CLI (educational, unaudited)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "gyotaku"
+path = "src/main.rs"
+
+[dependencies]
+dorado = { path = "../dorado" }
+clap = { version = "4", features = ["derive"] }

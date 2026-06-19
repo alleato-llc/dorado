@@ -19,7 +19,13 @@ func main() {
 	bits := flag.Int("bits", 256, "output length in bits (a multiple of 8)")
 	tag := flag.Bool("tag", false, `print BSD-style "SKEIN-512 (file) = digest" output`)
 	check := flag.Bool("c", false, "read digests from the FILES and verify them (like sha256sum -c)")
+	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println("gyotaku 0.1.0")
+		return
+	}
 
 	if err := run(*bits, *tag, *check, flag.Args()); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)

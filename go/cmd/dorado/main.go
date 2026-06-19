@@ -16,6 +16,8 @@ import (
 	"golang.org/x/term"
 )
 
+const version = "0.1.0"
+
 func main() {
 	if len(os.Args) < 2 {
 		usage()
@@ -28,7 +30,13 @@ func main() {
 		err = cmdCrypt(os.Args[2:], false)
 	case "inspect":
 		err = cmdInspect(os.Args[2:])
+	case "--version", "-version", "version":
+		fmt.Println("dorado", version)
+		return
+	case "-h", "--help", "help":
+		usage()
 	default:
+		fmt.Fprintf(os.Stderr, "unknown command %q\n", os.Args[1])
 		usage()
 	}
 	if err != nil {
@@ -38,12 +46,22 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: dorado <encrypt|decrypt|inspect> [flags]")
+	fmt.Fprint(os.Stderr, `usage: dorado <command> [flags]
+
+Commands:
+  encrypt   encrypt input with Threefish-CTR
+  decrypt   decrypt input (the same operation as encrypt)
+  inspect   print a password file's non-secret parameters
+
+Supply the key directly with --key/--key-file (raw, unauthenticated CTR), or
+derive it from a password with --password/--password-stdin (authenticated
+container). Run "dorado encrypt -h" for the full flag list.
+`)
 	os.Exit(2)
 }
 
 type opts struct {
-	key, iv, tweak              string
+	key, keyFile, iv, tweak     string
 	password, passwordStdin     bool
 	variant, kdf, mac           string
 	argonMem, argonTime, argonP uint
@@ -57,6 +75,7 @@ func parse(argv []string) (*opts, error) {
 	fs := flag.NewFlagSet("dorado", flag.ContinueOnError)
 	o := &opts{}
 	fs.StringVar(&o.key, "key", "", "key as hex (raw-key mode); length selects the variant")
+	fs.StringVar(&o.keyFile, "key-file", "", "read the key (as hex) from a file (raw-key mode)")
 	fs.StringVar(&o.iv, "iv", "", "initial counter as hex (raw-key mode)")
 	fs.StringVar(&o.tweak, "tweak", strings.Repeat("00", 16), "tweak as hex, 16 bytes")
 	fs.BoolVar(&o.password, "password", false, "derive the key from an interactive password")
@@ -125,8 +144,20 @@ func cmdCrypt(argv []string, encrypt bool) error {
 	if err != nil {
 		return err
 	}
+	creds := 0
+	for _, set := range []bool{o.key != "", o.keyFile != "", o.password, o.passwordStdin} {
+		if set {
+			creds++
+		}
+	}
+	if creds != 1 {
+		return fmt.Errorf("provide exactly one of --key, --key-file, --password, --password-stdin")
+	}
 	if !o.passwordMode() {
 		return runRaw(o)
+	}
+	if o.iv != "" {
+		return fmt.Errorf("--iv is not used in password mode; the IV is generated and stored")
 	}
 	if o.passwordStdin && o.in == "" {
 		return fmt.Errorf("with --password-stdin, pass the data via --in")
@@ -135,6 +166,7 @@ func cmdCrypt(argv []string, encrypt bool) error {
 	if err != nil {
 		return err
 	}
+	defer wipe(password) // best-effort; Go cannot guarantee a wipe (see README)
 	in, closeIn, err := openIn(o.in)
 	if err != nil {
 		return err
@@ -179,12 +211,17 @@ func cmdCrypt(argv []string, encrypt bool) error {
 func runRaw(o *opts) error {
 	keyHex := o.key
 	if keyHex == "" {
-		return fmt.Errorf("no key source provided (use --key or --password)")
+		data, err := os.ReadFile(o.keyFile)
+		if err != nil {
+			return fmt.Errorf("key-file: %w", err)
+		}
+		keyHex = string(data)
 	}
-	key, err := hex.DecodeString(strings.ReplaceAll(keyHex, " ", ""))
+	key, err := dehex(keyHex)
 	if err != nil {
 		return fmt.Errorf("key: %w", err)
 	}
+	defer wipe(key)
 	var variant engine.Variant
 	switch len(key) {
 	case 32:
@@ -196,7 +233,10 @@ func runRaw(o *opts) error {
 	default:
 		return fmt.Errorf("key must be 32, 64, or 128 bytes, got %d", len(key))
 	}
-	iv, err := hex.DecodeString(strings.ReplaceAll(o.iv, " ", ""))
+	if o.iv == "" {
+		return fmt.Errorf("--iv is required with --key/--key-file")
+	}
+	iv, err := dehex(o.iv)
 	if err != nil {
 		return fmt.Errorf("iv: %w", err)
 	}
@@ -285,9 +325,22 @@ func openOut(path string) (io.Writer, func(), error) {
 	return f, func() { f.Close() }, nil
 }
 
+// dehex decodes hex, ignoring all whitespace (matching the Rust parse_hex).
+func dehex(s string) ([]byte, error) {
+	return hex.DecodeString(strings.Join(strings.Fields(s), ""))
+}
+
+// wipe best-effort zeroes a secret buffer. Go cannot guarantee the secret is
+// gone (the GC may have copied it, and the write may be elided); see README.
+func wipe(b []byte) {
+	for i := range b {
+		b[i] = 0
+	}
+}
+
 func parseTweak(s string) ([16]byte, error) {
 	var t [16]byte
-	b, err := hex.DecodeString(strings.ReplaceAll(s, " ", ""))
+	b, err := dehex(s)
 	if err != nil {
 		return t, fmt.Errorf("tweak: %w", err)
 	}

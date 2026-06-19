@@ -6,11 +6,18 @@
   "description": "TypeScript port of dorado, matching the Rust/Go implementations.",
   "scripts": {
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "dorado": "tsx src/cli/dorado.ts",
+    "gyotaku": "tsx src/cli/gyotaku.ts"
   },
   "devDependencies": {
     "@noble/hashes": "^2.2.0",
+    "@types/node": "^26.0.0",
+    "tsx": "^4.22.4",
     "typescript": "^5.6.0",
     "vitest": "^2.1.8"
+  },
+  "dependencies": {
+    "hash-wasm": "^4.12.0"
   }
 }

@@ -101,6 +101,21 @@ jobs:
           java-version: "21"
       - run: ./gradlew test --no-daemon
 
+  # Test the Python port (SDK + CLIs). Cross-compat tests decrypt fixtures made by
+  # the Rust CLI, committed in the repo.
+  python:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - run: pytest -q
+
   # Build the landing page in web/ so a broken site fails CI.
   web:
     runs-on: ubuntu-latest

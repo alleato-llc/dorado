@@ -27,6 +27,14 @@ This is the dorado monorepo. It has several parts:
   native (no `BigInt`). KDFs (Argon2id, scrypt, PBKDF2) use Bouncy Castle; HMAC uses
   the JDK. Comprehensive JUnit suite, including cross-compat fixtures made by the
   Rust CLI in `src/test/resources/`. Run `./gradlew test` from inside `java/`.
+- `python/` — a Python port (package `dorado`, `src/` layout) with an SDK and the
+  `dorado`/`gyotaku` CLIs: same from-scratch primitives, same on-disk format
+  (cross-compatible), streaming over binary file-like objects in constant memory
+  like the Rust reference. The 64-bit ARX uses arbitrary-precision ints masked to
+  2**64. Argon2id uses `argon2-cffi`; scrypt and PBKDF2 use `hashlib`; HMAC uses
+  `hmac`. pytest suite with cross-compat fixtures made by the Rust CLI in
+  `tests/fixtures/`. Run `pytest` from inside `python/` (in a venv with `pip install
+  -e ".[dev]"`).
 - `rust/wasm/` — the verified Rust cipher compiled to WebAssembly via
   `wasm-bindgen` (a separate crate, excluded from the `rust/` workspace). It exports
   only the cipher/hash primitives (CTR, Skein, BLAKE3), not the engine; the engine
@@ -37,8 +45,8 @@ This is the dorado monorepo. It has several parts:
   encrypt/decrypt demo built on `ts/` + the browser WASM build. Site conventions
   are in `web/CLAUDE.md`. Run npm from inside `web/`.
 
-When changing the wire format or an algorithm, keep `rust/`, `go/`, `ts/`, and
-`java/` in sync or cross-compatibility breaks. The five implementations are
+When changing the wire format or an algorithm, keep `rust/`, `go/`, `ts/`, `java/`,
+and `python/` in sync or cross-compatibility breaks. The six implementations are
 byte-for-byte cross-compatible and that property is tested. The Rust implementation
 is the reference and the baseline for vectors and fixtures.
 

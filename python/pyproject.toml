@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "dorado"
+version = "0.1.0"
+description = "From-scratch Threefish cipher and authenticated container (Python port of dorado)."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+# Argon2id is delegated to argon2-cffi, matching the other ports' use of a KDF
+# library. scrypt and PBKDF2 come from the standard library's hashlib.
+dependencies = ["argon2-cffi>=23.1.0"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+dorado = "dorado.cli.dorado:main"
+gyotaku = "dorado.cli.gyotaku:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dorado"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

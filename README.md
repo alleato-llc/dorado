@@ -24,6 +24,10 @@ This repository is a modular monorepo:
   primitives and format, streaming in constant memory like the Rust reference, with
   KDFs via Bouncy Castle and a comprehensive JUnit suite. See
   [`java/README.md`](java/README.md).
+- **[`python/`](python/)** — a Python port: the same primitives and format,
+  streaming in constant memory, with an SDK and the `dorado`/`gyotaku` CLIs. KDFs
+  use `argon2-cffi` + `hashlib`; tested with pytest. See
+  [`python/README.md`](python/README.md).
 - **[`rust/wasm/`](rust/wasm/)** — the verified Rust cipher compiled to WebAssembly
   via `wasm-bindgen`. The same `.wasm` is the cipher backend for the `ts/` Node CLI
   and the browser demo, so the secret arithmetic runs in WASM linear memory rather
@@ -32,7 +36,7 @@ This repository is a modular monorepo:
   [Astro](https://astro.build/) site with an in-browser encrypt/decrypt demo. See
   [`web/README.md`](web/README.md).
 
-The five implementations share one on-disk format and are byte-for-byte
+The six implementations share one on-disk format and are byte-for-byte
 cross-compatible: each can decrypt the others' `.mahi` files, verified across every
 KDF, MAC, and cipher variant. They differ in what their runtime allows (frontends,
 streaming, `no_std`, secret-memory protection); [`docs/implementations.md`](docs/implementations.md)

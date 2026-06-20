@@ -22,7 +22,7 @@ both run the verified Rust cipher compiled to WASM and work in memory.
 | Implementation | Role / frontends | Cipher engine | KDFs | Streaming | Secret memory |
 | --- | --- | --- | --- | --- | --- |
 | **Rust** | Reference; CLIs + 2 GUIs | native | `argon2`/`scrypt`/`pbkdf2` crates | Yes | `zeroize` (wiped on drop) |
-| **Go** | Port; CLIs | native | `golang.org/x/crypto` + stdlib | Yes | best-effort wipe |
+| **Go** | Port; CLIs | native | `golang.org/x/crypto` + stdlib | Yes | engine wipes keys; CLI mlocks password (off-heap) |
 | **Java** | Port; SDK only | native | Bouncy Castle | Yes | caller-managed |
 | **Python** | Port; CLIs | native | `argon2-cffi` + `hashlib` | Yes | caller-managed (`bytes` immutable) |
 | **C** | Port; CLIs | native | system `libargon2` + OpenSSL | Yes | engine wipes keys; CLI mlocks password |
@@ -69,7 +69,12 @@ under ASan/UBSan).
     use (`OPENSSL_cleanse` / `std.crypto.secureZero`, which the compiler cannot
     optimize away), and their CLIs hold the password in a page-aligned, `mlock`'d
     buffer that is kept out of swap and wiped on free.
-  - *Go* zeroes secret slices best-effort, but the language cannot guarantee a wipe.
+  - *Go* wipes the derived keys (a clear plus `runtime.KeepAlive` to defeat dead-
+    store elimination; Go's heap is non-moving, so the slice does not get relocated),
+    and its CLI holds the password in an off-heap `mmap`'d, `mlock`'d buffer (out of
+    swap, and not subject to growable-stack copies). This is close to C/Zig parity;
+    what Go lacks is a non-elidable wipe guaranteed by the language, the way Rust's
+    `zeroize` and C's `OPENSSL_cleanse` are.
   - *Java* and *Python* are libraries that leave the lifetime of secret buffers to
     the caller and do not wipe them (Python `bytes` are immutable, so they cannot
     even be wiped in place).

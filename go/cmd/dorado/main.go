@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/alleato-llc/dorado/go/engine"
+	"github.com/alleato-llc/dorado/go/secure"
 	"golang.org/x/term"
 )
 
@@ -162,11 +163,17 @@ func cmdCrypt(argv []string, encrypt bool) error {
 	if o.passwordStdin && o.in == "" {
 		return fmt.Errorf("with --password-stdin, pass the data via --in")
 	}
-	password, err := readPassword(o, encrypt)
+	// Hold the password in a locked, off-heap buffer (kept out of swap, wiped on
+	// free). See the secure package for the honest limits.
+	pwBuf, err := secure.Alloc(1024)
 	if err != nil {
 		return err
 	}
-	defer wipe(password) // best-effort; Go cannot guarantee a wipe (see README)
+	defer pwBuf.Free()
+	password, err := readPasswordInto(o, encrypt, pwBuf.Bytes())
+	if err != nil {
+		return err
+	}
 	in, closeIn, err := openIn(o.in)
 	if err != nil {
 		return err
@@ -275,10 +282,16 @@ func cmdInspect(argv []string) error {
 	return nil
 }
 
-func readPassword(o *opts, confirm bool) ([]byte, error) {
+// readPasswordInto reads the password into dst (a locked, off-heap buffer) and
+// returns the populated sub-slice. The temporary buffers it reads through (the
+// stdin line, term's read buffer) are wiped, though they transit the Go heap first.
+func readPasswordInto(o *opts, confirm bool, dst []byte) ([]byte, error) {
 	if o.passwordStdin {
 		line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
-		return []byte(strings.TrimRight(line, "\r\n")), nil
+		raw := []byte(strings.TrimRight(line, "\r\n"))
+		n := copy(dst, raw)
+		secure.Wipe(raw)
+		return dst[:n], nil
 	}
 	fmt.Fprint(os.Stderr, "Password: ")
 	pw, err := term.ReadPassword(int(os.Stdin.Fd()))
@@ -286,6 +299,7 @@ func readPassword(o *opts, confirm bool) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer secure.Wipe(pw)
 	if confirm {
 		fmt.Fprint(os.Stderr, "Confirm password: ")
 		again, err := term.ReadPassword(int(os.Stdin.Fd()))
@@ -293,6 +307,7 @@ func readPassword(o *opts, confirm bool) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
+		defer secure.Wipe(again)
 		if string(pw) != string(again) {
 			return nil, fmt.Errorf("passwords do not match")
 		}
@@ -300,7 +315,8 @@ func readPassword(o *opts, confirm bool) ([]byte, error) {
 	if len(pw) == 0 {
 		return nil, fmt.Errorf("password must not be empty")
 	}
-	return pw, nil
+	n := copy(dst, pw)
+	return dst[:n], nil
 }
 
 func openIn(path string) (io.Reader, func(), error) {
@@ -330,12 +346,11 @@ func dehex(s string) ([]byte, error) {
 	return hex.DecodeString(strings.Join(strings.Fields(s), ""))
 }
 
-// wipe best-effort zeroes a secret buffer. Go cannot guarantee the secret is
-// gone (the GC may have copied it, and the write may be elided); see README.
+// wipe best-effort zeroes a secret buffer (the raw key). Go cannot guarantee the
+// secret is gone, but secure.Wipe defeats trivial dead-store elimination; see the
+// secure package and the README.
 func wipe(b []byte) {
-	for i := range b {
-		b[i] = 0
-	}
+	secure.Wipe(b)
 }
 
 func parseTweak(s string) ([16]byte, error) {

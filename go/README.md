@@ -26,10 +26,23 @@ Module path: `github.com/alleato-llc/dorado/go`.
 ## Differences from the Rust version
 
 What the Rust port has that Go cannot match: the `no_std`/bare-metal levels (Go
-always links its runtime) and strong zeroization (Go's GC offers no destructor or
-copy guarantee). Where Go is cleaner: ecosystem interop is via the standard
-library interfaces (`cipher.Block`, `cipher.AEAD`, `hash.Hash`) rather than
-optional traits, and the streaming container is idiomatic with `io`.
+always links its runtime) and a non-elidable, language-guaranteed wipe (Rust's
+`zeroize` uses volatile writes the compiler may not drop; Go has no equivalent
+guarantee). Where Go is cleaner: ecosystem interop is via the standard library
+interfaces (`cipher.Block`, `cipher.AEAD`, `hash.Hash`) rather than optional traits,
+and the streaming container is idiomatic with `io`.
+
+## Secret handling
+
+The engine wipes the derived keys after use (a clear plus `runtime.KeepAlive` to
+defeat dead-store elimination; Go's heap is non-moving, so the slice is not
+relocated), and the `dorado` CLI holds the password in an off-heap, `mlock`'d buffer
+(the `secure` package: anonymous `mmap` memory kept out of swap and not subject to
+growable-stack copies, wiped and unmapped on free). On non-Unix platforms the
+`secure` buffer falls back to a wiped heap slice. This reduces exposure but is not a
+guarantee: the password still transits the Go heap and may arrive as an immutable
+string first, and `mlock` is best-effort. See `secure/secure.go` for the full
+caveats.
 
 ## Build and test
 

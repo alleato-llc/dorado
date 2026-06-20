@@ -8,9 +8,20 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"runtime"
 
 	"github.com/alleato-llc/dorado/go/threefish"
 )
+
+// wipeKeys zeroes derived key material and prevents the compiler from eliding the
+// clear as a dead store. Go's heap is non-moving, so a heap slice stays put; this
+// is a reliable best-effort wipe, not a language-level guarantee.
+func wipeKeys(b []byte) {
+	for i := range b {
+		b[i] = 0
+	}
+	runtime.KeepAlive(b)
+}
 
 const frameDomain = "DRDOchnk"
 
@@ -148,6 +159,7 @@ func EncryptPasswordStream(password []byte, opts PasswordOptions, r io.Reader, w
 	if err != nil {
 		return err
 	}
+	defer wipeKeys(keymat) // wipe the derived keys on the way out
 	encKey := keymat[:v.KeyLen()]
 	macKey := keymat[v.KeyLen():]
 
@@ -234,6 +246,7 @@ func DecryptPasswordStreamExpecting(password, expectedLabel []byte, r io.Reader,
 	if err != nil {
 		return err
 	}
+	defer wipeKeys(keymat) // wipe the derived keys on the way out
 	encKey := keymat[:h.Variant.KeyLen()]
 	macKey := keymat[h.Variant.KeyLen():]
 

@@ -6,8 +6,9 @@ not a cryptographer. Each entry says what the term means in general and, where
 relevant, how dorado uses it. None of this is a security claim; dorado is an
 educational, unaudited project.
 
-For how these pieces fit together, see `overview.md` (conceptual) and `spec.md`
-(the byte-level format).
+For how these pieces fit together, see
+[`../rust/docs/overview.md`](../rust/docs/overview.md) (conceptual) and
+[`spec.md`](spec.md) (the byte-level format).
 
 ## The cipher and modes
 

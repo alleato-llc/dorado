@@ -148,11 +148,12 @@ Dorado is not described as secure, production-ready, or guaranteed constant-time
 
 ## Documentation
 
-The `docs/` directory has three documents, by depth:
+Three documents, by depth. The conceptual tour is Rust-local; the wire format and
+glossary are shared across all four implementations, so they live at the repo root:
 
 - `docs/overview.md`: the conceptual tour for a general technologist, with diagrams of the layers and the encrypt and decrypt flows, and the threat model.
-- `docs/spec.md`: the precise, byte-level wire format and cipher constants, the single source of truth for the on-disk container.
-- `docs/glossary.md`: definitions of the concepts used here (block cipher, CTR, KDF, MAC, AEAD, and more) for a technical reader who is not a cryptographer.
+- [`../docs/spec.md`](../docs/spec.md): the precise, byte-level wire format and cipher constants, the single source of truth for the on-disk container.
+- [`../docs/glossary.md`](../docs/glossary.md): definitions of the concepts used here (block cipher, CTR, KDF, MAC, AEAD, and more) for a technical reader who is not a cryptographer.
 
 ## License
 

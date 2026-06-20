@@ -2,8 +2,9 @@
 
 This is the precise, byte-level reference for dorado's CLI container format and the
 cipher constants it relies on. It is the single source of truth for the on-disk
-format; the conceptual tour lives in `overview.md` and term definitions in
-`glossary.md`.
+format, shared by all four implementations; the conceptual tour lives in
+[`../rust/docs/overview.md`](../rust/docs/overview.md) and term definitions in
+[`glossary.md`](glossary.md).
 
 All multi-byte integers in the container are big-endian, and every field is
 byte-aligned (there is no bit packing). The current container format is version 4;

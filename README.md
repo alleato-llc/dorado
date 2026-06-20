@@ -11,7 +11,8 @@ This repository is a modular monorepo:
 - **[`rust/`](rust/)** — the primary implementation: a Cargo workspace with the
   cipher and primitives library, the construction engine, and the frontends (the
   `dorado` CLI, the `dorado-gui` app, and the `gyotaku` Skein hashing tool). Start
-  with [`rust/README.md`](rust/README.md); design docs are in [`rust/docs/`](rust/docs/).
+  with [`rust/README.md`](rust/README.md); the Rust-flavored conceptual tour is
+  [`rust/docs/overview.md`](rust/docs/overview.md).
 - **[`go/`](go/)** — a Go port that matches the Rust implementation: the same
   from-scratch primitives against the same vectors, the same on-disk format, and
   the same CLIs (no GUI). See [`go/README.md`](go/README.md).
@@ -31,7 +32,10 @@ The four implementations share one on-disk format and are byte-for-byte
 cross-compatible: each can decrypt the others' `.mahi` files, verified across every
 KDF, MAC, and cipher variant. They differ in what their runtime allows (frontends,
 streaming, `no_std`, secret-memory protection); [`docs/implementations.md`](docs/implementations.md)
-compares them side by side.
+compares them side by side. The project-wide docs live in [`docs/`](docs/): the
+shared wire format ([`spec.md`](docs/spec.md)), a [`glossary.md`](docs/glossary.md),
+and the [implementations](docs/implementations.md) comparison. The Rust-flavored
+conceptual tour stays in [`rust/docs/overview.md`](rust/docs/overview.md).
 
 ## Quick start
 

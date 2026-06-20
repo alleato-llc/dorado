@@ -38,7 +38,7 @@ not).
   language and checked against the same official vectors. The container header,
   chunk framing, KDF and MAC identifiers, and v4 label binding are identical, which
   is why a file made by one tool opens in the others. The format and constants are
-  specified once in [`rust/docs/spec.md`](../rust/docs/spec.md).
+  specified once in [`spec.md`](spec.md).
 - **The authentication.** Encrypt-then-MAC with a 32-byte tag per chunk, the header
   bound into chunk 0, and a constant-time tag compare. Tampering, wrong passwords,
   reordering, dropping, and truncation are rejected in every implementation.

@@ -39,11 +39,13 @@ without an explicit request.
 
 ## Architecture
 
-Two design docs back this up: `docs/overview.md` is the accessible, conceptual tour
-with diagrams (layers, flows, threat model), and `docs/spec.md` is the precise
-byte-level wire format and cipher constants. The on-disk format is documented only
-in `spec.md`; keep it in sync when the format changes (and bump `format::VERSION`).
-`docs/glossary.md` defines the terminology.
+Three docs back this up. `docs/overview.md` (Rust-local) is the accessible,
+conceptual tour with diagrams (layers, flows, threat model). The other two are
+project-wide, since all four implementations share the format, so they live at the
+repo root: `../docs/spec.md` is the precise byte-level wire format and cipher
+constants and the only place the on-disk format is documented (keep it in sync when
+the format changes, and bump `format::VERSION`), and `../docs/glossary.md` defines
+the terminology.
 
 
 There is a single generic ARX engine (`encrypt` / `decrypt` in `src/lib.rs`) that

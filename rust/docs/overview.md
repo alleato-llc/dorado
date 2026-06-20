@@ -3,8 +3,10 @@
 This is the conceptual tour of dorado: what it is, how the pieces fit, and what it
 does and does not protect. It is written for a general technologist, not a
 cryptographer, and it avoids byte-level detail. For the precise wire format and
-constants, see `spec.md`. For definitions of terms (block cipher, CTR, KDF, MAC,
-and so on), see `glossary.md`.
+constants, see [`../../docs/spec.md`](../../docs/spec.md). For definitions of terms
+(block cipher, CTR, KDF, MAC, and so on), see
+[`../../docs/glossary.md`](../../docs/glossary.md). Those two are project-wide (all
+four implementations share the format); this tour is the Rust-flavored one.
 
 Dorado is an educational, unaudited project. Nothing here is a security claim.
 

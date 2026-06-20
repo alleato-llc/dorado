@@ -6,6 +6,7 @@ import readline from "node:readline";
 import process from "node:process";
 import * as engine from "../engine/engine";
 import * as fmt from "../engine/format";
+import { wasmBackend } from "../engine/wasm-backend";
 import { hexToBytes, utf8, bytesToHex, fromUtf8 } from "../bytes";
 
 const options = {
@@ -119,7 +120,7 @@ async function cmdCrypt(o: Opts, encrypt: boolean): Promise<void> {
     const variant = ({ 32: fmt.T256, 64: fmt.T512, 128: fmt.T1024 } as Record<number, fmt.Variant>)[key.length];
     if (variant === undefined) throw new Error(`key must be 32, 64, or 128 bytes, got ${key.length}`);
     if (!o.iv) throw new Error("--iv is required with --key/--key-file");
-    const out = engine.rawCTR(variant, key, dehex(str(o.tweak)), dehex(str(o.iv)), readInput(o));
+    const out = engine.rawCTR(variant, key, dehex(str(o.tweak)), dehex(str(o.iv)), readInput(o), wasmBackend);
     writeOutput(o, out);
     return;
   }
@@ -136,10 +137,10 @@ async function cmdCrypt(o: Opts, encrypt: boolean): Promise<void> {
       chunkSize: int(str(o["chunk-kib"])) * 1024,
       label: o.label ? utf8(str(o.label)) : new Uint8Array(0),
     };
-    writeOutput(o, await engine.encryptPasswordBytes(password, opts, readInput(o)));
+    writeOutput(o, await engine.encryptPasswordBytes(password, opts, readInput(o), wasmBackend));
   } else {
     const expect = o["expect-label"] ? utf8(str(o["expect-label"])) : undefined;
-    writeOutput(o, await engine.decryptPasswordBytes(password, readInput(o), expect));
+    writeOutput(o, await engine.decryptPasswordBytes(password, readInput(o), expect, wasmBackend));
   }
 }
 

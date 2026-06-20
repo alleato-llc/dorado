@@ -2,10 +2,10 @@
 // over Uint8Array (the output is byte-identical to the streaming Rust/Go ports,
 // so .mahi files are cross-compatible). Async because the KDFs and HMAC are.
 
-import { newThreefish256, newThreefish512, newThreefish1024, Threefish } from "../threefish";
 import { concat, equalBytes } from "../bytes";
 import { derive, validate } from "./kdf";
 import { macTag, macVerify } from "./mac";
+import { type CipherBackend, tsBackend } from "./backend";
 import {
   type Header,
   type KDFParams,
@@ -24,7 +24,6 @@ import {
   KDF_ARGON2ID,
   TAG_LEN,
   T256,
-  T512,
 } from "./format";
 
 const FRAME_DOMAIN = "DRDOchnk";
@@ -49,34 +48,6 @@ export function defaultOptions(): PasswordOptions {
   };
 }
 
-function newCipher(v: Variant, key: Uint8Array, tweak: Uint8Array): Threefish {
-  if (v === T256) return newThreefish256(key, tweak);
-  if (v === T512) return newThreefish512(key, tweak);
-  return newThreefish1024(key, tweak);
-}
-
-function incrementBE(c: Uint8Array): void {
-  for (let i = c.length - 1; i >= 0; i--) {
-    c[i] = (c[i] + 1) & 0xff;
-    if (c[i] !== 0) break;
-  }
-}
-
-// Continuous CTR over the whole buffer, in place (the same keystream as the
-// Rust/Go chunked continuous counter).
-function ctrApply(cipher: Threefish, iv: Uint8Array, data: Uint8Array): void {
-  const bs = cipher.blockBytes;
-  const counter = iv.slice();
-  const ks = new Uint8Array(bs);
-  for (let off = 0; off < data.length; off += bs) {
-    ks.set(counter);
-    cipher.encryptBlock(ks);
-    const n = Math.min(bs, data.length - off);
-    for (let j = 0; j < n; j++) data[off + j] ^= ks[j];
-    incrementBE(counter);
-  }
-}
-
 function u32be(v: number): Uint8Array {
   return new Uint8Array([(v >>> 24) & 0xff, (v >>> 16) & 0xff, (v >>> 8) & 0xff, v & 0xff]);
 }
@@ -97,6 +68,7 @@ export async function encryptPasswordBytes(
   password: Uint8Array,
   opts: PasswordOptions,
   plaintext: Uint8Array,
+  backend: CipherBackend = tsBackend,
 ): Promise<Uint8Array> {
   if (opts.label.length > MAX_LABEL_LEN) throw new Error("label too long");
   const v = opts.variant;
@@ -119,8 +91,7 @@ export async function encryptPasswordBytes(
   };
   const headerBytes = marshalHeader(header);
 
-  const ct = plaintext.slice();
-  ctrApply(newCipher(v, encKey, opts.tweak), iv, ct);
+  const ct = backend.ctr(v, encKey, opts.tweak, iv, plaintext);
 
   const parts: Uint8Array[] = [headerBytes];
   const cs = opts.chunkSize;
@@ -128,7 +99,7 @@ export async function encryptPasswordBytes(
   for (let i = 0; i < numChunks; i++) {
     const chunk = ct.subarray(i * cs, Math.min((i + 1) * cs, ct.length));
     const isLast = i === numChunks - 1;
-    const tag = await macTag(opts.mac, macKey, frameAAD(headerBytes, i, isLast, chunk));
+    const tag = await macTag(backend, opts.mac, macKey, frameAAD(headerBytes, i, isLast, chunk));
     parts.push(new Uint8Array([isLast ? 1 : 0]), u32be(chunk.length), chunk, tag);
   }
   return concat(...parts);
@@ -138,6 +109,7 @@ export async function decryptPasswordBytes(
   password: Uint8Array,
   data: Uint8Array,
   expectedLabel?: Uint8Array,
+  backend: CipherBackend = tsBackend,
 ): Promise<Uint8Array> {
   const { header, offset } = readHeader(data);
   if (expectedLabel !== undefined && !equalBytes(expectedLabel, header.label)) {
@@ -169,7 +141,7 @@ export async function decryptPasswordBytes(
     pos += ctLen;
     const tag = data.subarray(pos, pos + TAG_LEN);
     pos += TAG_LEN;
-    if (!(await macVerify(header.mac, macKey, frameAAD(headerBytes, index, isLast, ct), tag))) {
+    if (!(await macVerify(backend, header.mac, macKey, frameAAD(headerBytes, index, isLast, ct), tag))) {
       throw new Error("authentication failed (wrong password, corruption, or tampering)");
     }
     chunks.push(ct.slice());
@@ -179,8 +151,7 @@ export async function decryptPasswordBytes(
   }
 
   const ciphertext = concat(...chunks);
-  ctrApply(newCipher(header.variant, encKey, header.tweak), header.iv, ciphertext);
-  return ciphertext;
+  return backend.ctr(header.variant, encKey, header.tweak, header.iv, ciphertext);
 }
 
 export interface ContainerInfo {
@@ -208,9 +179,14 @@ export function inspect(data: Uint8Array): ContainerInfo {
   };
 }
 
-export function rawCTR(v: Variant, key: Uint8Array, tweak: Uint8Array, iv: Uint8Array, data: Uint8Array): Uint8Array {
+export function rawCTR(
+  v: Variant,
+  key: Uint8Array,
+  tweak: Uint8Array,
+  iv: Uint8Array,
+  data: Uint8Array,
+  backend: CipherBackend = tsBackend,
+): Uint8Array {
   if (iv.length !== blockLen(v)) throw new Error(`iv must be ${blockLen(v)} bytes, got ${iv.length}`);
-  const out = data.slice();
-  ctrApply(newCipher(v, key, tweak), iv, out);
-  return out;
+  return backend.ctr(v, key, tweak, iv, data);
 }

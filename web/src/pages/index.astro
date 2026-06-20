@@ -33,7 +33,7 @@ const tools = [
 // in the lead text). Kept in sync with docs/implementations.md.
 const cmpCols = ["Role / frontends", "Cipher engine", "Key derivation", "Streaming", "Secret memory"];
 const cmpRows = [
-  { name: "Rust", ref: true, cells: ["Reference; CLIs + 2 GUIs", "native", "argon2 / scrypt / pbkdf2 crates", "Yes", "wiped on drop (zeroize)"] },
+  { name: "Rust", ref: true, cells: ["Reference; CLIs + 2 GUIs", "native", "argon2 / scrypt / pbkdf2 crates", "Yes", "zeroize wipe + mlock'd password"] },
   { name: "Go", cells: ["Port; CLIs", "native", "x/crypto + stdlib", "Yes", "wipes keys; mlocks password (off-heap)"] },
   { name: "Java", cells: ["Port; SDK only", "native", "Bouncy Castle", "Yes", "caller-managed"] },
   { name: "Python", cells: ["Port; CLIs", "native", "argon2-cffi + hashlib", "Yes", "caller-managed"] },

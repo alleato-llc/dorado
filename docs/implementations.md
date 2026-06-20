@@ -21,7 +21,7 @@ both run the verified Rust cipher compiled to WASM and work in memory.
 
 | Implementation | Role / frontends | Cipher engine | KDFs | Streaming | Secret memory |
 | --- | --- | --- | --- | --- | --- |
-| **Rust** | Reference; CLIs + 2 GUIs | native | `argon2`/`scrypt`/`pbkdf2` crates | Yes | `zeroize` (wiped on drop) |
+| **Rust** | Reference; CLIs + 2 GUIs | native | `argon2`/`scrypt`/`pbkdf2` crates | Yes | `zeroize` (wiped on drop) + mlock'd password |
 | **Go** | Port; CLIs | native | `golang.org/x/crypto` + stdlib | Yes | engine wipes keys; CLI mlocks password (off-heap) |
 | **Java** | Port; SDK only | native | Bouncy Castle | Yes | caller-managed |
 | **Python** | Port; CLIs | native | `argon2-cffi` + `hashlib` | Yes | caller-managed (`bytes` immutable) |
@@ -64,7 +64,10 @@ under ASan/UBSan).
   Python, and TypeScript require a managed runtime.
 - **Secret handling.** This is the sharpest difference, and the reason the browser
   is the weakest tier:
-  - *Rust* wipes secret buffers and the cipher's key schedule on drop (`zeroize`).
+  - *Rust* wipes secret buffers and the cipher's key schedule on drop (`zeroize`),
+    and its CLI `mlock`s the password buffer out of swap (via the `region` crate, so
+    `#![forbid(unsafe_code)]` still holds). This is the strongest tier: a
+    non-elidable wipe *and* a lock.
   - *C* and *Zig* wipe the derived keys and the cipher's expanded key schedule after
     use (`OPENSSL_cleanse` / `std.crypto.secureZero`, which the compiler cannot
     optimize away), and their CLIs hold the password in a page-aligned, `mlock`'d

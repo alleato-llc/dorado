@@ -117,11 +117,14 @@ Note the scrypt quirk in `kdf.rs`: scrypt's `Params::new` caps its `len` field a
 length come from the output slice, or the 1024 variant (160 key bytes) fails.
 
 Secrets in the CLI (the password, the KDF output, derived keys) are held in
-`zeroize::Zeroizing` buffers and wiped on drop. The library now also wipes the
-cipher's expanded key schedule: with the default `zeroize` feature, each
-`Threefish*` has a `Drop` that zeroes its `ek`/`et` arrays (see `zeroize_impls` in
-`lib.rs`). `--no-default-features` drops the `zeroize` dependency for the bare,
-dependency-free core.
+`zeroize::Zeroizing` buffers and wiped on drop. The CLI additionally `mlock`s the
+password buffer into RAM (out of swap) for its lifetime via the `region` crate
+(`LockedPassword` in `main.rs`); `region`'s API is safe, so the CLI keeps
+`#![forbid(unsafe_code)]`, and the lock is best-effort (the bytes are still wiped if
+the OS refuses the lock). The library also wipes the cipher's expanded key schedule:
+with the default `zeroize` feature, each `Threefish*` has a `Drop` that zeroes its
+`ek`/`et` arrays (see `zeroize_impls` in `lib.rs`). `--no-default-features` drops the
+`zeroize` dependency for the bare, dependency-free core.
 
 The cipher crate is `no_std` via `#![cfg_attr(not(test), no_std)]`, and supports
 all three environment levels through the `alloc` feature (default on):

@@ -17,12 +17,41 @@
 
 use std::fs;
 use std::io::{self, BufReader, BufWriter, Read, Write};
+use std::ops::Deref;
 use std::process::ExitCode;
 
 use clap::{ArgGroup, Args as ClapArgs, Parser, Subcommand};
 use zeroize::{Zeroize, Zeroizing};
 
 use dorado_engine as engine;
+
+/// A password held in a `zeroize`-wiped buffer that is also `mlock`'d into RAM (out
+/// of swap) for its lifetime. The lock is best-effort: if the OS refuses (for
+/// example `RLIMIT_MEMLOCK` on a locked-down host) the bytes are still wiped on
+/// drop. Field order matters: `pw` drops (and zeroizes) before `_guard` unlocks, so
+/// the wipe happens while the pages are still locked.
+struct LockedPassword {
+    pw: Zeroizing<Vec<u8>>,
+    _guard: Option<region::LockGuard>,
+}
+
+impl LockedPassword {
+    fn new(pw: Zeroizing<Vec<u8>>) -> Self {
+        let guard = if pw.is_empty() {
+            None
+        } else {
+            region::lock(pw.as_ptr(), pw.len()).ok()
+        };
+        LockedPassword { pw, _guard: guard }
+    }
+}
+
+impl Deref for LockedPassword {
+    type Target = [u8];
+    fn deref(&self) -> &[u8] {
+        &self.pw
+    }
+}
 use dorado_engine::{KdfParams, MacId, PrfId, Variant};
 
 #[derive(Parser)]
@@ -406,7 +435,7 @@ fn guard_password_stdin(args: &Args) -> Result<(), String> {
     Ok(())
 }
 
-fn read_password(args: &Args, confirm: bool) -> Result<Zeroizing<Vec<u8>>, String> {
+fn read_password(args: &Args, confirm: bool) -> Result<LockedPassword, String> {
     if args.password_stdin {
         let mut line = String::new();
         io::stdin()
@@ -414,7 +443,7 @@ fn read_password(args: &Args, confirm: bool) -> Result<Zeroizing<Vec<u8>>, Strin
             .map_err(|e| e.to_string())?;
         let pw = Zeroizing::new(line.trim_end_matches(['\n', '\r']).as_bytes().to_vec());
         line.zeroize();
-        return Ok(pw);
+        return Ok(LockedPassword::new(pw));
     }
 
     let pw = Zeroizing::new(
@@ -435,7 +464,7 @@ fn read_password(args: &Args, confirm: bool) -> Result<Zeroizing<Vec<u8>>, Strin
     if pw.is_empty() {
         return Err("password must not be empty".into());
     }
-    Ok(pw)
+    Ok(LockedPassword::new(pw))
 }
 
 #[cfg(test)]

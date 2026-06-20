@@ -1,0 +1,17 @@
+[package]
+name = "dorado-wasm"
+description = "WebAssembly bindings for the dorado cipher and hashes, for the TS engine and browser demo."
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+dorado = { path = "../crates/dorado" }
+wasm-bindgen = "0.2"
+
+[profile.release]
+opt-level = "s"
+lto = true

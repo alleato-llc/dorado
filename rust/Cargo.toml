@@ -8,7 +8,7 @@ members = [
     "crates/dorado-gui",
     "crates/dorado-gyotaku",
 ]
-exclude = ["fuzz"]
+exclude = ["fuzz", "wasm"]
 
 [workspace.package]
 version = "0.1.0"

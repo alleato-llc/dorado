@@ -1,0 +1,19 @@
+---
+import Layout from "../layouts/Layout.astro";
+// Render the project glossary (docs/glossary.md) as a page, so the terms are
+// navigable on the site. The markdown is the single source; this page does not
+// copy it. Astro compiles the imported markdown to a component.
+import { Content } from "../../../docs/glossary.md";
+---
+
+<Layout
+  title="dorado glossary — cryptography terms"
+  description="Plain-language definitions of the cipher, mode, KDF, MAC, AEAD, and engineering terms used in dorado, for a technical reader who is not a cryptographer."
+>
+  <section id="glossary">
+    <div class="wrap prose">
+      <p class="back"><a href="/">&larr; dorado</a></p>
+      <Content />
+    </div>
+  </section>
+</Layout>

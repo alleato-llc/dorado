@@ -8,22 +8,25 @@ const REPO = "https://github.com/nycjv321/dorado";
 const tools = [
   {
     name: "dorado",
-    badge: "CLI",
-    body: "Encrypt and decrypt over files or stdin, streaming in constant memory. Raw-key CTR, or a password-derived authenticated container.",
+    badge: "encrypt / decrypt",
+    langs: "Rust · Go · TypeScript · browser",
+    body: "The cipher tool: encrypt and decrypt files or stdin, as bare raw-key CTR or a password-derived authenticated container. The command-line interface is ported to three languages plus the in-browser demo, all reading the same files.",
   },
   {
     name: "dorado-gui",
-    badge: "app",
-    body: "The password tool in a window, built with iced. Pick a source and a direction, enter a password, run. Key derivation runs off the UI thread.",
+    badge: "desktop app",
+    langs: "Rust only",
+    body: "The password tool in a window, built with iced. Pick a source and a direction, enter a password, run; key derivation runs off the UI thread. The one frontend that is Rust-only.",
   },
   {
     name: "gyotaku",
-    badge: "hash",
-    body: "A standalone Skein-512 hashing tool, like sha256sum but Skein. Named for the Japanese art of fish-printing: a fingerprint of a file.",
+    badge: "hashing",
+    langs: "Rust · Go · TypeScript",
+    body: "A standalone Skein-512 hashing tool, like sha256sum but Skein. Kept separate from the cipher tools so a hash needs no key stack. Named for the Japanese art of fish-printing: a fingerprint of a file.",
   },
 ];
 
-const impls = ["Rust", "Go", "TS · Node", "TS · Browser"];
+const impls = ["Rust", "Go", "TypeScript · Node", "TypeScript · Browser"];
 
 // One cipher and one format, four runtimes. This table is the differences only;
 // the primitives, the wire format, and cross-compatibility are the same in all
@@ -66,17 +69,18 @@ const primitives = [
 
 <Layout
   title="dorado — Threefish, from scratch"
-  description="An educational, from-scratch Rust implementation of Threefish (the cipher behind Skein), with a small honest tool stack: CTR, password containers, and a Skein hash tool."
+  description="An educational, from-scratch implementation of Threefish (the cipher behind Skein), with a small honest tool stack: CTR, an authenticated password container, and a Skein hash tool, in Rust, Go, and TypeScript."
 >
   <section class="hero">
     <div class="wrap">
-      <span class="eyebrow">Educational · Unaudited · Zero-dependency core</span>
+      <span class="eyebrow">Educational · Unaudited · Built from scratch</span>
       <h1>dorado</h1>
-      <p class="tagline">Threefish, built from scratch in Rust.</p>
+      <p class="tagline">Threefish, built from scratch.</p>
       <p class="lead">
         The tweakable block cipher at the heart of the Skein hash function, all
         three sizes, with a small and honest tool stack on top: counter mode, an
-        authenticated streaming password container, and a Skein hashing tool.
+        authenticated streaming password container, and a Skein hashing tool. One
+        cipher and one file format, implemented in Rust, Go, and TypeScript.
       </p>
       <div class="cta">
         <a class="btn primary" href={REPO}>View the source</a>
@@ -91,9 +95,9 @@ const primitives = [
     <div class="wrap">
       <h2>Three tools, one cipher</h2>
       <p class="sub">
-        Everything is built on the same Threefish core. The cryptography lives in
-        a zero-dependency library; the frontends are thin clients of one shared
-        construction.
+        The project is the cipher plus a few tools that read one shared file
+        format. The command-line tool and the hasher are ported across languages;
+        the desktop app is the one Rust-only frontend.
       </p>
       <div class="grid">
         {
@@ -104,6 +108,7 @@ const primitives = [
                 <span class="badge">{t.badge}</span>
               </h3>
               <p>{t.body}</p>
+              <p class="card-langs">{t.langs}</p>
             </div>
           ))
         }
@@ -253,10 +258,12 @@ const primitives = [
 
   <section id="source">
     <div class="wrap">
-      <h2>Try it</h2>
+      <h2>Build and run</h2>
       <p class="sub">
-        The Rust workspace lives in <code>rust/</code>. Build the binaries and run
-        them; everything streams in constant memory.
+        The reference build is the Rust workspace in <code>rust/</code>, streaming
+        in constant memory. The Go and TypeScript ports build the same
+        <code>dorado</code> and <code>gyotaku</code> commands over the same files
+        (see the comparison above).
       </p>
       <pre class="snippet mono"><code>cd rust
 cargo build --release --workspace

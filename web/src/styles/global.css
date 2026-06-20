@@ -255,6 +255,14 @@ section .sub {
   font-size: 0.94rem;
 }
 
+.card p.card-langs {
+  margin: 0.7rem 0 0;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--border);
+  font: 600 0.72rem/1.2 ui-monospace, monospace;
+  color: var(--gold);
+}
+
 /* layered "how it works" list */
 
 .layers {
@@ -534,6 +542,65 @@ pre.snippet {
 .cmp tbody tr:last-child th,
 .cmp tbody tr:last-child td {
   border-bottom: none;
+}
+
+/* ---------- prose (rendered markdown, e.g. the glossary) ---------- */
+
+.prose {
+  max-width: 48rem;
+}
+
+.prose .back {
+  font-size: 0.9rem;
+  margin: 0 0 1.5rem;
+}
+
+.prose h1 {
+  font-size: 1.9rem;
+  margin: 0 0 0.8rem;
+}
+
+.prose h2 {
+  font-size: 1.3rem;
+  margin: 2rem 0 0.6rem;
+  padding-top: 1.2rem;
+  border-top: 1px solid var(--border);
+}
+
+.prose h3 {
+  font-size: 1.05rem;
+  margin: 1.4rem 0 0.4rem;
+}
+
+.prose p,
+.prose li {
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.prose ul {
+  padding-left: 1.2rem;
+}
+
+.prose li {
+  margin: 0.35rem 0;
+}
+
+.prose strong {
+  color: var(--text);
+}
+
+.prose code {
+  font-family: ui-monospace, monospace;
+  font-size: 0.88em;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 0.08rem 0.32rem;
+}
+
+.prose a {
+  color: var(--accent);
 }
 
 /* ---------- footer ---------- */

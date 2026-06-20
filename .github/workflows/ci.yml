@@ -116,6 +116,20 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: pytest -q
 
+  # Build and test the C port (SDK + CLIs). Argon2 from libargon2, scrypt/PBKDF2/
+  # HMAC from OpenSSL, both via pkg-config. Cross-compat tests decrypt fixtures
+  # made by the Rust CLI, committed in the repo.
+  c:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: c
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y libargon2-dev libssl-dev pkg-config
+      - run: make
+      - run: make test
+
   # Build the landing page in web/ so a broken site fails CI.
   web:
     runs-on: ubuntu-latest

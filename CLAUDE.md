@@ -35,6 +35,14 @@ This is the dorado monorepo. It has several parts:
   `hmac`. pytest suite with cross-compat fixtures made by the Rust CLI in
   `tests/fixtures/`. Run `pytest` from inside `python/` (in a venv with `pip install
   -e ".[dev]"`).
+- `c/` — a C port (C17) with an SDK (`libdorado.a`) and the `dorado`/`gyotaku`
+  CLIs: same from-scratch primitives, same on-disk format (cross-compatible),
+  streaming over `FILE *` in constant memory like the Rust reference. The KDFs are
+  delegated to system libraries (no vendoring): Argon2id from `libargon2`,
+  scrypt/PBKDF2/HMAC from OpenSSL, both via `pkg-config`. Engine functions return
+  `NULL` or a static error string. `make test` (KATs + cross-compat fixtures from
+  the Rust CLI, also run under ASan/UBSan). Needs `libargon2` + OpenSSL installed
+  (`brew install argon2 openssl@3` / `apt-get install libargon2-dev libssl-dev`).
 - `rust/wasm/` — the verified Rust cipher compiled to WebAssembly via
   `wasm-bindgen` (a separate crate, excluded from the `rust/` workspace). It exports
   only the cipher/hash primitives (CTR, Skein, BLAKE3), not the engine; the engine
@@ -46,9 +54,9 @@ This is the dorado monorepo. It has several parts:
   are in `web/CLAUDE.md`. Run npm from inside `web/`.
 
 When changing the wire format or an algorithm, keep `rust/`, `go/`, `ts/`, `java/`,
-and `python/` in sync or cross-compatibility breaks. The six implementations are
-byte-for-byte cross-compatible and that property is tested. The Rust implementation
-is the reference and the baseline for vectors and fixtures.
+`python/`, and `c/` in sync or cross-compatibility breaks. The seven implementations
+are byte-for-byte cross-compatible and that property is tested. The Rust
+implementation is the reference and the baseline for vectors and fixtures.
 
 CI lives at the repo root in `.github/workflows/ci.yml`. The root `LICENSE` (MIT)
 covers the whole repository.

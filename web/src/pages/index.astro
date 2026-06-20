@@ -27,13 +27,13 @@ const tools = [
   },
 ];
 
-const impls = ["Rust", "Go", "Java", "Python", "TypeScript · Node", "TypeScript · Browser"];
+const impls = ["Rust", "Go", "Java", "Python", "C", "TypeScript · Node", "TypeScript · Browser"];
 
-// One cipher and one format, six runtimes. This table is the differences only;
+// One cipher and one format, seven runtimes. This table is the differences only;
 // the primitives, the wire format, and cross-compatibility are the same in all
 // (stated in the lead text). Kept in sync with docs/implementations.md.
 const comparison = [
-  { label: "Role", cells: ["Reference", "Port", "SDK only", "Port", "Port", "Same code, in-page"] },
+  { label: "Role", cells: ["Reference", "Port", "SDK only", "Port", "Port", "Port", "Same code, in-page"] },
   {
     label: "Frontends",
     cells: [
@@ -42,22 +42,23 @@ const comparison = [
       "library only",
       "dorado + gyotaku CLIs",
       "dorado + gyotaku CLIs",
+      "dorado + gyotaku CLIs",
       "encrypt + hash demo",
     ],
   },
   {
     label: "Cipher engine",
-    cells: ["native Rust", "native Go", "native Java", "native Python", "WASM (Rust core)", "WASM (Rust core)"],
+    cells: ["native Rust", "native Go", "native Java", "native Python", "native C", "WASM (Rust core)", "WASM (Rust core)"],
   },
   {
     label: "Key derivation",
-    cells: ["argon2 / scrypt / pbkdf2 crates", "x/crypto + stdlib", "Bouncy Castle", "argon2-cffi + hashlib", "hash-wasm", "hash-wasm"],
+    cells: ["argon2 / scrypt / pbkdf2 crates", "x/crypto + stdlib", "Bouncy Castle", "argon2-cffi + hashlib", "libargon2 + OpenSSL", "hash-wasm", "hash-wasm"],
   },
   {
     label: "Streaming (files larger than RAM)",
-    cells: ["Yes", "Yes", "Yes", "Yes", "No (in-memory)", "No (in-memory)"],
+    cells: ["Yes", "Yes", "Yes", "Yes", "Yes", "No (in-memory)", "No (in-memory)"],
   },
-  { label: "no_std / bare-metal", cells: ["Yes", "No", "No", "No", "No", "No"] },
+  { label: "no_std / bare-metal", cells: ["Yes", "No", "No", "No", "No", "No", "No"] },
   {
     label: "Secret memory",
     cells: [
@@ -65,13 +66,14 @@ const comparison = [
       "best-effort wipe",
       "caller-managed",
       "caller-managed (immutable)",
+      "caller-managed",
       "locked off-heap buffers",
       "off-heap WASM transients only",
     ],
   },
   {
     label: "Constant-time discipline",
-    cells: ["documented", "best-effort", "not in a JIT", "interpreted", "not in a JIT", "not in a JIT"],
+    cells: ["documented", "best-effort", "not in a JIT", "interpreted", "best-effort", "not in a JIT", "not in a JIT"],
   },
 ];
 
@@ -257,14 +259,14 @@ const primitives = [
 
   <section id="implementations">
     <div class="wrap">
-      <h2>One cipher, six implementations</h2>
+      <h2>One cipher, seven implementations</h2>
       <p class="sub">
-        Dorado is written six ways: Rust (the reference), Go, Java (a library only),
-        Python, and a TypeScript port that runs both in Node and in your browser. All
-        reimplement the same primitives from scratch, share the same on-disk format,
-        and are byte-for-byte cross-compatible, so a file made by one opens in the
-        others. What differs is what each runtime allows. (The last two columns are
-        the same code; only the runtime changes.)
+        Dorado is written seven ways: Rust (the reference), Go, Java (a library
+        only), Python, C, and a TypeScript port that runs both in Node and in your
+        browser. All reimplement the same primitives from scratch, share the same
+        on-disk format, and are byte-for-byte cross-compatible, so a file made by one
+        opens in the others. What differs is what each runtime allows. (The last two
+        columns are the same code; only the runtime changes.)
       </p>
       <div class="cmp-scroll">
         <table class="cmp">

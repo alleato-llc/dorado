@@ -12,6 +12,12 @@ must say so explicitly, since they affect cross-compatibility across all ports.
 
 ## [Unreleased]
 
+### Fixed
+
+- `bench/report.html` was regenerated empty; rebuilt it from `results.json` with the
+  data embedded. Also reworded `report_template.html`'s comment (synced from Gota) so
+  the substitution tokens it documented no longer get replaced into the comment.
+
 ### Added
 
 - `bench/`: an HTML report (`report.py` + `report_template.html`) that renders

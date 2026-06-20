@@ -6,13 +6,12 @@
 <title>__TITLE__</title>
 <!--
   Copied from Gota (https://github.com/alleato-llc/gota); change it there and re-copy.
-  Gota report template. report.py fills in three tokens and writes a finished,
-  self-contained report.html:
-    __TITLE__      the report title (or a default)
-    __DATA__       the results.json embedded as a JS object literal, or `null`
-    __GENERATED__  the generation date
-  Everything else is static. Edit this file to restyle the report; the script does
-  not need to change.
+  Gota report template. report.py substitutes three things into this file and writes a
+  finished, self-contained report.html: the report title, the embedded results.json
+  (a JS object literal, or null for an empty viewer), and the generation date. The
+  placeholder tokens are intentionally not written out here, so the substitution does
+  not pollute this comment. Everything else is static; edit this file to restyle the
+  report, and the script does not need to change.
 -->
 <style>
   :root {

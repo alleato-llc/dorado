@@ -3,16 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Gota benchmark report</title>
+<title>dorado: from-scratch primitive throughput</title>
 <!--
   Copied from Gota (https://github.com/alleato-llc/gota); change it there and re-copy.
-  Gota report template. report.py fills in three tokens and writes a finished,
-  self-contained report.html:
-    Gota benchmark report      the report title (or a default)
-    null       the results.json embedded as a JS object literal, or `null`
-    2026-06-20  the generation date
-  Everything else is static. Edit this file to restyle the report; the script does
-  not need to change.
+  Gota report template. report.py substitutes three things into this file and writes a
+  finished, self-contained report.html: the report title, the embedded results.json
+  (a JS object literal, or null for an empty viewer), and the generation date. The
+  placeholder tokens are intentionally not written out here, so the substitution does
+  not pollute this comment. Everything else is static; edit this file to restyle the
+  report, and the script does not need to change.
 -->
 <style>
   :root {
@@ -99,7 +98,7 @@
 </style>
 </head>
 <body>
-  <h1 id="title">Gota benchmark report</h1>
+  <h1 id="title">dorado: from-scratch primitive throughput</h1>
   <div class="muted" id="subtitle"></div>
 
   <div class="card">
@@ -118,7 +117,7 @@
   </footer>
 
 <script>
-const EMBEDDED = null;
+const EMBEDDED = {"machine": "Apple M4 Max", "os": "Darwin arm64", "date": "2026-06-20", "git_commit": "559b449", "params": {"buffer_bytes": 65536, "warmup_seconds": 0.5, "measure_seconds": 2.0}, "units": "MB/s (decimal, 1e6 bytes)", "results": [{"impl": "rust", "bench": "threefish-256-ctr", "mbps": 84.31, "iters": 2560}, {"impl": "rust", "bench": "threefish-512-ctr", "mbps": 117.25, "iters": 3584}, {"impl": "rust", "bench": "threefish-1024-ctr", "mbps": 136.36, "iters": 4096}, {"impl": "rust", "bench": "skein-512", "mbps": 115.14, "iters": 3584}, {"impl": "rust", "bench": "blake3", "mbps": 1185.04, "iters": 36864}, {"impl": "c", "bench": "threefish-256-ctr", "mbps": 79.91, "iters": 2432}, {"impl": "c", "bench": "threefish-512-ctr", "mbps": 92.18, "iters": 2816}, {"impl": "c", "bench": "threefish-1024-ctr", "mbps": 131.69, "iters": 4096}, {"impl": "c", "bench": "skein-512", "mbps": 90.66, "iters": 2816}, {"impl": "c", "bench": "blake3", "mbps": 1186.93, "iters": 36864}, {"impl": "zig", "bench": "threefish-256-ctr", "mbps": 75.39, "iters": 2304}, {"impl": "zig", "bench": "threefish-512-ctr", "mbps": 24.08, "iters": 768}, {"impl": "zig", "bench": "threefish-1024-ctr", "mbps": 52.25, "iters": 1664}, {"impl": "zig", "bench": "skein-512", "mbps": 24.2, "iters": 768}, {"impl": "zig", "bench": "blake3", "mbps": 1174.02, "iters": 36864}, {"impl": "go", "bench": "threefish-256-ctr", "mbps": 77.94, "iters": 2304}, {"impl": "go", "bench": "threefish-512-ctr", "mbps": 90.52, "iters": 2816}, {"impl": "go", "bench": "threefish-1024-ctr", "mbps": 88.0, "iters": 2816}, {"impl": "go", "bench": "skein-512", "mbps": 83.81, "iters": 2560}, {"impl": "go", "bench": "blake3", "mbps": 354.38, "iters": 10752}, {"impl": "java", "bench": "threefish-256-ctr", "mbps": 64.1, "iters": 1920}, {"impl": "java", "bench": "threefish-512-ctr", "mbps": 83.15, "iters": 2560}, {"impl": "java", "bench": "threefish-1024-ctr", "mbps": 96.31, "iters": 3072}, {"impl": "java", "bench": "skein-512", "mbps": 83.1, "iters": 2560}, {"impl": "java", "bench": "blake3", "mbps": 467.03, "iters": 14336}, {"impl": "python", "bench": "threefish-256-ctr", "mbps": 0.58, "iters": 18}, {"impl": "python", "bench": "threefish-512-ctr", "mbps": 0.66, "iters": 21}, {"impl": "python", "bench": "threefish-1024-ctr", "mbps": 0.65, "iters": 20}, {"impl": "python", "bench": "skein-512", "mbps": 0.65, "iters": 20}, {"impl": "python", "bench": "blake3", "mbps": 1.34, "iters": 44}, {"impl": "ts", "bench": "threefish-256-ctr", "mbps": 3.22, "iters": 104}, {"impl": "ts", "bench": "threefish-512-ctr", "mbps": 3.27, "iters": 104}, {"impl": "ts", "bench": "threefish-1024-ctr", "mbps": 3.09, "iters": 96}, {"impl": "ts", "bench": "skein-512", "mbps": 3.08, "iters": 96}, {"impl": "ts", "bench": "blake3", "mbps": 62.97, "iters": 1920}]};
 
 // A small, distinct, colorblind-friendly-ish palette assigned per implementation.
 const PALETTE = ["#6366f1", "#06b6d4", "#10b981", "#f59e0b", "#f43f5e", "#8b5cf6", "#14b8a6", "#f97316", "#0ea5e9", "#84cc16"];

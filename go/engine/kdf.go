@@ -3,7 +3,6 @@ package engine
 import (
 	"crypto/pbkdf2"
 	"crypto/sha256"
-	"errors"
 	"fmt"
 
 	"golang.org/x/crypto/argon2"
@@ -23,7 +22,7 @@ func derive(p KDFParams, password, salt []byte, outLen int) ([]byte, error) {
 	case Pbkdf2:
 		return pbkdf2.Key(sha256.New, string(password), salt, int(p.Rounds), outLen)
 	}
-	return nil, fmt.Errorf("unknown kdf kind %d", p.Kind)
+	return nil, fmt.Errorf("%w: unknown kdf kind %d", ErrInvalidParams, p.Kind)
 }
 
 // validate rejects KDF parameters whose cost is unreasonably large. The cost
@@ -33,27 +32,27 @@ func validate(p KDFParams) error {
 	switch p.Kind {
 	case Argon2id:
 		if p.MCost > 1<<21 {
-			return errors.New("argon2 memory cost too large")
+			return fmt.Errorf("%w: argon2 memory cost too large", ErrInvalidParams)
 		}
 		if p.TCost > 64 {
-			return errors.New("argon2 time cost too large")
+			return fmt.Errorf("%w: argon2 time cost too large", ErrInvalidParams)
 		}
 		if p.PCost > 16 {
-			return errors.New("argon2 parallelism too large")
+			return fmt.Errorf("%w: argon2 parallelism too large", ErrInvalidParams)
 		}
 	case Scrypt:
 		if p.LogN > 21 {
-			return errors.New("scrypt cost (log2 N) too large")
+			return fmt.Errorf("%w: scrypt cost (log2 N) too large", ErrInvalidParams)
 		}
 		if p.R > 32 {
-			return errors.New("scrypt block factor r too large")
+			return fmt.Errorf("%w: scrypt block factor r too large", ErrInvalidParams)
 		}
 		if p.P > 16 {
-			return errors.New("scrypt parallelism p too large")
+			return fmt.Errorf("%w: scrypt parallelism p too large", ErrInvalidParams)
 		}
 	case Pbkdf2:
 		if p.Rounds > 50_000_000 {
-			return errors.New("pbkdf2 rounds too large")
+			return fmt.Errorf("%w: pbkdf2 rounds too large", ErrInvalidParams)
 		}
 	}
 	return nil

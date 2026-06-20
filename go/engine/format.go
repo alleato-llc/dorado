@@ -6,20 +6,54 @@ package engine
 
 import (
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"io"
+	"os"
+	"strconv"
+	"strings"
 )
 
 const (
 	magic             = "DRDO"
 	formatVersion     = 4
 	defaultChunkBytes = 64 * 1024
-	maxChunkBytes     = 1 << 30
-	maxLabelLen       = 4096
-	macKeyLen         = 32
-	tagLen            = 32
+	// defaultMaxChunkBytes is the accepted chunk-size cap when DORADO_MAX_CHUNK_BYTES
+	// is not set. Normal files use defaultChunkBytes (64 KiB), far below this, so the
+	// cap only ever rejects a hostile or absurd header. 64 MiB.
+	defaultMaxChunkBytes = 64 * 1024 * 1024
+	// maxChunkBytes is the hard ceiling on the accepted chunk size, regardless of any
+	// override, bounding per-frame allocation when reading an untrusted header. 1 GiB.
+	maxChunkBytes = 1 << 30
+	maxLabelLen   = 4096
+	macKeyLen     = 32
+	tagLen        = 32
 )
+
+// MaxChunkBytes is the effective cap on an accepted chunk size: defaultMaxChunkBytes
+// unless DORADO_MAX_CHUNK_BYTES overrides it. Any override is clamped to
+// (0, maxChunkBytes] (1 GiB hard ceiling), so it can only tighten the bound, never
+// weaken it past the ceiling. Exposed so the CLI can cap encryption to match.
+func MaxChunkBytes() uint32 { return chunkCapFrom(os.Getenv("DORADO_MAX_CHUNK_BYTES")) }
+
+// chunkCapFrom resolves the cap from an optional override string. Pure, so it is
+// unit-tested without touching env state.
+func chunkCapFrom(s string) uint32 {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return defaultMaxChunkBytes
+	}
+	v, err := strconv.ParseUint(s, 10, 32)
+	if err != nil {
+		return defaultMaxChunkBytes
+	}
+	if v < 1 {
+		return 1
+	}
+	if v > maxChunkBytes {
+		return maxChunkBytes
+	}
+	return uint32(v)
+}
 
 // Variant selects the Threefish block size. The code byte is stored in the
 // header and also fixes the key and IV lengths.
@@ -49,7 +83,7 @@ func (v Variant) BlockLen() int { return v.KeyLen() }
 
 func variantFromCode(b byte) (Variant, error) {
 	if b > 2 {
-		return 0, fmt.Errorf("unknown variant code %d", b)
+		return 0, fmt.Errorf("%w: unknown variant code %d", ErrMalformedContainer, b)
 	}
 	return Variant(b), nil
 }
@@ -65,7 +99,7 @@ const (
 
 func macFromCode(b byte) (MacID, error) {
 	if b < 1 || b > 3 {
-		return 0, fmt.Errorf("unknown mac id %d", b)
+		return 0, fmt.Errorf("%w: unknown mac id %d", ErrMalformedContainer, b)
 	}
 	return MacID(b), nil
 }
@@ -147,7 +181,7 @@ func (h *Header) marshal() []byte {
 func readN(r io.Reader, n int, what string) ([]byte, error) {
 	buf := make([]byte, n)
 	if _, err := io.ReadFull(r, buf); err != nil {
-		return nil, fmt.Errorf("header truncated reading %s", what)
+		return nil, fmt.Errorf("%w: header truncated reading %s", ErrMalformedContainer, what)
 	}
 	return buf, nil
 }
@@ -183,14 +217,14 @@ func readHeader(r io.Reader) (*Header, error) {
 		return nil, err
 	}
 	if string(m) != magic {
-		return nil, errors.New("not a dorado password file (bad magic)")
+		return nil, fmt.Errorf("%w: not a dorado password file (bad magic)", ErrMalformedContainer)
 	}
 	version, err := readByte(r, "version")
 	if err != nil {
 		return nil, err
 	}
 	if version != 3 && version != formatVersion {
-		return nil, fmt.Errorf("unsupported format version %d", version)
+		return nil, fmt.Errorf("%w %d", ErrUnsupportedVersion, version)
 	}
 	vc, err := readByte(r, "variant")
 	if err != nil {
@@ -239,11 +273,11 @@ func readHeader(r io.Reader) (*Header, error) {
 			return nil, err
 		}
 		if prf != byte(PrfHMACSHA256) {
-			return nil, fmt.Errorf("unknown prf id %d", prf)
+			return nil, fmt.Errorf("%w: unknown prf id %d", ErrMalformedContainer, prf)
 		}
 		kdf.Prf = PrfID(prf)
 	default:
-		return nil, fmt.Errorf("unknown kdf id %d", kdfID)
+		return nil, fmt.Errorf("%w: unknown kdf id %d", ErrMalformedContainer, kdfID)
 	}
 
 	macByte, err := readByte(r, "mac id")
@@ -281,7 +315,7 @@ func readHeader(r io.Reader) (*Header, error) {
 			return nil, err
 		}
 		if int(labelLen) > maxLabelLen {
-			return nil, fmt.Errorf("label too long (%d bytes)", labelLen)
+			return nil, fmt.Errorf("%w: label too long (%d bytes)", ErrMalformedContainer, labelLen)
 		}
 		if label, err = readN(r, int(labelLen), "label"); err != nil {
 			return nil, err

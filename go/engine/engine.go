@@ -5,7 +5,6 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"io"
 	"runtime"
@@ -34,7 +33,7 @@ func newBlock(v Variant, key, tweak []byte) (cipher.Block, error) {
 	case T1024:
 		return threefish.New1024(key, tweak)
 	}
-	return nil, fmt.Errorf("unknown variant %d", v)
+	return nil, fmt.Errorf("%w: unknown variant %d", ErrInvalidParams, v)
 }
 
 // zeroizeBlock wipes a cipher's expanded key schedule if it supports it (the
@@ -114,26 +113,26 @@ func readFrame(r io.Reader, chunkSize uint32) (*frame, error) {
 	head := make([]byte, 5)
 	n, err := io.ReadFull(r, head)
 	if n == 0 && err != nil {
-		return nil, errors.New("stream ended before the final chunk (truncated)")
+		return nil, fmt.Errorf("%w: stream ended before the final chunk (truncated)", ErrMalformedContainer)
 	}
 	if err != nil {
-		return nil, errors.New("incomplete frame header (truncated)")
+		return nil, fmt.Errorf("%w: incomplete frame header (truncated)", ErrMalformedContainer)
 	}
 	if head[0] > 1 {
-		return nil, fmt.Errorf("invalid frame flag %d", head[0])
+		return nil, fmt.Errorf("%w: invalid frame flag %d", ErrMalformedContainer, head[0])
 	}
 	isLast := head[0] == 1
 	ctLen := binary.BigEndian.Uint32(head[1:])
 	if ctLen > chunkSize {
-		return nil, errors.New("frame length exceeds the header chunk size")
+		return nil, fmt.Errorf("%w: frame length exceeds the header chunk size", ErrMalformedContainer)
 	}
 	ct := make([]byte, ctLen)
 	if _, err := io.ReadFull(r, ct); err != nil {
-		return nil, errors.New("truncated frame ciphertext")
+		return nil, fmt.Errorf("%w: truncated frame ciphertext", ErrMalformedContainer)
 	}
 	tag := make([]byte, tagLen)
 	if _, err := io.ReadFull(r, tag); err != nil {
-		return nil, errors.New("truncated frame tag")
+		return nil, fmt.Errorf("%w: truncated frame tag", ErrMalformedContainer)
 	}
 	return &frame{isLast, ct, tag}, nil
 }
@@ -151,7 +150,7 @@ func readSome(r io.Reader, buf []byte) (int, error) {
 // EncryptPasswordStream encrypts r into w as an authenticated password container.
 func EncryptPasswordStream(password []byte, opts PasswordOptions, r io.Reader, w io.Writer) error {
 	if len(opts.Label) > maxLabelLen {
-		return fmt.Errorf("label too long (%d bytes, max %d)", len(opts.Label), maxLabelLen)
+		return fmt.Errorf("%w: label too long (%d bytes, max %d)", ErrInvalidParams, len(opts.Label), maxLabelLen)
 	}
 	v := opts.Variant
 	salt := make([]byte, 16)
@@ -240,12 +239,12 @@ func DecryptPasswordStreamExpecting(password, expectedLabel []byte, r io.Reader,
 		return err
 	}
 	if expectedLabel != nil && !bytes.Equal(expectedLabel, h.Label) {
-		return errors.New("container label does not match the expected label")
+		return fmt.Errorf("%w: container label does not match the expected label", ErrInvalidParams)
 	}
 	headerBytes := h.marshal()
 	blockLen := h.Variant.BlockLen()
-	if h.ChunkSize == 0 || h.ChunkSize > maxChunkBytes || int(h.ChunkSize)%blockLen != 0 {
-		return fmt.Errorf("invalid chunk size %d in header", h.ChunkSize)
+	if h.ChunkSize == 0 || h.ChunkSize > MaxChunkBytes() || int(h.ChunkSize)%blockLen != 0 {
+		return fmt.Errorf("%w: invalid chunk size %d in header", ErrInvalidParams, h.ChunkSize)
 	}
 	if err := validate(h.KDF); err != nil {
 		return err
@@ -273,7 +272,7 @@ func DecryptPasswordStreamExpecting(password, expectedLabel []byte, r io.Reader,
 			return err
 		}
 		if !macVerify(h.Mac, macKey, frameAAD(headerBytes, index, fr.isLast, fr.ciphertext), fr.tag) {
-			return errors.New("authentication failed (wrong password, corruption, or tampering)")
+			return ErrAuthFailed
 		}
 		plain := make([]byte, len(fr.ciphertext))
 		stream.XORKeyStream(plain, fr.ciphertext)
@@ -284,7 +283,7 @@ func DecryptPasswordStreamExpecting(password, expectedLabel []byte, r io.Reader,
 			break
 		}
 		if len(fr.ciphertext) != int(h.ChunkSize) {
-			return errors.New("non-final chunk is not full size")
+			return fmt.Errorf("%w: non-final chunk is not full size", ErrMalformedContainer)
 		}
 		index++
 	}
@@ -295,7 +294,7 @@ func DecryptPasswordStreamExpecting(password, expectedLabel []byte, r io.Reader,
 // Encrypt and decrypt are the same operation.
 func RawCTRStream(v Variant, key, tweak, iv []byte, r io.Reader, w io.Writer) error {
 	if len(iv) != v.BlockLen() {
-		return fmt.Errorf("iv must be %d bytes, got %d", v.BlockLen(), len(iv))
+		return fmt.Errorf("%w: iv must be %d bytes, got %d", ErrInvalidParams, v.BlockLen(), len(iv))
 	}
 	block, err := newBlock(v, key, tweak)
 	if err != nil {

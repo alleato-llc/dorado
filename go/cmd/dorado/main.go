@@ -62,14 +62,14 @@ container). Run "dorado encrypt -h" for the full flag list.
 }
 
 type opts struct {
-	key, keyFile, iv, tweak     string
-	password, passwordStdin     bool
-	variant, kdf, mac           string
-	argonMem, argonTime, argonP uint
+	key, keyFile, iv, tweak      string
+	password, passwordStdin      bool
+	variant, kdf, mac            string
+	argonMem, argonTime, argonP  uint
 	scryptLogN, scryptR, scryptP uint
-	pbkdf2Rounds, chunkKiB      uint
-	label, expectLabel          string
-	in, out                     string
+	pbkdf2Rounds, chunkKiB       uint
+	label, expectLabel           string
+	in, out                      string
 }
 
 func parse(argv []string) (*opts, error) {
@@ -201,6 +201,9 @@ func cmdCrypt(argv []string, encrypt bool) error {
 		tweak, err := parseTweak(o.tweak)
 		if err != nil {
 			return err
+		}
+		if o.chunkKiB == 0 || uint64(o.chunkKiB)*1024 > uint64(engine.MaxChunkBytes()) {
+			return fmt.Errorf("--chunk-kib must be between 1 and %d", engine.MaxChunkBytes()/1024)
 		}
 		po := engine.PasswordOptions{Variant: variant, KDF: kdf, Mac: mac, Tweak: tweak, ChunkSize: uint32(o.chunkKiB) * 1024}
 		if o.label != "" {

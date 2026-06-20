@@ -23,7 +23,9 @@ pub struct AuthError;
 
 /// Derive the one-time Poly1305 key for this message (keystream block 0).
 fn poly_key(key: &[u8; 32], nonce: &[u8; 12]) -> [u8; 32] {
-    chacha::block(key, 0, nonce)[..32].try_into().unwrap()
+    chacha::block(key, 0, nonce)[..32]
+        .try_into()
+        .expect("invariant: a chacha block is 64 bytes, so [..32] is exactly 32")
 }
 
 /// Authenticate `aad` and `ciphertext` the RFC way: aad || pad16 || ciphertext

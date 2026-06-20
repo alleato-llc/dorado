@@ -25,7 +25,11 @@ mod cipher_impls {
 
             impl KeyInit for $variant {
                 fn new(key: &Key<Self>) -> Self {
-                    <$variant>::new(key.as_slice().try_into().unwrap(), &[0u8; 16])
+                    let key: &[u8; $n] = key
+                        .as_slice()
+                        .try_into()
+                        .expect("invariant: KeySize guarantees the key is $n bytes");
+                    <$variant>::new(key, &[0u8; 16])
                 }
             }
 

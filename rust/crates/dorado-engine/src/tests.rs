@@ -276,7 +276,10 @@ fn decrypt_rejects_invalid_chunk_size_in_header() {
     let mut data = header.to_bytes();
     data.extend_from_slice(&[1, 0, 0, 0, 0]); // a dummy final-frame header
     let err = decrypt_password_bytes(b"pw", &data).unwrap_err();
-    assert!(err.contains("chunk size"), "unexpected error: {err}");
+    assert!(
+        err.to_string().contains("chunk size"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]
@@ -360,4 +363,42 @@ fn inspect_reports_header_without_decrypting() {
 
     // A non-container is rejected.
     assert!(inspect_bytes(b"not a dorado file").is_err());
+}
+
+// --- Env-knob resolution (pure helpers, so no env state is touched) ---
+
+#[test]
+fn chunk_cap_resolves_and_clamps() {
+    // Default when unset or unparseable.
+    assert_eq!(chunk_cap_from(None), DEFAULT_MAX_CHUNK_BYTES);
+    assert_eq!(chunk_cap_from(Some("garbage")), DEFAULT_MAX_CHUNK_BYTES);
+    // A plain value passes through (whitespace trimmed).
+    assert_eq!(chunk_cap_from(Some("65536")), 65536);
+    assert_eq!(chunk_cap_from(Some("  1048576  ")), 1_048_576);
+    // It can only tighten: clamped into (0, MAX_CHUNK_BYTES].
+    assert_eq!(chunk_cap_from(Some("0")), 1);
+    assert_eq!(chunk_cap_from(Some("4294967295")), MAX_CHUNK_BYTES);
+}
+
+#[test]
+fn rng_kind_resolves_and_rejects_unknown() {
+    assert!(matches!(rng_kind(None), Ok(RngKind::Os)));
+    assert!(matches!(rng_kind(Some("")), Ok(RngKind::Os)));
+    assert!(matches!(rng_kind(Some("os")), Ok(RngKind::Os)));
+    assert!(matches!(rng_kind(Some("thread")), Ok(RngKind::Thread)));
+    assert!(rng_kind(Some("bogus")).is_err());
+}
+
+#[test]
+fn auth_failure_does_not_distinguish_wrong_password_from_tampering() {
+    // Both surface the same message, so neither leaks which case occurred.
+    let opts = fast_opts();
+    let ct = encrypt_password_bytes(b"pw", &opts, b"secret").unwrap();
+    let wrong = decrypt_password_bytes(b"nope", &ct).unwrap_err();
+    let mut tampered = ct.clone();
+    *tampered.last_mut().unwrap() ^= 1;
+    let tamper = decrypt_password_bytes(b"pw", &tampered).unwrap_err();
+    assert!(matches!(wrong, Error::AuthFailed));
+    assert!(matches!(tamper, Error::AuthFailed));
+    assert_eq!(wrong.to_string(), tamper.to_string());
 }

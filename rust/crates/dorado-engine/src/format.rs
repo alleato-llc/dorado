@@ -17,6 +17,7 @@
 
 use std::io::Read;
 
+use crate::error::{Error, Result};
 use crate::kdf::{KdfParams, PrfId};
 
 pub const MAGIC: &[u8; 4] = b"DRDO";
@@ -48,12 +49,12 @@ impl MacId {
     }
 
     /// Parse a MAC id byte, rejecting unknown values.
-    pub fn from_code(b: u8) -> Result<Self, String> {
+    pub fn from_code(b: u8) -> Result<Self> {
         match b {
             1 => Ok(MacId::HmacSha256),
             2 => Ok(MacId::Skein512),
             3 => Ok(MacId::Blake3),
-            n => Err(format!("unknown mac id {n}")),
+            n => Err(Error::MalformedHeader(format!("unknown mac id {n}"))),
         }
     }
 }
@@ -81,12 +82,12 @@ impl Variant {
     }
 
     /// Parse a variant code byte, rejecting unknown values.
-    pub fn from_code(b: u8) -> Result<Self, String> {
+    pub fn from_code(b: u8) -> Result<Self> {
         match b {
             0 => Ok(Variant::T256),
             1 => Ok(Variant::T512),
             2 => Ok(Variant::T1024),
-            n => Err(format!("unknown variant code {n}")),
+            n => Err(Error::MalformedHeader(format!("unknown variant code {n}"))),
         }
     }
 
@@ -174,13 +175,15 @@ impl Header {
 
     /// Read and parse a header from a stream, leaving the reader positioned at
     /// the first frame.
-    pub fn read<R: Read + ?Sized>(r: &mut R) -> Result<Header, String> {
+    pub fn read<R: Read + ?Sized>(r: &mut R) -> Result<Header> {
         if take(r, 4, "magic")? != MAGIC {
-            return Err("not a dorado password file (bad magic)".into());
+            return Err(Error::MalformedHeader(
+                "not a dorado password file (bad magic)".into(),
+            ));
         }
         let version = u8r(r, "version")?;
         if version != 3 && version != VERSION {
-            return Err(format!("unsupported format version {version}"));
+            return Err(Error::UnsupportedVersion(version));
         }
         let variant = Variant::from_code(u8r(r, "variant")?)?;
         let kdf = match u8r(r, "kdf id")? {
@@ -198,7 +201,7 @@ impl Header {
                 rounds: u32r(r, "rounds")?,
                 prf: PrfId::from_code(u8r(r, "prf")?)?,
             },
-            n => return Err(format!("unknown kdf id {n}")),
+            n => return Err(Error::MalformedHeader(format!("unknown kdf id {n}"))),
         };
         let mac = MacId::from_code(u8r(r, "mac id")?)?;
         let chunk_size = u32r(r, "chunk size")?;
@@ -211,7 +214,9 @@ impl Header {
         let label = if version >= 4 {
             let label_len = u16r(r, "label len")? as usize;
             if label_len > MAX_LABEL_LEN {
-                return Err(format!("label too long ({label_len} bytes)"));
+                return Err(Error::MalformedHeader(format!(
+                    "label too long ({label_len} bytes)"
+                )));
             }
             take(r, label_len, "label")?
         } else {
@@ -233,7 +238,7 @@ impl Header {
     /// Parse a header from the start of `data`, returning it and the offset at
     /// which the frames begin. Convenience wrapper over `read` for in-memory use.
     #[cfg(test)]
-    pub fn parse(data: &[u8]) -> Result<(Header, usize), String> {
+    pub fn parse(data: &[u8]) -> Result<(Header, usize)> {
         let mut cur = std::io::Cursor::new(data);
         let header = Header::read(&mut cur)?;
         Ok((header, cur.position() as usize))
@@ -241,23 +246,23 @@ impl Header {
 }
 
 /// Read exactly `n` bytes, mapping a short read to a descriptive error.
-fn take<R: Read + ?Sized>(r: &mut R, n: usize, what: &str) -> Result<Vec<u8>, String> {
+fn take<R: Read + ?Sized>(r: &mut R, n: usize, what: &str) -> Result<Vec<u8>> {
     let mut buf = vec![0u8; n];
     r.read_exact(&mut buf)
-        .map_err(|_| format!("header truncated reading {what}"))?;
+        .map_err(|_| Error::MalformedHeader(format!("header truncated reading {what}")))?;
     Ok(buf)
 }
 
-fn u8r<R: Read + ?Sized>(r: &mut R, what: &str) -> Result<u8, String> {
+fn u8r<R: Read + ?Sized>(r: &mut R, what: &str) -> Result<u8> {
     Ok(take(r, 1, what)?[0])
 }
 
-fn u16r<R: Read + ?Sized>(r: &mut R, what: &str) -> Result<u16, String> {
+fn u16r<R: Read + ?Sized>(r: &mut R, what: &str) -> Result<u16> {
     let b = take(r, 2, what)?;
     Ok(u16::from_be_bytes([b[0], b[1]]))
 }
 
-fn u32r<R: Read + ?Sized>(r: &mut R, what: &str) -> Result<u32, String> {
+fn u32r<R: Read + ?Sized>(r: &mut R, what: &str) -> Result<u32> {
     let b = take(r, 4, what)?;
     Ok(u32::from_be_bytes([b[0], b[1], b[2], b[3]]))
 }

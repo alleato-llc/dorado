@@ -157,7 +157,7 @@ fn rejects_unsupported_version_and_unknown_kdf_id() {
     let mut bad_version = good.clone();
     bad_version[4] = 99;
     let err = Header::parse(&bad_version).unwrap_err();
-    assert!(err.contains("version"), "got: {err}");
+    assert!(err.to_string().contains("version"), "got: {err}");
 
     // KDF id sits after magic(4) + version(1) + variant(1).
     let mut bad_kdf = good.clone();

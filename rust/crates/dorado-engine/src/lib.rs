@@ -10,6 +10,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+mod error;
 mod format;
 mod kdf;
 mod mac;
@@ -21,6 +22,7 @@ use zeroize::Zeroizing;
 
 use dorado::{Threefish1024, Threefish256, Threefish512};
 
+pub use crate::error::{Error, Result};
 use crate::format::Header;
 use crate::kdf::{derive, validate};
 
@@ -32,8 +34,13 @@ pub use crate::kdf::{KdfParams, PrfId};
 const FRAME_DOMAIN: &[u8; 8] = b"DRDOchnk";
 /// Default authenticated chunk size for password encryption.
 pub const DEFAULT_CHUNK_BYTES: u32 = 64 * 1024;
-/// Upper bound on the header's chunk-size field, to bound per-frame allocation.
+/// Hard ceiling on the accepted chunk size, regardless of any override, bounding
+/// per-frame allocation when reading an untrusted header. 1 GiB.
 pub const MAX_CHUNK_BYTES: u32 = 1 << 30;
+/// Default cap on the header's chunk-size field when `DORADO_MAX_CHUNK_BYTES` is not
+/// set. Normal files use `DEFAULT_CHUNK_BYTES` (64 KiB), far below this, so the cap
+/// only ever rejects a hostile or absurd header. 64 MiB.
+pub const DEFAULT_MAX_CHUNK_BYTES: u32 = 64 * 1024 * 1024;
 /// The container format version this build reads and writes.
 pub const FORMAT_VERSION: u8 = format::VERSION;
 /// I/O buffer size for the unauthenticated raw-key streaming path.
@@ -87,13 +94,12 @@ pub fn encrypt_password_stream(
     opts: &PasswordOptions,
     reader: &mut dyn Read,
     writer: &mut dyn Write,
-) -> Result<(), String> {
+) -> Result<()> {
     let variant = opts.variant;
-    let mut rng = rand::thread_rng();
     let mut salt = vec![0u8; 16];
     let mut iv = vec![0u8; variant.block_len()];
-    rng.fill_bytes(&mut salt);
-    rng.fill_bytes(&mut iv);
+    fill_random(&mut salt)?;
+    fill_random(&mut iv)?;
 
     // Derive an encryption key and a separate MAC key from one KDF output.
     let mut keymat = Zeroizing::new(vec![0u8; variant.key_len() + mac::KEY_LEN]);
@@ -101,11 +107,11 @@ pub fn encrypt_password_stream(
     let (enc_key, mac_key) = keymat.split_at(variant.key_len());
 
     if opts.label.len() > format::MAX_LABEL_LEN {
-        return Err(format!(
+        return Err(Error::InvalidParams(format!(
             "label too long ({} bytes, max {})",
             opts.label.len(),
             format::MAX_LABEL_LEN
-        ));
+        )));
     }
     let header = Header {
         version: format::VERSION,
@@ -122,17 +128,17 @@ pub fn encrypt_password_stream(
     let cipher = Cipher::new(variant, enc_key, &opts.tweak)?;
     let blocks_per_chunk = (opts.chunk_size as usize / variant.block_len()) as u64;
 
-    writer.write_all(&header_bytes).map_err(|e| e.to_string())?;
+    writer.write_all(&header_bytes)?;
 
     // Read one chunk ahead so each chunk knows whether it is the last (which is
     // authenticated, defeating truncation).
     let mut counter = header.iv.clone();
     let mut index: u64 = 0;
     let mut current = vec![0u8; opts.chunk_size as usize];
-    let mut n = read_fill(reader, &mut current).map_err(|e| e.to_string())?;
+    let mut n = read_fill(reader, &mut current)?;
     loop {
         let mut next = vec![0u8; opts.chunk_size as usize];
-        let next_n = read_fill(reader, &mut next).map_err(|e| e.to_string())?;
+        let next_n = read_fill(reader, &mut next)?;
         let is_last = next_n == 0;
 
         let mut chunk = current[..n].to_vec();
@@ -142,7 +148,7 @@ pub fn encrypt_password_stream(
             mac_key,
             &frame_aad(&header_bytes, index, is_last, &chunk),
         );
-        write_frame(writer, is_last, &chunk, &tag).map_err(|e| e.to_string())?;
+        write_frame(writer, is_last, &chunk, &tag)?;
 
         if is_last {
             break;
@@ -152,7 +158,7 @@ pub fn encrypt_password_stream(
         current = next;
         n = next_n;
     }
-    writer.flush().map_err(|e| e.to_string())
+    writer.flush().map_err(Error::from)
 }
 
 /// Decrypt an authenticated password container from `reader` into `writer`.
@@ -160,7 +166,7 @@ pub fn decrypt_password_stream(
     password: &[u8],
     reader: &mut dyn Read,
     writer: &mut dyn Write,
-) -> Result<(), String> {
+) -> Result<()> {
     decrypt_password_stream_expecting(password, None, reader, writer)
 }
 
@@ -174,23 +180,25 @@ pub fn decrypt_password_stream_expecting(
     expected_label: Option<&[u8]>,
     reader: &mut dyn Read,
     writer: &mut dyn Write,
-) -> Result<(), String> {
+) -> Result<()> {
     let header = Header::read(reader)?;
     if let Some(expected) = expected_label {
         if expected != header.label.as_slice() {
-            return Err("container label does not match the expected label".into());
+            return Err(Error::InvalidParams(
+                "container label does not match the expected label".into(),
+            ));
         }
     }
     let header_bytes = header.to_bytes();
     let block_len = header.variant.block_len();
     if header.chunk_size == 0
-        || header.chunk_size > MAX_CHUNK_BYTES
+        || header.chunk_size > max_chunk_bytes()
         || !(header.chunk_size as usize).is_multiple_of(block_len)
     {
-        return Err(format!(
+        return Err(Error::InvalidParams(format!(
             "invalid chunk size {} in header",
             header.chunk_size
-        ));
+        )));
     }
     // Bound the cost before deriving: the params come from an untrusted header.
     validate(&header.kdf)?;
@@ -215,18 +223,20 @@ pub fn decrypt_password_stream_expecting(
 
         let mut chunk = frame.ciphertext;
         cipher.ctr_apply(&counter, &mut chunk)?;
-        writer.write_all(&chunk).map_err(|e| e.to_string())?;
+        writer.write_all(&chunk)?;
 
         if frame.is_last {
             break;
         }
         if chunk.len() != header.chunk_size as usize {
-            return Err("non-final chunk is not full size".into());
+            return Err(Error::MalformedHeader(
+                "non-final chunk is not full size".into(),
+            ));
         }
         advance_counter(&mut counter, blocks_per_chunk);
         index += 1;
     }
-    writer.flush().map_err(|e| e.to_string())
+    writer.flush().map_err(Error::from)
 }
 
 /// In-memory convenience wrapper over [`encrypt_password_stream`].
@@ -252,7 +262,7 @@ pub fn encrypt_password_bytes(
     password: &[u8],
     opts: &PasswordOptions,
     plaintext: &[u8],
-) -> Result<Vec<u8>, String> {
+) -> Result<Vec<u8>> {
     let mut out = Vec::new();
     let mut reader = Cursor::new(plaintext);
     encrypt_password_stream(password, opts, &mut reader, &mut out)?;
@@ -260,7 +270,7 @@ pub fn encrypt_password_bytes(
 }
 
 /// In-memory convenience wrapper over [`decrypt_password_stream`].
-pub fn decrypt_password_bytes(password: &[u8], data: &[u8]) -> Result<Vec<u8>, String> {
+pub fn decrypt_password_bytes(password: &[u8], data: &[u8]) -> Result<Vec<u8>> {
     decrypt_password_bytes_expecting(password, None, data)
 }
 
@@ -269,7 +279,7 @@ pub fn decrypt_password_bytes_expecting(
     password: &[u8],
     expected_label: Option<&[u8]>,
     data: &[u8],
-) -> Result<Vec<u8>, String> {
+) -> Result<Vec<u8>> {
     let mut out = Vec::new();
     let mut reader = Cursor::new(data);
     decrypt_password_stream_expecting(password, expected_label, &mut reader, &mut out)?;
@@ -301,7 +311,7 @@ pub struct ContainerInfo {
 
 /// Read and describe a password container's header without decrypting it (and
 /// without a password). Only the header bytes are consumed from `reader`.
-pub fn inspect(reader: &mut dyn Read) -> Result<ContainerInfo, String> {
+pub fn inspect(reader: &mut dyn Read) -> Result<ContainerInfo> {
     let header = Header::read(reader)?;
     Ok(ContainerInfo {
         version: header.version,
@@ -316,7 +326,7 @@ pub fn inspect(reader: &mut dyn Read) -> Result<ContainerInfo, String> {
 }
 
 /// In-memory convenience wrapper over [`inspect`].
-pub fn inspect_bytes(data: &[u8]) -> Result<ContainerInfo, String> {
+pub fn inspect_bytes(data: &[u8]) -> Result<ContainerInfo> {
     inspect(&mut Cursor::new(data))
 }
 
@@ -333,7 +343,7 @@ pub fn raw_ctr_stream(
     iv: &[u8],
     reader: &mut dyn Read,
     writer: &mut dyn Write,
-) -> Result<(), String> {
+) -> Result<()> {
     let block_len = variant.block_len();
     let cipher = Cipher::new(variant, key, tweak)?;
     let buf_blocks = (RAW_BUF_BYTES / block_len).max(1);
@@ -342,18 +352,18 @@ pub fn raw_ctr_stream(
     let mut counter = iv.to_vec();
     let mut buf = vec![0u8; buf_len];
     loop {
-        let n = read_fill(reader, &mut buf).map_err(|e| e.to_string())?;
+        let n = read_fill(reader, &mut buf)?;
         if n == 0 {
             break;
         }
         cipher.ctr_apply(&counter, &mut buf[..n])?;
-        writer.write_all(&buf[..n]).map_err(|e| e.to_string())?;
+        writer.write_all(&buf[..n])?;
         advance_counter(&mut counter, n.div_ceil(block_len) as u64);
         if n < buf_len {
             break;
         }
     }
-    writer.flush().map_err(|e| e.to_string())
+    writer.flush().map_err(Error::from)
 }
 
 // ---------------------------------------------------------------------------
@@ -367,20 +377,22 @@ pub fn block_transform(
     tweak: &[u8; 16],
     block: &[u8],
     decrypt: bool,
-) -> Result<Vec<u8>, String> {
+) -> Result<Vec<u8>> {
     let variant = variant_from_key_len(key.len())?;
     if block.len() != variant.block_len() {
-        return Err(format!(
+        return Err(Error::InvalidParams(format!(
             "block must be {} bytes for this key, got {}",
             variant.block_len(),
             block.len()
-        ));
+        )));
     }
     let mut out = block.to_vec();
+    // `out` was sized to `variant.block_len()` just above, so each conversion is
+    // infallible by construction.
     match variant {
         Variant::T256 => {
             let c = Threefish256::new(&fixed(key)?, tweak);
-            let b: &mut [u8; 32] = (&mut out[..]).try_into().unwrap();
+            let b: &mut [u8; 32] = (&mut out[..]).try_into().expect("out is 32 bytes");
             if decrypt {
                 c.decrypt_block(b)
             } else {
@@ -389,7 +401,7 @@ pub fn block_transform(
         }
         Variant::T512 => {
             let c = Threefish512::new(&fixed(key)?, tweak);
-            let b: &mut [u8; 64] = (&mut out[..]).try_into().unwrap();
+            let b: &mut [u8; 64] = (&mut out[..]).try_into().expect("out is 64 bytes");
             if decrypt {
                 c.decrypt_block(b)
             } else {
@@ -398,7 +410,7 @@ pub fn block_transform(
         }
         Variant::T1024 => {
             let c = Threefish1024::new(&fixed(key)?, tweak);
-            let b: &mut [u8; 128] = (&mut out[..]).try_into().unwrap();
+            let b: &mut [u8; 128] = (&mut out[..]).try_into().expect("out is 128 bytes");
             if decrypt {
                 c.decrypt_block(b)
             } else {
@@ -422,7 +434,7 @@ enum Cipher {
 }
 
 impl Cipher {
-    fn new(variant: Variant, key: &[u8], tweak: &[u8; 16]) -> Result<Self, String> {
+    fn new(variant: Variant, key: &[u8], tweak: &[u8; 16]) -> Result<Self> {
         Ok(match variant {
             Variant::T256 => Cipher::T256(Threefish256::new(&fixed(key)?, tweak)),
             Variant::T512 => Cipher::T512(Threefish512::new(&fixed(key)?, tweak)),
@@ -430,7 +442,7 @@ impl Cipher {
         })
     }
 
-    fn ctr_apply(&self, iv: &[u8], data: &mut [u8]) -> Result<(), String> {
+    fn ctr_apply(&self, iv: &[u8], data: &mut [u8]) -> Result<()> {
         match self {
             Cipher::T256(c) => c.ctr_apply(&fixed(iv)?, data),
             Cipher::T512(c) => c.ctr_apply(&fixed(iv)?, data),
@@ -441,10 +453,59 @@ impl Cipher {
 }
 
 /// Copy a slice of the statically expected length into a fixed-size array.
-fn fixed<const N: usize>(bytes: &[u8]) -> Result<[u8; N], String> {
+fn fixed<const N: usize>(bytes: &[u8]) -> Result<[u8; N]> {
     bytes
         .try_into()
-        .map_err(|_| format!("expected {N} bytes, got {}", bytes.len()))
+        .map_err(|_| Error::InvalidParams(format!("expected {N} bytes, got {}", bytes.len())))
+}
+
+/// Which CSPRNG `fill_random` draws from.
+enum RngKind {
+    Os,
+    Thread,
+}
+
+/// Resolve the RNG source from the optional `DORADO_RNG` value. Both choices are
+/// CSPRNGs, so this can never select an insecure source; an unrecognized value is an
+/// error rather than a silent fallback. Pure, so it is unit-tested without env state.
+fn rng_kind(override_opt: Option<&str>) -> Result<RngKind> {
+    match override_opt {
+        None | Some("") | Some("os") => Ok(RngKind::Os),
+        Some("thread") => Ok(RngKind::Thread),
+        Some(other) => Err(Error::InvalidParams(format!(
+            "unknown DORADO_RNG={other:?} (expected \"os\" or \"thread\")"
+        ))),
+    }
+}
+
+/// Fill `buf` with cryptographically secure random bytes. The source defaults to the
+/// OS CSPRNG (`OsRng`); set `DORADO_RNG=thread` to use `rand`'s thread-local CSPRNG.
+fn fill_random(buf: &mut [u8]) -> Result<()> {
+    match rng_kind(std::env::var("DORADO_RNG").ok().as_deref())? {
+        RngKind::Os => rand::rngs::OsRng.fill_bytes(buf),
+        RngKind::Thread => rand::thread_rng().fill_bytes(buf),
+    }
+    Ok(())
+}
+
+/// The effective cap on an accepted chunk size: [`DEFAULT_MAX_CHUNK_BYTES`] unless
+/// `DORADO_MAX_CHUNK_BYTES` overrides it. Any override is clamped to
+/// `(0, MAX_CHUNK_BYTES]`, so it can only tighten the bound, never weaken it past the
+/// hard ceiling; unparseable values fall back to the default.
+pub fn max_chunk_bytes() -> u32 {
+    chunk_cap_from(std::env::var("DORADO_MAX_CHUNK_BYTES").ok().as_deref())
+}
+
+/// Pure resolution of the chunk-size cap from an optional override string, so the
+/// clamping is unit-tested without env state.
+fn chunk_cap_from(override_opt: Option<&str>) -> u32 {
+    match override_opt {
+        Some(s) => match s.trim().parse::<u32>() {
+            Ok(v) => v.clamp(1, MAX_CHUNK_BYTES),
+            Err(_) => DEFAULT_MAX_CHUNK_BYTES,
+        },
+        None => DEFAULT_MAX_CHUNK_BYTES,
+    }
 }
 
 /// One parsed frame from the stream.
@@ -485,31 +546,41 @@ fn write_frame(
 }
 
 /// Read one frame, bounding the ciphertext length by the header's chunk size.
-fn read_frame(r: &mut dyn Read, chunk_size: u32) -> Result<Frame, String> {
+fn read_frame(r: &mut dyn Read, chunk_size: u32) -> Result<Frame> {
     let mut head = [0u8; 5];
-    let n = read_fill(r, &mut head).map_err(|e| e.to_string())?;
+    let n = read_fill(r, &mut head)?;
     if n == 0 {
-        return Err("stream ended before the final chunk (truncated)".into());
+        return Err(Error::MalformedHeader(
+            "stream ended before the final chunk (truncated)".into(),
+        ));
     }
     if n < head.len() {
-        return Err("incomplete frame header (truncated)".into());
+        return Err(Error::MalformedHeader(
+            "incomplete frame header (truncated)".into(),
+        ));
     }
     let is_last = match head[0] {
         0 => false,
         1 => true,
-        other => return Err(format!("invalid frame flag {other}")),
+        other => {
+            return Err(Error::MalformedHeader(format!(
+                "invalid frame flag {other}"
+            )))
+        }
     };
     let ct_len = u32::from_be_bytes([head[1], head[2], head[3], head[4]]);
     if ct_len > chunk_size {
-        return Err("frame length exceeds the header chunk size".into());
+        return Err(Error::MalformedHeader(
+            "frame length exceeds the header chunk size".into(),
+        ));
     }
     let mut ciphertext = vec![0u8; ct_len as usize];
-    if read_fill(r, &mut ciphertext).map_err(|e| e.to_string())? != ct_len as usize {
-        return Err("truncated frame ciphertext".into());
+    if read_fill(r, &mut ciphertext)? != ct_len as usize {
+        return Err(Error::MalformedHeader("truncated frame ciphertext".into()));
     }
     let mut tag = [0u8; mac::TAG_LEN];
-    if read_fill(r, &mut tag).map_err(|e| e.to_string())? != mac::TAG_LEN {
-        return Err("truncated frame tag".into());
+    if read_fill(r, &mut tag)? != mac::TAG_LEN {
+        return Err(Error::MalformedHeader("truncated frame tag".into()));
     }
     Ok(Frame {
         is_last,
@@ -554,37 +625,38 @@ fn read_fill(r: &mut dyn Read, buf: &mut [u8]) -> std::io::Result<usize> {
 }
 
 /// Map a key length to its variant.
-pub fn variant_from_key_len(n: usize) -> Result<Variant, String> {
+pub fn variant_from_key_len(n: usize) -> Result<Variant> {
     match n {
         32 => Ok(Variant::T256),
         64 => Ok(Variant::T512),
         128 => Ok(Variant::T1024),
-        n => Err(format!("key must be 32, 64, or 128 bytes, got {n}")),
+        n => Err(Error::InvalidParams(format!(
+            "key must be 32, 64, or 128 bytes, got {n}"
+        ))),
     }
 }
 
 /// Parse a hex string (ignoring whitespace) into bytes.
-pub fn parse_hex(s: &str) -> Result<Vec<u8>, String> {
+pub fn parse_hex(s: &str) -> Result<Vec<u8>> {
     let s: String = s.chars().filter(|c| !c.is_whitespace()).collect();
     if !s.len().is_multiple_of(2) {
-        return Err("odd number of hex digits".into());
+        return Err(Error::InvalidParams("odd number of hex digits".into()));
     }
     (0..s.len())
         .step_by(2)
         .map(|i| {
             u8::from_str_radix(&s[i..i + 2], 16)
-                .map_err(|_| format!("invalid hex at byte {}", i / 2))
+                .map_err(|_| Error::InvalidParams(format!("invalid hex at byte {}", i / 2)))
         })
         .collect()
 }
 
 /// Parse a 16-byte tweak from hex.
-pub fn parse_tweak(s: &str) -> Result<[u8; 16], String> {
-    let t = parse_hex(s).map_err(|e| format!("tweak: {e}"))?;
-    if t.len() != 16 {
-        return Err(format!("tweak must be 16 bytes, got {}", t.len()));
-    }
-    Ok(t.try_into().unwrap())
+pub fn parse_tweak(s: &str) -> Result<[u8; 16]> {
+    let t = parse_hex(s).map_err(|e| Error::InvalidParams(format!("tweak: {e}")))?;
+    t.try_into().map_err(|t: Vec<u8>| {
+        Error::InvalidParams(format!("tweak must be 16 bytes, got {}", t.len()))
+    })
 }
 
 #[cfg(test)]

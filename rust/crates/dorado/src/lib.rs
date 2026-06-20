@@ -234,7 +234,9 @@ const PERM_1024: [usize; 16] = [0, 9, 2, 13, 6, 11, 4, 15, 10, 7, 12, 3, 14, 5, 
 
 fn bytes_to_words(bytes: &[u8], out: &mut [u64]) {
     for (i, chunk) in bytes.chunks_exact(8).enumerate() {
-        out[i] = u64::from_le_bytes(chunk.try_into().unwrap());
+        out[i] = u64::from_le_bytes([
+            chunk[0], chunk[1], chunk[2], chunk[3], chunk[4], chunk[5], chunk[6], chunk[7],
+        ]);
     }
 }
 

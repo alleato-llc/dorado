@@ -5,6 +5,8 @@
 //! length. The parameters live in the file header (see `format`), so they are
 //! not secret; they only need to be reproduced at decryption time.
 
+use crate::error::{Error, Result};
+
 /// Pseudo-random function used by PBKDF2. Stored as a byte in the header so the
 /// set can grow without breaking old files.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -22,10 +24,10 @@ impl PrfId {
     }
 
     /// Parse a PRF id byte, rejecting unknown values.
-    pub fn from_code(b: u8) -> Result<Self, String> {
+    pub fn from_code(b: u8) -> Result<Self> {
         match b {
             1 => Ok(PrfId::HmacSha256),
-            n => Err(format!("unknown prf id {n}")),
+            n => Err(Error::MalformedHeader(format!("unknown prf id {n}"))),
         }
     }
 }
@@ -63,12 +65,7 @@ pub enum KdfParams {
 }
 
 /// Derive `out.len()` key bytes from `password` and `salt` using `params`.
-pub fn derive(
-    params: &KdfParams,
-    password: &[u8],
-    salt: &[u8],
-    out: &mut [u8],
-) -> Result<(), String> {
+pub fn derive(params: &KdfParams, password: &[u8], salt: &[u8], out: &mut [u8]) -> Result<()> {
     match *params {
         KdfParams::Argon2id {
             m_cost,
@@ -77,18 +74,19 @@ pub fn derive(
         } => {
             use argon2::{Algorithm, Argon2, Params, Version};
             let params = Params::new(m_cost, t_cost, p_cost, Some(out.len()))
-                .map_err(|e| format!("argon2 params: {e}"))?;
+                .map_err(|e| Error::InvalidParams(format!("argon2 params: {e}")))?;
             Argon2::new(Algorithm::Argon2id, Version::V0x13, params)
                 .hash_password_into(password, salt, out)
-                .map_err(|e| format!("argon2: {e}"))
+                .map_err(|e| Error::InvalidParams(format!("argon2: {e}")))
         }
         KdfParams::Scrypt { log_n, r, p } => {
             // The `len` in scrypt's Params is only consumed by its PHC-string
             // API, which we do not use, and it rejects values above 64. The real
             // output length is `out.len()`, so pass a valid placeholder here.
-            let params =
-                scrypt::Params::new(log_n, r, p, 32).map_err(|e| format!("scrypt params: {e}"))?;
-            scrypt::scrypt(password, salt, &params, out).map_err(|e| format!("scrypt: {e}"))
+            let params = scrypt::Params::new(log_n, r, p, 32)
+                .map_err(|e| Error::InvalidParams(format!("scrypt params: {e}")))?;
+            scrypt::scrypt(password, salt, &params, out)
+                .map_err(|e| Error::InvalidParams(format!("scrypt: {e}")))
         }
         KdfParams::Pbkdf2 { rounds, prf } => match prf {
             PrfId::HmacSha256 => {
@@ -103,7 +101,7 @@ pub fn derive(
 /// cost from an untrusted file header, so without this a crafted file could
 /// request gigabytes of memory or a multi-minute derivation (a denial of
 /// service). The caps are generous, well above any sane real-world setting.
-pub fn validate(params: &KdfParams) -> Result<(), String> {
+pub fn validate(params: &KdfParams) -> Result<()> {
     match *params {
         KdfParams::Argon2id {
             m_cost,
@@ -111,29 +109,36 @@ pub fn validate(params: &KdfParams) -> Result<(), String> {
             p_cost,
         } => {
             if m_cost > 1 << 21 {
-                return Err("argon2 memory cost too large".into()); // > 2 GiB
+                return Err(Error::InvalidParams("argon2 memory cost too large".into()));
+                // > 2 GiB
             }
             if t_cost > 64 {
-                return Err("argon2 time cost too large".into());
+                return Err(Error::InvalidParams("argon2 time cost too large".into()));
             }
             if p_cost > 16 {
-                return Err("argon2 parallelism too large".into());
+                return Err(Error::InvalidParams("argon2 parallelism too large".into()));
             }
         }
         KdfParams::Scrypt { log_n, r, p } => {
             if log_n > 21 {
-                return Err("scrypt cost (log2 N) too large".into());
+                return Err(Error::InvalidParams(
+                    "scrypt cost (log2 N) too large".into(),
+                ));
             }
             if r > 32 {
-                return Err("scrypt block factor r too large".into());
+                return Err(Error::InvalidParams(
+                    "scrypt block factor r too large".into(),
+                ));
             }
             if p > 16 {
-                return Err("scrypt parallelism p too large".into());
+                return Err(Error::InvalidParams(
+                    "scrypt parallelism p too large".into(),
+                ));
             }
         }
         KdfParams::Pbkdf2 { rounds, .. } => {
             if rounds > 50_000_000 {
-                return Err("pbkdf2 rounds too large".into());
+                return Err(Error::InvalidParams("pbkdf2 rounds too large".into()));
             }
         }
     }

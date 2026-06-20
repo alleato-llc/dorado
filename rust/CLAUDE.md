@@ -81,9 +81,13 @@ variant, KDF id and params, MAC id, chunk size, salt, tweak, IV), and `mac.rs`
 (encrypt-then-MAC, dispatching the `MacId` to one of three from-scratch keyed
 hashes: Skein-512 by default, HMAC-SHA256, or BLAKE3 keyed; all yield 32-byte tags
 verified with a constant-time compare). It re-exports `Variant`, `KdfParams`,
-`PrfId`, and `MacId` for the frontends. Because it is a real library crate, there is no
-dead-code hack: a different subset of its public API is used by each frontend, and
-that is fine. It exposes streaming functions over `Read`/`Write` (the CLI, for
+`PrfId`, and `MacId` for the frontends, plus its typed error: `Error` (an enum of
+`AuthFailed`, `MalformedHeader`, `UnsupportedVersion`, `InvalidParams`, `Io`) and a
+`Result<T>` alias. Callers match on the kind; wrong password and tampering both map to
+`AuthFailed` and must stay indistinguishable. `Error` implements `Display` and
+`From<Error> for String`, so the string-based frontends absorb it with `?`. Because it
+is a real library crate, there is no dead-code hack: a different subset of its public
+API is used by each frontend, and that is fine. It exposes streaming functions over `Read`/`Write` (the CLI, for
 constant-memory files), in-memory `*_bytes` wrappers (the GUI), a single-block
 `block_transform` (exercised by tests), and `inspect`/`inspect_bytes`, which read
 only a container's header and return a `ContainerInfo` of its non-secret parameters
@@ -102,6 +106,16 @@ and truncation (an authenticated final-chunk flag that must be seen before EOF)
 are all rejected. Streaming means verified plaintext can be emitted before a later
 chunk fails, so a non-zero exit means the output is incomplete and untrusted.
 Changing the container format is a version bump (`format::VERSION`, currently 4).
+
+Two standalone env knobs override in-code defaults (everything works with no env set).
+`DORADO_RNG` picks the CSPRNG that `fill_random` draws the salt and IV from: `os`
+(default, `OsRng`) or `thread` (`rand::thread_rng`); both are CSPRNGs and an unknown
+value is an error, so the knob cannot select a weak source. `DORADO_MAX_CHUNK_BYTES`
+overrides the accepted chunk-size cap, clamped into `(0, MAX_CHUNK_BYTES]` (1 GiB hard
+ceiling) so it can only tighten; the default when unset is `DEFAULT_MAX_CHUNK_BYTES`
+(64 MiB), well above the 64 KiB normal chunk size. Both are resolved by pure helpers
+(`rng_kind`, `chunk_cap_from`) that are unit-tested without touching env state. The
+decrypt path bounds allocation by `max_chunk_bytes()` before deriving any key.
 
 The header carries an optional non-secret `label` (version 4; v3 files are still
 read). It is authenticated for free because the whole header is bound into chunk

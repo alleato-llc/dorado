@@ -176,7 +176,9 @@ impl Skein512 {
         // Commit whole blocks straight from the input, but always keep the last
         // <= BLOCK bytes back for the final block.
         while data.len() > BLOCK {
-            let block: [u8; BLOCK] = data[..BLOCK].try_into().unwrap();
+            let block: [u8; BLOCK] = data[..BLOCK]
+                .try_into()
+                .expect("invariant: data[..BLOCK] is exactly BLOCK bytes");
             self.commit_block(&block, BLOCK, false);
             data = &data[BLOCK..];
         }

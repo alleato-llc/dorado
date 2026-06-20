@@ -12,6 +12,7 @@
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 
+use crate::error::{Error, Result};
 use crate::format::MacId;
 
 /// Length of the MAC key we derive from the KDF, in bytes.
@@ -40,12 +41,12 @@ pub fn tag(mac: MacId, mac_key: &[u8], signed: &[u8]) -> Vec<u8> {
 
 /// Verify `received` against `signed` in constant time. An error means the tag
 /// did not match, i.e. a wrong password or a corrupted or tampered file.
-pub fn verify(mac: MacId, mac_key: &[u8], signed: &[u8], received: &[u8]) -> Result<(), String> {
+pub fn verify(mac: MacId, mac_key: &[u8], signed: &[u8], received: &[u8]) -> Result<()> {
     let expected = tag(mac, mac_key, signed);
     if ct_eq(&expected, received) {
         Ok(())
     } else {
-        Err("authentication failed: wrong password or corrupted file".into())
+        Err(Error::AuthFailed)
     }
 }
 

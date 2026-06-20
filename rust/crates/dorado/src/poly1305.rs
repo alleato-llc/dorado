@@ -14,7 +14,7 @@
 const MASK26: u32 = 0x3ff_ffff;
 
 fn le32(b: &[u8]) -> u32 {
-    u32::from_le_bytes(b.try_into().unwrap())
+    u32::from_le_bytes([b[0], b[1], b[2], b[3]])
 }
 
 /// Incremental Poly1305 state. Fixed-size and allocation-free.
@@ -55,7 +55,9 @@ impl Poly1305 {
                 r4.wrapping_mul(5),
             ],
             h: [0; 5],
-            pad: key[16..32].try_into().unwrap(),
+            pad: key[16..32]
+                .try_into()
+                .expect("invariant: the key is 32 bytes, so [16..32] is exactly 16"),
             buffer: [0u8; 16],
             buffer_len: 0,
         }

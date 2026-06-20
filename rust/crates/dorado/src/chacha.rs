@@ -27,11 +27,11 @@ pub fn block(key: &[u8; 32], counter: u32, nonce: &[u8; 12]) -> [u8; 64] {
     let mut state = [0u32; 16];
     state[0..4].copy_from_slice(&CONSTANTS);
     for (i, chunk) in key.chunks_exact(4).enumerate() {
-        state[4 + i] = u32::from_le_bytes(chunk.try_into().unwrap());
+        state[4 + i] = u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
     }
     state[12] = counter;
     for (i, chunk) in nonce.chunks_exact(4).enumerate() {
-        state[13 + i] = u32::from_le_bytes(chunk.try_into().unwrap());
+        state[13 + i] = u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
     }
 
     let mut working = state;

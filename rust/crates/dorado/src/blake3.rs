@@ -101,7 +101,8 @@ fn words_from_block(bytes: &[u8]) -> [u32; 16] {
     padded[..bytes.len()].copy_from_slice(bytes);
     let mut words = [0u32; 16];
     for (i, w) in words.iter_mut().enumerate() {
-        *w = u32::from_le_bytes(padded[i * 4..i * 4 + 4].try_into().unwrap());
+        let j = i * 4;
+        *w = u32::from_le_bytes([padded[j], padded[j + 1], padded[j + 2], padded[j + 3]]);
     }
     words
 }
@@ -125,7 +126,9 @@ impl Output {
             self.block_len,
             self.flags,
         );
-        full[..8].try_into().unwrap()
+        [
+            full[0], full[1], full[2], full[3], full[4], full[5], full[6], full[7],
+        ]
     }
 
     /// Fill `out` with the root output (an extendable-output function for
@@ -204,7 +207,9 @@ impl ChunkState {
                     BLOCK_LEN as u32,
                     self.flags | self.start_flag(),
                 );
-                self.cv = out[..8].try_into().unwrap();
+                self.cv = [
+                    out[0], out[1], out[2], out[3], out[4], out[5], out[6], out[7],
+                ];
                 self.blocks_compressed += 1;
                 self.block = [0u8; BLOCK_LEN];
                 self.block_len = 0;
@@ -269,7 +274,8 @@ impl Hasher {
     pub fn new_keyed(key: &[u8; 32]) -> Self {
         let mut key_words = [0u32; 8];
         for (i, w) in key_words.iter_mut().enumerate() {
-            *w = u32::from_le_bytes(key[i * 4..i * 4 + 4].try_into().unwrap());
+            let j = i * 4;
+            *w = u32::from_le_bytes([key[j], key[j + 1], key[j + 2], key[j + 3]]);
         }
         Self::with_key(key_words, KEYED_HASH)
     }

@@ -256,10 +256,10 @@ impl Args {
             .checked_mul(1024)
             .filter(|b| *b > 0)
             .ok_or("--chunk-kib must be between 1 and 1048576")?;
-        if bytes > engine::MAX_CHUNK_BYTES {
+        if bytes > engine::max_chunk_bytes() {
             return Err(format!(
                 "chunk size must be at most {} bytes",
-                engine::MAX_CHUNK_BYTES
+                engine::max_chunk_bytes()
             ));
         }
         Ok(bytes)
@@ -357,6 +357,7 @@ fn encrypt(args: &Args) -> Result<(), String> {
     let mut reader = open_reader(args.input.as_deref()).map_err(|e| e.to_string())?;
     let mut writer = open_writer(args.output.as_deref()).map_err(|e| e.to_string())?;
     engine::encrypt_password_stream(&password, &opts, reader.as_mut(), writer.as_mut())
+        .map_err(String::from)
 }
 
 fn decrypt(args: &Args) -> Result<(), String> {
@@ -374,6 +375,7 @@ fn decrypt(args: &Args) -> Result<(), String> {
     let mut writer = open_writer(args.output.as_deref()).map_err(|e| e.to_string())?;
     let expected = args.expect_label.as_deref().map(str::as_bytes);
     engine::decrypt_password_stream_expecting(&password, expected, reader.as_mut(), writer.as_mut())
+        .map_err(String::from)
 }
 
 fn run_raw(args: &Args) -> Result<(), String> {
@@ -397,6 +399,7 @@ fn run_raw(args: &Args) -> Result<(), String> {
     let mut reader = open_reader(args.input.as_deref()).map_err(|e| e.to_string())?;
     let mut writer = open_writer(args.output.as_deref()).map_err(|e| e.to_string())?;
     engine::raw_ctr_stream(variant, &key, &tweak, &iv, reader.as_mut(), writer.as_mut())
+        .map_err(String::from)
 }
 
 fn open_reader(path: Option<&str>) -> io::Result<Box<dyn Read>> {

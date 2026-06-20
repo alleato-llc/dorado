@@ -93,3 +93,6 @@ covers the whole repository.
 - Keep changes scoped to what is asked.
 - Do not add dependencies without asking first.
 - Be honest about limitations rather than papering over them.
+- Update the changelog as you go: any change worth noting adds a bullet to the
+  `Unreleased` section of `CHANGELOG.md` (grouped under Added / Changed / Fixed /
+  Removed) in the same commit or PR. Call out wire-format/algorithm changes explicitly.

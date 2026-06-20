@@ -92,9 +92,9 @@ the *protocol* described below and the generic tooling; `bench/` is a Gota consu
 Three files here are **copies from Gota** and carry a note saying so. Do not edit them
 in place; change them in Gota and re-copy, so the two stay in sync:
 
-- `harness.py` — the generic orchestrator (build/run each runner, collect JSON,
+- `harness.py`: the generic orchestrator (build/run each runner, collect JSON,
   tabulate). Only its docstring is adapted.
-- `report.py` + `report_template.html` — the HTML report generator and its template.
+- `report.py` + `report_template.html`: the HTML report generator and its template.
 
 What is **dorado-specific** stays here and is ours to edit: `run.py` (which runners,
 the labels, the framing) and the per-language `runner` sources under each directory.

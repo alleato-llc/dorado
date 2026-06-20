@@ -86,6 +86,14 @@ CI lives at the repository root in [`.github/workflows/ci.yml`](.github/workflow
 It runs the Rust jobs (fmt, clippy, test, and `cargo audit`) from `rust/` and builds
 the `web/` site.
 
+## Changelog
+
+Notable changes are recorded in [`CHANGELOG.md`](CHANGELOG.md)
+([Keep a Changelog](https://keepachangelog.com/) format). **Rule:** any change worth
+noting updates the `Unreleased` section of `CHANGELOG.md` in the *same commit or PR*;
+treat it as part of the change. Wire-format or algorithm changes must say so, since
+they affect cross-compatibility across the ports.
+
 ## License
 
 Licensed under the MIT License (SPDX `MIT`). See [`LICENSE`](LICENSE).

@@ -21,6 +21,9 @@ zig build            # builds the dorado and gyotaku executables into zig-out/bi
 zig build test       # runs the test suite
 ```
 
+Building against Zig 0.16 (a large breaking release): notes on the API churn and the
+gotchas hit while writing this port are in [`DEVELOPMENT.md`](DEVELOPMENT.md).
+
 ## Layout
 
 - `src/threefish.zig`, `skein.zig`, `blake3.zig` — the from-scratch primitives

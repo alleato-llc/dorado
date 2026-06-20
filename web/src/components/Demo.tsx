@@ -20,7 +20,7 @@ const MACS: [string, fmt.MacId][] = [
   ["HMAC-SHA256", fmt.MAC_HMAC],
   ["BLAKE3 (keyed)", fmt.MAC_BLAKE3],
 ];
-const KDFS = ["pbkdf2", "scrypt", "argon2id"] as const;
+const KDFS = ["argon2id", "scrypt", "pbkdf2"] as const;
 type Kdf = (typeof KDFS)[number];
 
 // Deliberately light cost parameters so the demo stays snappy in a browser tab.
@@ -47,7 +47,7 @@ export default function Demo() {
   const [password, setPassword] = useState("correct horse battery staple");
   const [variant, setVariant] = useState<fmt.Variant>(fmt.T256);
   const [mac, setMac] = useState<fmt.MacId>(fmt.MAC_SKEIN);
-  const [kdf, setKdf] = useState<Kdf>("pbkdf2");
+  const [kdf, setKdf] = useState<Kdf>("argon2id");
   const [tamper, setTamper] = useState(false);
 
   const [container, setContainer] = useState<Uint8Array | null>(null);

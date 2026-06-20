@@ -44,3 +44,9 @@
 # Zig port (zig/) build artifacts.
 /zig/.zig-cache
 /zig/zig-out
+
+# Benchmark build artifacts (bench/). results.json + RESULTS.md are committed.
+/bench/rust/target
+/bench/c/dorado-bench
+/bench/zig/.zig-cache
+/bench/zig/zig-out

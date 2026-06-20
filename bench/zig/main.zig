@@ -33,19 +33,36 @@ fn runOp(op: Op, data: []u8, out32: *[32]u8) void {
     }
 }
 
+// Report peak throughput across many batches (max MB/s is the reproducible rate;
+// jitter, P/E-core scheduling, and frequency scaling only ever slow a batch). The
+// clock is read only at batch boundaries, which matters most for Zig since its
+// Io-based clock is far more expensive than a raw monotonic read.
 fn bench(io: std.Io, name: []const u8, op: Op, data: []u8, warmup: f64, measure: f64, w: *std.Io.Writer) !void {
     var out32: [32]u8 = undefined;
-    var start = nowS(io);
-    while (nowS(io) - start < warmup) runOp(op, data, &out32);
-    start = nowS(io);
-    var iters: u64 = 0;
-    while (nowS(io) - start < measure) {
-        runOp(op, data, &out32);
-        iters += 1;
+    const wstart = nowS(io);
+    while (nowS(io) - wstart < warmup) runOp(op, data, &out32);
+
+    var batch: u64 = 1;
+    while (true) {
+        const start = nowS(io);
+        var i: u64 = 0;
+        while (i < batch) : (i += 1) runOp(op, data, &out32);
+        if (nowS(io) - start >= 0.1) break;
+        batch *= 2;
     }
-    const elapsed = nowS(io) - start;
-    const mbps = @as(f64, @floatFromInt(data.len)) * @as(f64, @floatFromInt(iters)) / 1e6 / elapsed;
-    try w.print("{{\"impl\":\"zig\",\"bench\":\"{s}\",\"mbps\":{d:.2},\"iters\":{d}}}\n", .{ name, mbps, iters });
+
+    var best: f64 = 0;
+    var total: u64 = 0;
+    const t0 = nowS(io);
+    while (nowS(io) - t0 < measure) {
+        const start = nowS(io);
+        var i: u64 = 0;
+        while (i < batch) : (i += 1) runOp(op, data, &out32);
+        const mbps = @as(f64, @floatFromInt(data.len)) * @as(f64, @floatFromInt(batch)) / 1e6 / (nowS(io) - start);
+        if (mbps > best) best = mbps;
+        total += batch;
+    }
+    try w.print("{{\"impl\":\"zig\",\"bench\":\"{s}\",\"mbps\":{d:.2},\"iters\":{d}}}\n", .{ name, best, total });
 }
 
 pub fn main(init: std.process.Init) !void {

@@ -61,6 +61,13 @@ This is the dorado monorepo. It has several parts:
 - `web/` — the Astro landing page that advertises the app, with an in-browser
   encrypt/decrypt demo built on `ts/` + the browser WASM build. Site conventions
   are in `web/CLAUDE.md`. Run npm from inside `web/`.
+- `bench/` — cross-language throughput benchmarks of the from-scratch primitives. One
+  small native runner per language (in `bench/<lang>/`) under a uniform protocol
+  (peak throughput over batches, MB/s), plus `bench/run.sh` (the orchestrator that
+  builds and runs them all and writes `results.json` + `RESULTS.md`) and
+  `bench/report.py`. KDFs are deliberately out of scope (delegated libraries). The
+  committed results are a snapshot from one stated machine, not from CI. Benchmarks
+  the implementations only; never put fabricated numbers here.
 
 When changing the wire format or an algorithm, keep `rust/`, `go/`, `ts/`, `java/`,
 `python/`, `c/`, and `zig/` in sync or cross-compatibility breaks. The eight

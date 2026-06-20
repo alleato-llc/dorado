@@ -50,3 +50,5 @@
 /bench/c/dorado-bench
 /bench/zig/.zig-cache
 /bench/zig/zig-out
+/bench/go/dorado-bench
+/bench/java/*.class

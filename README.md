@@ -43,6 +43,10 @@ This repository is a modular monorepo:
 - **[`web/`](web/)** — the landing page that advertises the app, an
   [Astro](https://astro.build/) site with an in-browser encrypt/decrypt demo. See
   [`web/README.md`](web/README.md).
+- **[`bench/`](bench/)** — cross-language throughput benchmarks of the from-scratch
+  primitives, one small runner per language under a uniform protocol. `bench/run.sh`
+  builds and runs them all and writes a committed `RESULTS.md`. See
+  [`bench/README.md`](bench/README.md).
 
 The eight implementations share one on-disk format and are byte-for-byte
 cross-compatible: each can decrypt the others' `.mahi` files, verified across every

@@ -33,6 +33,8 @@ static void run_op(int op, int variant, const uint8_t *key, const uint8_t *iv, u
     }
 }
 
+/* Report peak throughput across many batches (the max MB/s is the reproducible rate;
+ * jitter only ever slows a batch). The clock is read only at batch boundaries. */
 static void bench(const char *name, int op, int variant, const uint8_t *key, const uint8_t *iv, uint8_t *data,
                   size_t n, double warmup, double measure) {
     uint8_t out32[32];
@@ -40,15 +42,32 @@ static void bench(const char *name, int op, int variant, const uint8_t *key, con
     while (now_s() - start < warmup) {
         run_op(op, variant, key, iv, data, n, out32);
     }
-    start = now_s();
-    unsigned long long iters = 0;
-    while (now_s() - start < measure) {
-        run_op(op, variant, key, iv, data, n, out32);
-        iters++;
+    unsigned long long batch = 1;
+    for (;;) {
+        start = now_s();
+        for (unsigned long long i = 0; i < batch; i++) {
+            run_op(op, variant, key, iv, data, n, out32);
+        }
+        if (now_s() - start >= 0.1) {
+            break;
+        }
+        batch *= 2;
     }
-    double elapsed = now_s() - start;
-    double mbps = (double)n * (double)iters / 1e6 / elapsed;
-    printf("{\"impl\":\"c\",\"bench\":\"%s\",\"mbps\":%.2f,\"iters\":%llu}\n", name, mbps, iters);
+    double best = 0.0;
+    unsigned long long total = 0;
+    double t0 = now_s();
+    while (now_s() - t0 < measure) {
+        start = now_s();
+        for (unsigned long long i = 0; i < batch; i++) {
+            run_op(op, variant, key, iv, data, n, out32);
+        }
+        double mbps = (double)n * (double)batch / 1e6 / (now_s() - start);
+        if (mbps > best) {
+            best = mbps;
+        }
+        total += batch;
+    }
+    printf("{\"impl\":\"c\",\"bench\":\"%s\",\"mbps\":%.2f,\"iters\":%llu}\n", name, best, total);
 }
 
 int main(int argc, char **argv) {

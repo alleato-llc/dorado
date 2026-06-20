@@ -16,14 +16,14 @@ Run everything and regenerate the results table:
 
 ```
 $ cd bench
-$ ./run.sh
+$ python3 run.py
   rust: building (release)
   c: building (-O2)
   zig: building (ReleaseFast)
   go: building
   java: building (gradle classes + javac)
-  python: running (../python/.venv/bin/python)
-  ts: running (pure-TS via tsx)
+  python: running
+  ts: running
 wrote results.json and RESULTS.md (35 measurements, 7 implementations)
 
 $ cat RESULTS.md
@@ -36,8 +36,8 @@ $ cat RESULTS.md
 A quick run (shorter warmup/measure, or a smaller buffer) while iterating:
 
 ```
-$ BENCH_WARMUP=0.3 BENCH_MEASURE=0.8 ./run.sh
-$ BENCH_BUF=1048576 ./run.sh            # 1 MiB buffer instead of the 64 KiB default
+$ BENCH_WARMUP=0.3 BENCH_MEASURE=0.8 python3 run.py
+$ BENCH_BUF=1048576 python3 run.py            # 1 MiB buffer instead of the 64 KiB default
 ```
 
 Run one implementation directly and see its raw JSON (here Rust, 64 KiB buffer,
@@ -73,15 +73,31 @@ Apple M4 Max 2026-06-20 6be147c {'buffer_bytes': 65536, 'warmup_seconds': 0.5, '
 
 ## Two sections
 
-- **Throughput** (`run.sh`): a uniform micro-benchmark of each port's *own* code:
+- **Throughput** (`run.py`): a uniform micro-benchmark of each port's *own* code:
   Threefish-256/512/1024 in CTR mode, Skein-512, and BLAKE3, in MB/s. This is the
   comparable part. It deliberately does not touch the KDFs (those are delegated
   libraries, not our code) and isolates the primitive from process startup and I/O.
-- **End-to-end** (`endtoend.sh`): the real `dorado` CLI timed with `hyperfine`.
+- **End-to-end** (`endtoend.py`): the real `dorado` CLI timed with `hyperfine`.
   This includes process startup + the KDF + the cipher + I/O, i.e. what a user
   actually waits for. It covers only the ports that ship a CLI, and its differences
   are dominated by runtime startup and the KDF library, *not* the implementation, so
   it is a reality check, not a per-language race.
+
+## Built on Gota
+
+The benchmark scaffolding is [Gota](https://github.com/alleato-llc/gota), a standalone
+cross-language micro-benchmark reference (extracted from this very harness). Gota owns
+the *protocol* described below and the generic tooling; `bench/` is a Gota consumer.
+
+Three files here are **copies from Gota** and carry a note saying so. Do not edit them
+in place; change them in Gota and re-copy, so the two stay in sync:
+
+- `harness.py` — the generic orchestrator (build/run each runner, collect JSON,
+  tabulate). Only its docstring is adapted.
+- `report.py` + `report_template.html` — the HTML report generator and its template.
+
+What is **dorado-specific** stays here and is ours to edit: `run.py` (which runners,
+the labels, the framing) and the per-language `runner` sources under each directory.
 
 ## The uniform protocol (Throughput)
 
@@ -129,21 +145,33 @@ later, in the report and on the website, never in the measurement.
 ### All implementations (the orchestrator)
 
 ```
-./run.sh
+python3 run.py
 ```
 
-`run.sh` builds and runs every available throughput runner with identical
+`run.py` builds and runs every available throughput runner with identical
 parameters, collects the JSON, records the machine spec / date / git commit, and
 writes `results.json` and `RESULTS.md`. A runner whose toolchain is missing is
 skipped with a warning, so a partial run still works. Override the parameters with
 environment variables, for example a quick check:
 
 ```
-BENCH_WARMUP=0.3 BENCH_MEASURE=0.8 ./run.sh    # also BENCH_BUF=<bytes>
+BENCH_WARMUP=0.3 BENCH_MEASURE=0.8 python3 run.py    # also BENCH_BUF=<bytes>
 ```
 
 The committed run uses the defaults (64 KiB buffer, 0.5s warmup, 2.0s measured) and
 takes a few minutes, almost all of it in the slow ports (Python).
+
+### HTML report
+
+`report.py` turns `results.json` into a single self-contained `report.html` (sortable
+table, per-language colors, magnitude bars, formatted `MB/s`):
+
+```
+python3 report.py results.json -o report.html --title "dorado: from-scratch primitive throughput"
+```
+
+The page has a file picker, so the committed `report.html` can also open any other
+`results.json` you load into it.
 
 ### Prerequisites
 
@@ -188,13 +216,14 @@ differ. Each directory has its own README with build and run details.
 | [`python/`](python/README.md) | Python | imports the installed `dorado` package |
 | [`ts/`](ts/README.md) | TypeScript | the pure-TS BigInt cipher, run via `tsx` |
 
-Still planned: an `endtoend.sh` to drive the real CLIs through `hyperfine` for the
+Still planned: an `endtoend.py` to drive the real CLIs through `hyperfine` for the
 end-to-end section, and a reference-library runner (an optimized crate such as
 RustCrypto) to show the naive-vs-tuned gap.
 
-`results.json` and `RESULTS.md` are a committed snapshot from one stated machine.
-They are not produced by CI, whose hardware varies; to refresh them, run `./run.sh`
-on a chosen machine and commit the result.
+`results.json`, `RESULTS.md`, and `report.html` are a committed snapshot from one
+stated machine. They are not produced by CI, whose hardware varies; to refresh them,
+run `python3 run.py` (then `python3 report.py results.json -o report.html`) on a chosen
+machine and commit the result.
 
 ## What is and isn't covered
 

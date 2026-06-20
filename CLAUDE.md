@@ -63,11 +63,16 @@ This is the dorado monorepo. It has several parts:
   are in `web/CLAUDE.md`. Run npm from inside `web/`.
 - `bench/` — cross-language throughput benchmarks of the from-scratch primitives. One
   small native runner per language (in `bench/<lang>/`) under a uniform protocol
-  (peak throughput over batches, MB/s), plus `bench/run.sh` (the orchestrator that
-  builds and runs them all and writes `results.json` + `RESULTS.md`) and
-  `bench/report.py`. KDFs are deliberately out of scope (delegated libraries). The
-  committed results are a snapshot from one stated machine, not from CI. Benchmarks
-  the implementations only; never put fabricated numbers here.
+  (peak throughput over batches, MB/s). The scaffolding is Gota
+  (github.com/alleato-llc/gota), a standalone cross-language micro-benchmark reference;
+  `bench/` is a consumer. `bench/harness.py` (the generic orchestrator), `bench/report.py`
+  + `bench/report_template.html` (the HTML report) are copies from Gota and carry a note
+  saying so: do not edit them in place, change them in Gota and re-copy. The
+  dorado-specific parts are ours to edit: `bench/run.py` (which runners, the labels, the
+  framing) and the per-language `runner` sources. `run.py` writes `results.json` +
+  `RESULTS.md`; `report.py` writes `report.html`. KDFs are deliberately out of scope
+  (delegated libraries). The committed results are a snapshot from one stated machine,
+  not from CI. Benchmarks the implementations only; never put fabricated numbers here.
 
 When changing the wire format or an algorithm, keep `rust/`, `go/`, `ts/`, `java/`,
 `python/`, `c/`, and `zig/` in sync or cross-compatibility breaks. The eight

@@ -44,9 +44,11 @@ This repository is a modular monorepo:
   [Astro](https://astro.build/) site with an in-browser encrypt/decrypt demo. See
   [`web/README.md`](web/README.md).
 - **[`bench/`](bench/)** — cross-language throughput benchmarks of the from-scratch
-  primitives, one small runner per language under a uniform protocol. `bench/run.sh`
-  builds and runs them all and writes a committed `RESULTS.md`. See
-  [`bench/README.md`](bench/README.md).
+  primitives, one small runner per language under a uniform protocol. `python3
+  bench/run.py` builds and runs them all and writes a committed `RESULTS.md`; `python3
+  bench/report.py` renders an HTML report. The scaffolding is
+  [Gota](https://github.com/alleato-llc/gota), a standalone micro-benchmark reference
+  that `bench/` consumes. See [`bench/README.md`](bench/README.md).
 
 The eight implementations share one on-disk format and are byte-for-byte
 cross-compatible: each can decrypt the others' `.mahi` files, verified across every

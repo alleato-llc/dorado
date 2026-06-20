@@ -9,14 +9,18 @@ complete and committed; the items below are not yet done.
   Python, pure-TypeScript), each native to its language under one uniform protocol.
 - **Peak-of-batches methodology** (robust to clock cost and Apple Silicon P/E-core
   scheduling), with the rationale documented in `README.md`.
-- **Orchestrator** (`run.sh`) + **report** (`report.py`) producing `results.json`
-  and `RESULTS.md`, with machine/date/commit provenance.
+- **Orchestrator** (`run.py`) + engine (`harness.py`) producing `results.json` and
+  `RESULTS.md`, with machine/date/commit provenance, plus an HTML report (`report.py`
+  + `report_template.html`) producing `report.html`.
+- **Built on Gota**: `harness.py`, `report.py`, and `report_template.html` are copies
+  from github.com/alleato-llc/gota (the protocol and generic tooling live there);
+  `run.py` and the runners are the dorado-specific parts.
 - **Docs**: top-level `README.md`, a per-runner README each, worked examples,
   prerequisites, and a mention in the project README and `CLAUDE.md`.
 
 ## Remaining
 
-### 1. End-to-end section (`endtoend.sh`)
+### 1. End-to-end section (`endtoend.py`)
 The "where the time goes" reality check: the real `dorado` CLIs timed with
 `hyperfine`, so the table reflects process startup + KDF + cipher + I/O, i.e. what a
 user actually waits for. Covers only the five ports with a CLI (not Java SDK, not
@@ -33,7 +37,7 @@ the browser).
   - Framing: this is explicitly **not a language race** (differences are startup +
     KDF library, not our code).
 - **Needs:** `hyperfine` installed; the CLIs built.
-- **Effort:** small-to-medium (one shell script + report wiring + framing).
+- **Effort:** small-to-medium (a Python script reusing `harness.py` + framing).
 
 ### 2. Reference-library runner
 Measure an optimized library under the *same* protocol (e.g. RustCrypto's
@@ -74,7 +78,7 @@ noise), documented in `zig/README.md`.
 
 ### 6. Provenance refresh (minor)
 `results.json` currently records the *parent* commit (`6be147c`), because the
-snapshot was generated before the harness commit. Re-running `./run.sh` on the
+snapshot was generated before the harness commit. Re-running `python3 run.py` on the
 current commit and committing the refreshed results makes them cite their own commit.
 - **Effort:** trivial (a ~4-minute run + one commit).
 

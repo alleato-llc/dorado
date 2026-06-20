@@ -20,6 +20,16 @@ site setup (same stack, same theme-toggle pattern) so the two stay consistent.
   `data-theme` attribute on `:root`, with CSS custom properties. Light is warm
   sand and teal; dark is deep sea and aqua; a gold accent runs through both.
 - `src/pages/` holds one file per route. `public/` is served as-is.
+- `src/components/Demo.tsx` is the in-browser encrypt/decrypt demo (a
+  `client:only="preact"` island). It reuses the engine from the sibling `../ts`
+  package, imported as `@ts/...` (a Vite alias in `astro.config.mjs`; `server.fs`
+  is widened to the repo root so dev can read `../ts`), on top of the verified Rust
+  cipher in WASM. The browser cipher backend is `src/lib/backend.ts`; the WASM
+  build is vendored in `src/wasm/` (committed, so the site builds with no Rust
+  toolchain) and regenerated with `npm run build:wasm`. `hash-wasm` is a dependency
+  because the engine's KDFs need it in the browser. Do not reimplement cipher or
+  engine logic here; it lives in `../rust` and `../ts`. When the wire format or
+  cipher changes, rebuild `src/wasm/` or the demo drifts from the CLIs.
 
 ## Conventions
 

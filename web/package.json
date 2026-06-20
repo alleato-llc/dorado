@@ -5,11 +5,13 @@
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",
-    "preview": "astro preview"
+    "preview": "astro preview",
+    "build:wasm": "cd ../rust/wasm && wasm-pack build --target web --out-dir pkg-web && cd ../../web && cp ../rust/wasm/pkg-web/dorado_wasm.js ../rust/wasm/pkg-web/dorado_wasm.d.ts ../rust/wasm/pkg-web/dorado_wasm_bg.wasm ../rust/wasm/pkg-web/dorado_wasm_bg.wasm.d.ts src/wasm/"
   },
   "dependencies": {
     "@astrojs/preact": "^4.0.0",
     "astro": "^5.0.0",
+    "hash-wasm": "^4.12.0",
     "preact": "^10.25.0"
   },
   "devDependencies": {

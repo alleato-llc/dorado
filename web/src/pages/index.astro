@@ -1,5 +1,6 @@
 ---
 import Layout from "../layouts/Layout.astro";
+import Demo from "../components/Demo.tsx";
 
 // Update this to the real repository URL once it is published.
 const REPO = "https://github.com/nycjv321/dorado";
@@ -88,6 +89,19 @@ const primitives = [
           ))
         }
       </div>
+    </div>
+  </section>
+
+  <section id="demo">
+    <div class="wrap">
+      <h2>Try it in your browser</h2>
+      <p class="sub">
+        Encrypt a message to a password container and decrypt it back, entirely
+        client-side. The cipher is the verified Rust core compiled to WebAssembly;
+        the container is the same one the CLIs read, so this output decrypts with
+        <code>dorado decrypt</code> and vice versa.
+      </p>
+      <Demo client:only="preact" />
     </div>
   </section>
 

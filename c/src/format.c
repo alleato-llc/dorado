@@ -1,5 +1,7 @@
 #include "format.h"
 
+#include <errno.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "dorado/threefish.h"
@@ -7,6 +9,31 @@
 
 int dorado_read_full(FILE *in, uint8_t *buf, size_t n) {
     return fread(buf, 1, n, in) == n;
+}
+
+uint32_t dorado_chunk_cap_from(const char *s) {
+    if (!s || s[0] == '\0') {
+        return DORADO_DEFAULT_MAX_CHUNK_BYTES;
+    }
+    errno = 0;
+    char *end = NULL;
+    unsigned long v = strtoul(s, &end, 10);
+    /* Reject overflow and any trailing garbage (including leading-only sign/space,
+     * which strtoul would skip; end == s means nothing parsed). */
+    if (errno != 0 || end == s || *end != '\0') {
+        return DORADO_DEFAULT_MAX_CHUNK_BYTES;
+    }
+    if (v < 1) {
+        v = 1; /* clamp "0" up to the minimum */
+    }
+    if (v > DORADO_MAX_CHUNK_BYTES) {
+        v = DORADO_MAX_CHUNK_BYTES; /* never exceed the hard ceiling */
+    }
+    return (uint32_t)v;
+}
+
+uint32_t dorado_effective_max_chunk_bytes(void) {
+    return dorado_chunk_cap_from(getenv("DORADO_MAX_CHUNK_BYTES"));
 }
 
 size_t dorado_format_marshal(const dorado_header *h, uint8_t *out) {

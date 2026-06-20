@@ -104,7 +104,8 @@ const char *dorado_encrypt_password_stream(const uint8_t *password, size_t passw
     if (bl == 0) {
         return "unknown variant";
     }
-    if (opts->chunk_size == 0 || opts->chunk_size > DORADO_MAX_CHUNK_BYTES || opts->chunk_size % (uint32_t)bl != 0) {
+    if (opts->chunk_size == 0 || opts->chunk_size > dorado_effective_max_chunk_bytes() ||
+        opts->chunk_size % (uint32_t)bl != 0) {
         return "chunk size must be a positive multiple of the block size";
     }
     uint8_t salt[16];
@@ -197,7 +198,7 @@ const char *dorado_decrypt_password_stream(const uint8_t *password, size_t passw
         }
     }
     int bl = dorado_variant_len(h.variant);
-    if (h.chunk_size == 0 || h.chunk_size > DORADO_MAX_CHUNK_BYTES || h.chunk_size % (uint32_t)bl != 0) {
+    if (h.chunk_size == 0 || h.chunk_size > dorado_effective_max_chunk_bytes() || h.chunk_size % (uint32_t)bl != 0) {
         return "invalid chunk size in header";
     }
     e = dorado_kdf_validate(&h.kdf);

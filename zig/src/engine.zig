@@ -115,7 +115,7 @@ pub fn encryptStream(
     if (opts.label.len > fmt.MAX_LABEL_LEN) return Error.LabelTooLong;
     const v = opts.variant;
     const bl = v.keyLen();
-    if (opts.chunk_size == 0 or opts.chunk_size > fmt.MAX_CHUNK_BYTES or opts.chunk_size % bl != 0)
+    if (opts.chunk_size == 0 or opts.chunk_size > fmt.chunkCap() or opts.chunk_size % bl != 0)
         return Error.InvalidChunkSize;
 
     var salt: [16]u8 = undefined;
@@ -206,7 +206,7 @@ pub fn decryptStream(
         if (!mem.eql(u8, el, h.labelSlice())) return Error.BadContainer;
     }
     const bl = h.variant.keyLen();
-    if (h.chunk_size == 0 or h.chunk_size > fmt.MAX_CHUNK_BYTES or h.chunk_size % bl != 0)
+    if (h.chunk_size == 0 or h.chunk_size > fmt.chunkCap() or h.chunk_size % bl != 0)
         return Error.InvalidChunkSize;
     try kdf.validate(h.kdf);
 

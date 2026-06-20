@@ -10,6 +10,14 @@
 #include "dorado/skein.h"
 #include "dorado/threefish.h"
 
+/* Pure chunk-cap parser, declared in the internal src/format.h (not a public
+ * header); declared here so the test can exercise it without -Isrc. Kept in sync
+ * with format.h. */
+#include <stdint.h>
+uint32_t dorado_chunk_cap_from(const char *s);
+#define TEST_DEFAULT_MAX_CHUNK (64u * 1024 * 1024)
+#define TEST_HARD_MAX_CHUNK (1u << 30)
+
 static int g_pass = 0, g_fail = 0;
 
 static int hv(int c) {
@@ -208,10 +216,23 @@ static void test_crosscompat(void) {
     free(data);
 }
 
+static void test_chunk_cap(void) {
+    check(dorado_chunk_cap_from(NULL) == TEST_DEFAULT_MAX_CHUNK, "chunk cap: NULL -> default");
+    check(dorado_chunk_cap_from("") == TEST_DEFAULT_MAX_CHUNK, "chunk cap: empty -> default");
+    check(dorado_chunk_cap_from("abc") == TEST_DEFAULT_MAX_CHUNK, "chunk cap: unparseable -> default");
+    check(dorado_chunk_cap_from("123abc") == TEST_DEFAULT_MAX_CHUNK, "chunk cap: trailing garbage -> default");
+    check(dorado_chunk_cap_from("65536") == 65536u, "chunk cap: plain value passes through");
+    check(dorado_chunk_cap_from("0") == 1u, "chunk cap: 0 -> clamped up to 1");
+    check(dorado_chunk_cap_from("2147483648") == TEST_HARD_MAX_CHUNK, "chunk cap: > 1 GiB -> clamped to 1 GiB");
+    check(dorado_chunk_cap_from("99999999999999999999") == TEST_DEFAULT_MAX_CHUNK,
+          "chunk cap: overflow -> default");
+}
+
 int main(void) {
     test_threefish();
     test_hashes();
     test_engine();
+    test_chunk_cap();
     test_crosscompat();
     printf("%d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;

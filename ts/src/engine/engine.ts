@@ -17,7 +17,7 @@ import {
   blockLen,
   FORMAT_VERSION,
   DEFAULT_CHUNK_BYTES,
-  MAX_CHUNK_BYTES,
+  effectiveMaxChunkBytes,
   MAX_LABEL_LEN,
   MAC_KEY_LEN,
   MAC_SKEIN,
@@ -71,6 +71,10 @@ export async function encryptPasswordBytes(
   backend: CipherBackend = tsBackend,
 ): Promise<Uint8Array> {
   if (opts.label.length > MAX_LABEL_LEN) throw new Error("label too long");
+  const cap = effectiveMaxChunkBytes();
+  if (opts.chunkSize === 0 || opts.chunkSize > cap) {
+    throw new Error(`invalid chunk size ${opts.chunkSize} (cap ${cap})`);
+  }
   const v = opts.variant;
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const iv = crypto.getRandomValues(new Uint8Array(blockLen(v)));
@@ -117,7 +121,7 @@ export async function decryptPasswordBytes(
   }
   const headerBytes = marshalHeader(header);
   const bl = blockLen(header.variant);
-  if (header.chunkSize === 0 || header.chunkSize > MAX_CHUNK_BYTES || header.chunkSize % bl !== 0) {
+  if (header.chunkSize === 0 || header.chunkSize > effectiveMaxChunkBytes() || header.chunkSize % bl !== 0) {
     throw new Error(`invalid chunk size ${header.chunkSize} in header`);
   }
   validate(header.kdf);

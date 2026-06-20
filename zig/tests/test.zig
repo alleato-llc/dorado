@@ -191,6 +191,21 @@ test "engine label binding + hostile kdf cost" {
 }
 
 // Cross-compat: decrypt .mahi fixtures produced by the Rust reference (embedded).
+test "chunkCapFrom policy (effective chunk-size cap)" {
+    // null/empty -> default
+    try testing.expectEqual(fmt.DEFAULT_MAX_CHUNK_BYTES, fmt.chunkCapFrom(null));
+    try testing.expectEqual(fmt.DEFAULT_MAX_CHUNK_BYTES, fmt.chunkCapFrom(""));
+    // unparseable -> default
+    try testing.expectEqual(fmt.DEFAULT_MAX_CHUNK_BYTES, fmt.chunkCapFrom("xyz"));
+    try testing.expectEqual(fmt.DEFAULT_MAX_CHUNK_BYTES, fmt.chunkCapFrom("-1"));
+    // a plain value passes through
+    try testing.expectEqual(@as(u32, 1024), fmt.chunkCapFrom("1024"));
+    // "0" clamps up to 1
+    try testing.expectEqual(@as(u32, 1), fmt.chunkCapFrom("0"));
+    // above 1 GiB clamps to the hard ceiling
+    try testing.expectEqual(fmt.MAX_CHUNK_BYTES, fmt.chunkCapFrom("2147483648"));
+}
+
 const fixtures = .{
     .{ @embedFile("fixtures/argon_skein_256.mahi"), "rust argon+skein+256" },
     .{ @embedFile("fixtures/scrypt_hmac_512.mahi"), "rust scrypt+hmac+512" },

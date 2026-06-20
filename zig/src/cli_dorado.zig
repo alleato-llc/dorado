@@ -99,6 +99,11 @@ pub fn main(init: std.process.Init) !void {
     const a = init.gpa;
     const io = init.io;
 
+    // Resolve the operator override for the accepted chunk-size cap from the
+    // environment (the SDK stays libc-free, so the CLI reads the env and hands the
+    // engine the clamped value). Unset/empty/unparseable keeps the default cap.
+    fmt.setChunkCapOverride(fmt.chunkCapFrom(init.environ_map.get("DORADO_MAX_CHUNK_BYTES")));
+
     var arglist: std.ArrayList([]const u8) = .empty;
     defer arglist.deinit(a);
     var it = std.process.Args.Iterator.init(init.minimal.args);

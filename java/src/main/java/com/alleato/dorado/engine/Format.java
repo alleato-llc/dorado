@@ -17,7 +17,10 @@ public final class Format {
     public static final String MAGIC = "DRDO";
     public static final int VERSION = 4;
     public static final int DEFAULT_CHUNK_BYTES = 64 * 1024;
+    /** Hard ceiling on an accepted chunk size. The effective cap can only be lower. */
     public static final long MAX_CHUNK_BYTES = 1L << 30;
+    /** Default accepted chunk-size cap when the environment does not override it. */
+    public static final long DEFAULT_MAX_CHUNK_BYTES = 64L * 1024 * 1024;
     public static final int MAX_LABEL_LEN = 4096;
     public static final int MAC_KEY_LEN = 32;
     public static final int TAG_LEN = 32;
@@ -39,6 +42,41 @@ public final class Format {
     public static final int PRF_HMAC_SHA256 = 1;
 
     private Format() {}
+
+    /**
+     * The effective accepted chunk-size cap. Reads the {@code DORADO_MAX_CHUNK_BYTES}
+     * environment variable and clamps it into {@code [1, MAX_CHUNK_BYTES]}; an unset,
+     * empty, or unparseable value yields {@link #DEFAULT_MAX_CHUNK_BYTES}. The override
+     * can only tighten the cap below the hard ceiling, never raise it past 1 GiB.
+     */
+    public static long maxChunkBytes() {
+        return clampChunkCap(System.getenv("DORADO_MAX_CHUNK_BYTES"));
+    }
+
+    /**
+     * Pure helper backing {@link #maxChunkBytes()}: maps a raw env-var string to an
+     * effective chunk-size cap. {@code null}, empty, or non-parseable-as-a-non-negative
+     * integer yields {@link #DEFAULT_MAX_CHUNK_BYTES}; a parsed value is clamped into
+     * {@code [1, MAX_CHUNK_BYTES]}.
+     */
+    public static long clampChunkCap(String raw) {
+        if (raw == null || raw.isEmpty()) {
+            return DEFAULT_MAX_CHUNK_BYTES;
+        }
+        long v;
+        try {
+            v = Long.parseLong(raw.trim());
+        } catch (NumberFormatException e) {
+            return DEFAULT_MAX_CHUNK_BYTES;
+        }
+        if (v < 0) {
+            return DEFAULT_MAX_CHUNK_BYTES;
+        }
+        if (v < 1) {
+            return 1;
+        }
+        return Math.min(v, MAX_CHUNK_BYTES);
+    }
 
     /** The variant's key/block/IV length in bytes. */
     public static int keyLen(int variant) {

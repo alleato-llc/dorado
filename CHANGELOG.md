@@ -59,6 +59,15 @@ must say so explicitly, since they affect cross-compatibility across all ports.
   (parity with `dorado-engine`); 1 GiB is now the hard ceiling. The Go CLI caps
   `--chunk-kib` to the effective max so encryption matches the default decrypt cap.
   Decoder policy, not a wire-format change.
+- `java/`, `python/`, `c/`, `zig/`, `ts/`: the same chunk-size cap parity applied to
+  the remaining five ports. The default accepted cap is now 64 MiB
+  (`DEFAULT_MAX_CHUNK_BYTES`), 1 GiB stays the hard ceiling (`MAX_CHUNK_BYTES`), and a
+  `DORADO_MAX_CHUNK_BYTES` env override (clamped to tighten only) is honored on both
+  the encrypt and decrypt checks, with a unit test for the pure resolver in each. All
+  eight ports now share the same acceptance policy. Decoder/encoder policy, not a
+  wire-format change: normal files (64 KiB chunks) round-trip and cross-decrypt
+  unchanged. (Zig reads the override at the CLI boundary, since its libc-free SDK
+  cannot call getenv.)
 - CI: the Go job runs `go test -race` and `govulncheck`, on Go 1.25 (matching
   `go/go.mod`, which the previous 1.24 pin did not satisfy).
 - `bench/` is now a consumer of [Gota](https://github.com/alleato-llc/gota), the

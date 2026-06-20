@@ -14,7 +14,13 @@ from .errors import DoradoError
 MAGIC = b"DRDO"
 VERSION = 4
 DEFAULT_CHUNK_BYTES = 64 * 1024
+# Hard ceiling on the accepted chunk size. The effective accepted cap (see
+# effective_max_chunk_bytes) defaults to DEFAULT_MAX_CHUNK_BYTES and can be tightened
+# below this via DORADO_MAX_CHUNK_BYTES, but never raised above it.
 MAX_CHUNK_BYTES = 1 << 30
+# Default accepted chunk-size cap (64 MiB), used when the env override is absent or
+# unparseable.
+DEFAULT_MAX_CHUNK_BYTES = 64 * 1024 * 1024
 MAX_LABEL_LEN = 4096
 MAC_KEY_LEN = 32
 TAG_LEN = 32
@@ -34,6 +40,33 @@ KDF_ARGON2ID = 1
 KDF_SCRYPT = 2
 KDF_PBKDF2 = 3
 PRF_HMAC_SHA256 = 1
+
+
+def chunk_cap_from(s: str | None) -> int:
+    """The effective accepted chunk-size cap given a raw override string (the value of
+    DORADO_MAX_CHUNK_BYTES). Returns DEFAULT_MAX_CHUNK_BYTES when s is None, empty, or
+    not a non-negative integer. Otherwise the parsed value is clamped into
+    [1, MAX_CHUNK_BYTES]: it can only tighten the cap below 1 GiB, never weaken it."""
+    if s is None:
+        return DEFAULT_MAX_CHUNK_BYTES
+    s = s.strip()
+    if not s:
+        return DEFAULT_MAX_CHUNK_BYTES
+    try:
+        v = int(s)
+    except ValueError:
+        return DEFAULT_MAX_CHUNK_BYTES
+    if v < 0:
+        return DEFAULT_MAX_CHUNK_BYTES
+    return max(1, min(v, MAX_CHUNK_BYTES))
+
+
+def effective_max_chunk_bytes() -> int:
+    """The effective accepted chunk-size cap, reading the DORADO_MAX_CHUNK_BYTES env
+    var. Thin os.environ wrapper over chunk_cap_from."""
+    import os
+
+    return chunk_cap_from(os.environ.get("DORADO_MAX_CHUNK_BYTES"))
 
 
 def key_len(variant: int) -> int:

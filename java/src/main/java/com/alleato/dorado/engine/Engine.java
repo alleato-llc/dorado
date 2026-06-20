@@ -108,7 +108,7 @@ public final class Engine {
         }
         int v = opts.variant;
         int blockLen = Format.blockLen(v);
-        if (opts.chunkSize <= 0 || opts.chunkSize > Format.MAX_CHUNK_BYTES || opts.chunkSize % blockLen != 0) {
+        if (opts.chunkSize <= 0 || opts.chunkSize > Format.maxChunkBytes() || opts.chunkSize % blockLen != 0) {
             throw new IllegalArgumentException("chunk size must be a positive multiple of " + blockLen);
         }
         byte[] salt = new byte[16];
@@ -200,7 +200,7 @@ public final class Engine {
         }
         byte[] headerBytes = Format.marshal(h);
         int blockLen = Format.blockLen(h.variant);
-        if (h.chunkSize == 0 || h.chunkSize > Format.MAX_CHUNK_BYTES || h.chunkSize % blockLen != 0) {
+        if (h.chunkSize == 0 || h.chunkSize > Format.maxChunkBytes() || h.chunkSize % blockLen != 0) {
             throw new DoradoException("invalid chunk size " + h.chunkSize + " in header");
         }
         Kdf.validate(h.kdf);

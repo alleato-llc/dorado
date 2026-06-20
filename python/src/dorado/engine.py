@@ -82,7 +82,7 @@ def encrypt_password_stream(password: bytes, opts: PasswordOptions, reader: Bina
         raise DoradoError(f"label too long ({len(opts.label)} bytes)")
     v = opts.variant
     bl = fmt.block_len(v)
-    if opts.chunk_size <= 0 or opts.chunk_size > fmt.MAX_CHUNK_BYTES or opts.chunk_size % bl != 0:
+    if opts.chunk_size <= 0 or opts.chunk_size > fmt.effective_max_chunk_bytes() or opts.chunk_size % bl != 0:
         raise ValueError(f"chunk size must be a positive multiple of {bl}")
     salt = os.urandom(16)
     iv = os.urandom(bl)
@@ -143,7 +143,7 @@ def decrypt_password_stream(
         raise DoradoError("container label does not match the expected label")
     header_bytes = fmt.marshal(h)
     bl = fmt.block_len(h.variant)
-    if h.chunk_size == 0 or h.chunk_size > fmt.MAX_CHUNK_BYTES or h.chunk_size % bl != 0:
+    if h.chunk_size == 0 or h.chunk_size > fmt.effective_max_chunk_bytes() or h.chunk_size % bl != 0:
         raise DoradoError(f"invalid chunk size {h.chunk_size} in header")
     kdf_mod.validate(h.kdf)
 

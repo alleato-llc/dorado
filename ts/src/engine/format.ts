@@ -7,7 +7,11 @@ import { concat } from "../bytes";
 export const MAGIC = "DRDO";
 export const FORMAT_VERSION = 4;
 export const DEFAULT_CHUNK_BYTES = 64 * 1024;
-export const MAX_CHUNK_BYTES = 1 << 30;
+// Hard ceiling on the accepted chunk size. A header may never declare a chunk
+// larger than this, and the env override can only tighten the cap below it.
+export const MAX_CHUNK_BYTES = 1 << 30; // 1 GiB
+// Default accepted cap, applied when DORADO_MAX_CHUNK_BYTES is unset or invalid.
+export const DEFAULT_MAX_CHUNK_BYTES = 64 * 1024 * 1024; // 64 MiB
 export const MAX_LABEL_LEN = 4096;
 export const MAC_KEY_LEN = 32;
 export const TAG_LEN = 32;
@@ -16,6 +20,30 @@ export const T256 = 0;
 export const T512 = 1;
 export const T1024 = 2;
 export type Variant = 0 | 1 | 2;
+
+// Resolve the effective accepted chunk-size cap from a raw override string (the
+// value of DORADO_MAX_CHUNK_BYTES). Pure: no IO, so it is directly testable.
+// An unset, empty, or unparseable value yields the default cap. A valid value is
+// clamped into [1, MAX_CHUNK_BYTES], so the override can only tighten the cap
+// below the hard ceiling, never raise it.
+export function chunkCapFrom(override: string | undefined): number {
+  if (override === undefined) return DEFAULT_MAX_CHUNK_BYTES;
+  const trimmed = override.trim();
+  if (trimmed === "") return DEFAULT_MAX_CHUNK_BYTES;
+  const n = Number(trimmed);
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0) return DEFAULT_MAX_CHUNK_BYTES;
+  if (n < 1) return 1;
+  if (n > MAX_CHUNK_BYTES) return MAX_CHUNK_BYTES;
+  return n;
+}
+
+// Browser-safe wrapper: reads DORADO_MAX_CHUNK_BYTES when a process.env exists
+// (Node) and otherwise falls back to the default cap (the browser has no process).
+export function effectiveMaxChunkBytes(): number {
+  const override =
+    typeof process !== "undefined" && process.env ? process.env.DORADO_MAX_CHUNK_BYTES : undefined;
+  return chunkCapFrom(override);
+}
 
 export function keyLen(v: Variant): number {
   return v === T256 ? 32 : v === T512 ? 64 : 128;

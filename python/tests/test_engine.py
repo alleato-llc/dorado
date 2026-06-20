@@ -126,3 +126,22 @@ def test_raw_ctr():
     data = b"raw CTR, any length, no header"
     ct = raw_ctr(T256, key, bytes(16), iv, data)
     assert raw_ctr(T256, key, bytes(16), iv, ct) == data
+
+
+def test_chunk_cap_from():
+    # None and empty (after trimming) fall back to the default.
+    assert fmt.chunk_cap_from(None) == fmt.DEFAULT_MAX_CHUNK_BYTES
+    assert fmt.chunk_cap_from("") == fmt.DEFAULT_MAX_CHUNK_BYTES
+    assert fmt.chunk_cap_from("   ") == fmt.DEFAULT_MAX_CHUNK_BYTES
+    # Unparseable falls back to the default.
+    assert fmt.chunk_cap_from("not-a-number") == fmt.DEFAULT_MAX_CHUNK_BYTES
+    assert fmt.chunk_cap_from("-5") == fmt.DEFAULT_MAX_CHUNK_BYTES
+    # A plain value passes through.
+    assert fmt.chunk_cap_from("4096") == 4096
+    # Whitespace is trimmed.
+    assert fmt.chunk_cap_from("  4096  ") == 4096
+    # "0" clamps up to the minimum of 1.
+    assert fmt.chunk_cap_from("0") == 1
+    # A value above the hard ceiling clamps down to 1 GiB.
+    assert fmt.chunk_cap_from(str((1 << 30) + 1)) == fmt.MAX_CHUNK_BYTES
+    assert fmt.chunk_cap_from(str(1 << 40)) == fmt.MAX_CHUNK_BYTES

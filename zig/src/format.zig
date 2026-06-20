@@ -11,7 +11,16 @@ pub const Variant = tf.Variant;
 pub const MAGIC = "DRDO";
 pub const VERSION = 4;
 pub const DEFAULT_CHUNK_BYTES: u32 = 64 * 1024;
+/// The hard ceiling on an accepted chunk-size cap. A header's chunk_size (or an
+/// encrypt option) above this is always rejected. The effective cap defaults lower
+/// (see DEFAULT_MAX_CHUNK_BYTES) and an override can only tighten it, never raise it
+/// above this ceiling.
 pub const MAX_CHUNK_BYTES: u32 = 1 << 30;
+/// The default accepted chunk-size cap (64 MiB). A container declares its own
+/// chunk_size in the header; this bounds how large a chunk we will allocate for an
+/// untrusted container. It is well below MAX_CHUNK_BYTES so a hostile header cannot
+/// force a 1 GiB allocation by default.
+pub const DEFAULT_MAX_CHUNK_BYTES: u32 = 64 * 1024 * 1024;
 pub const MAX_LABEL_LEN = 4096;
 pub const MAC_KEY_LEN = 32;
 pub const TAG_LEN = 32;
@@ -63,6 +72,64 @@ pub const Error = error{
     LabelTooLong,
     Truncated,
 };
+
+/// Resolve the effective accepted chunk-size cap from an optional override string
+/// (typically the value of the DORADO_MAX_CHUNK_BYTES env var). Pure and IO-free so
+/// it is unit-testable. If the override is null, empty, or not a non-negative
+/// integer, the default cap is used. A parsed value is clamped into
+/// [1, MAX_CHUNK_BYTES]: an override can only tighten the cap below the 1 GiB hard
+/// ceiling, never raise it above.
+pub fn chunkCapFrom(override: ?[]const u8) u32 {
+    const s = override orelse return DEFAULT_MAX_CHUNK_BYTES;
+    if (s.len == 0) return DEFAULT_MAX_CHUNK_BYTES;
+    const v = std.fmt.parseInt(u32, s, 10) catch return DEFAULT_MAX_CHUNK_BYTES;
+    return std.math.clamp(v, 1, MAX_CHUNK_BYTES);
+}
+
+/// The operator override for the accepted chunk-size cap. The SDK module stays
+/// libc-free and, under Zig 0.16, environment variables are only reachable through
+/// `std.process.Init` (handed to `main`), not from a free function. So the override
+/// is resolved at the CLI boundary, which has the environment, and stashed here;
+/// the engine then reads it through `chunkCap()`. When unset the default applies.
+/// A program embedding the SDK can call `setChunkCapOverride` directly.
+var chunk_cap_override: ?u32 = null;
+
+/// Set the effective chunk-size cap. Callers should pass `chunkCapFrom(env_value)`
+/// so the value is already clamped into [1, MAX_CHUNK_BYTES].
+pub fn setChunkCapOverride(cap: u32) void {
+    chunk_cap_override = std.math.clamp(cap, 1, MAX_CHUNK_BYTES);
+}
+
+/// The effective accepted chunk-size cap: the operator override if one has been set,
+/// otherwise DEFAULT_MAX_CHUNK_BYTES. See chunkCapFrom for the policy.
+pub fn chunkCap() u32 {
+    return chunk_cap_override orelse DEFAULT_MAX_CHUNK_BYTES;
+}
+
+test "chunkCapFrom null/empty -> default" {
+    try std.testing.expectEqual(DEFAULT_MAX_CHUNK_BYTES, chunkCapFrom(null));
+    try std.testing.expectEqual(DEFAULT_MAX_CHUNK_BYTES, chunkCapFrom(""));
+}
+
+test "chunkCapFrom unparseable -> default" {
+    try std.testing.expectEqual(DEFAULT_MAX_CHUNK_BYTES, chunkCapFrom("not-a-number"));
+    try std.testing.expectEqual(DEFAULT_MAX_CHUNK_BYTES, chunkCapFrom("-5"));
+    try std.testing.expectEqual(DEFAULT_MAX_CHUNK_BYTES, chunkCapFrom("99999999999999999999"));
+}
+
+test "chunkCapFrom plain value passes through" {
+    try std.testing.expectEqual(@as(u32, 1024), chunkCapFrom("1024"));
+    try std.testing.expectEqual(@as(u32, 4096), chunkCapFrom("4096"));
+}
+
+test "chunkCapFrom 0 clamps up to 1" {
+    try std.testing.expectEqual(@as(u32, 1), chunkCapFrom("0"));
+}
+
+test "chunkCapFrom above 1 GiB clamps to ceiling" {
+    try std.testing.expectEqual(MAX_CHUNK_BYTES, chunkCapFrom("2147483648")); // 2 GiB
+    try std.testing.expectEqual(MAX_CHUNK_BYTES, chunkCapFrom("1073741825")); // 1 GiB + 1
+}
 
 pub const Header = struct {
     version: u8,

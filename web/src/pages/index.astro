@@ -27,26 +27,44 @@ const tools = [
   },
 ];
 
-const impls = ["Rust", "Go", "TypeScript · Node", "TypeScript · Browser"];
+const impls = ["Rust", "Go", "Java", "TypeScript · Node", "TypeScript · Browser"];
 
-// One cipher and one format, four runtimes. This table is the differences only;
+// One cipher and one format, five runtimes. This table is the differences only;
 // the primitives, the wire format, and cross-compatibility are the same in all
-// four (stated in the lead text). Kept in sync with docs/implementations.md.
+// (stated in the lead text). Kept in sync with docs/implementations.md.
 const comparison = [
-  { label: "Role", cells: ["Reference", "Port", "Port", "Same code, in-page"] },
+  { label: "Role", cells: ["Reference", "Port", "SDK only", "Port", "Same code, in-page"] },
   {
     label: "Frontends",
-    cells: ["dorado + gyotaku CLIs, 2 GUIs", "dorado + gyotaku CLIs", "dorado + gyotaku CLIs", "encrypt + hash demo"],
+    cells: [
+      "dorado + gyotaku CLIs, 2 GUIs",
+      "dorado + gyotaku CLIs",
+      "library only",
+      "dorado + gyotaku CLIs",
+      "encrypt + hash demo",
+    ],
   },
-  { label: "Cipher engine", cells: ["native Rust", "native Go", "WASM (Rust core)", "WASM (Rust core)"] },
-  { label: "Key derivation", cells: ["argon2 / scrypt / pbkdf2 crates", "x/crypto + stdlib", "hash-wasm", "hash-wasm"] },
-  { label: "Streaming (files larger than RAM)", cells: ["Yes", "Yes", "No (in-memory)", "No (in-memory)"] },
-  { label: "no_std / bare-metal", cells: ["Yes", "No", "No", "No"] },
+  { label: "Cipher engine", cells: ["native Rust", "native Go", "native Java", "WASM (Rust core)", "WASM (Rust core)"] },
+  {
+    label: "Key derivation",
+    cells: ["argon2 / scrypt / pbkdf2 crates", "x/crypto + stdlib", "Bouncy Castle", "hash-wasm", "hash-wasm"],
+  },
+  {
+    label: "Streaming (files larger than RAM)",
+    cells: ["Yes", "Yes", "Yes", "No (in-memory)", "No (in-memory)"],
+  },
+  { label: "no_std / bare-metal", cells: ["Yes", "No", "No", "No", "No"] },
   {
     label: "Secret memory",
-    cells: ["wiped on drop (zeroize)", "best-effort wipe", "locked off-heap buffers", "off-heap WASM transients only"],
+    cells: [
+      "wiped on drop (zeroize)",
+      "best-effort wipe",
+      "caller-managed",
+      "locked off-heap buffers",
+      "off-heap WASM transients only",
+    ],
   },
-  { label: "Constant-time discipline", cells: ["documented", "best-effort", "not in a JIT", "not in a JIT"] },
+  { label: "Constant-time discipline", cells: ["documented", "best-effort", "not in a JIT", "not in a JIT", "not in a JIT"] },
 ];
 
 const primitives = [
@@ -231,14 +249,14 @@ const primitives = [
 
   <section id="implementations">
     <div class="wrap">
-      <h2>One cipher, four implementations</h2>
+      <h2>One cipher, five implementations</h2>
       <p class="sub">
-        Dorado is written four ways: Rust (the reference), a Go port, and a
-        TypeScript port that runs both in Node and in your browser. All four
-        reimplement the same primitives from scratch, share the same on-disk
-        format, and are byte-for-byte cross-compatible, so a file made by one opens
-        in the others. What differs is what each runtime allows. (The last two
-        columns are the same code; only the runtime changes.)
+        Dorado is written five ways: Rust (the reference), Go, Java (a library
+        only), and a TypeScript port that runs both in Node and in your browser. All
+        reimplement the same primitives from scratch, share the same on-disk format,
+        and are byte-for-byte cross-compatible, so a file made by one opens in the
+        others. What differs is what each runtime allows. (The last two columns are
+        the same code; only the runtime changes.)
       </p>
       <div class="cmp-scroll">
         <table class="cmp">

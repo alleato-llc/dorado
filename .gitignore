@@ -21,3 +21,7 @@
 /ts/node_modules
 /ts/coverage
 /ts/dist
+
+# Java port (java/). The Gradle wrapper (gradlew, gradle/wrapper/) is committed.
+/java/.gradle
+/java/build

@@ -20,6 +20,13 @@ This is the dorado monorepo. It has several parts:
   (`src/engine/backend.ts`): the default `tsBackend` is the readable pure-TS code
   (used by the test suite), and `wasmBackend` runs the verified Rust cipher from
   WASM. The Node CLI uses `wasmBackend`. Run npm from inside `ts/`.
+- `java/` — a Java port (Gradle, package `com.alleato.dorado`) that is an SDK only,
+  no CLI and no GUI: same from-scratch primitives, same on-disk format
+  (cross-compatible with the others), streaming over `InputStream`/`OutputStream` in
+  constant memory like the Rust reference. Java's `long` makes the 64-bit ARX
+  native (no `BigInt`). KDFs (Argon2id, scrypt, PBKDF2) use Bouncy Castle; HMAC uses
+  the JDK. Comprehensive JUnit suite, including cross-compat fixtures made by the
+  Rust CLI in `src/test/resources/`. Run `./gradlew test` from inside `java/`.
 - `rust/wasm/` — the verified Rust cipher compiled to WebAssembly via
   `wasm-bindgen` (a separate crate, excluded from the `rust/` workspace). It exports
   only the cipher/hash primitives (CTR, Skein, BLAKE3), not the engine; the engine
@@ -30,9 +37,10 @@ This is the dorado monorepo. It has several parts:
   encrypt/decrypt demo built on `ts/` + the browser WASM build. Site conventions
   are in `web/CLAUDE.md`. Run npm from inside `web/`.
 
-When changing the wire format or an algorithm, keep `rust/`, `go/`, and `ts/` in
-sync or cross-compatibility breaks. The four implementations are byte-for-byte
-cross-compatible and that property is tested.
+When changing the wire format or an algorithm, keep `rust/`, `go/`, `ts/`, and
+`java/` in sync or cross-compatibility breaks. The five implementations are
+byte-for-byte cross-compatible and that property is tested. The Rust implementation
+is the reference and the baseline for vectors and fixtures.
 
 CI lives at the repo root in `.github/workflows/ci.yml`. The root `LICENSE` (MIT)
 covers the whole repository.

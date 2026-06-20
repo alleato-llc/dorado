@@ -7,7 +7,7 @@ below concerns the Rust workspace.
 
 ## What this is
 
-Dorado is a Cargo workspace of five crates:
+Dorado is a Cargo workspace of six crates:
 
 - `crates/dorado` — the primitives library, zero runtime dependencies. The core is
   a from-scratch Threefish (256/512/1024) following Skein 1.3, plus CTR mode.
@@ -26,6 +26,10 @@ Dorado is a Cargo workspace of five crates:
   hashing binary (Skein-512, like `sha256sum`; named for the Japanese fish-print
   art, a file's fingerprint). Depends only on `dorado` + `clap`, kept separate so
   a hash tool does not pull in the KDF/engine stack.
+- `crates/dorado-gyotaku-gui` — iced frontend; produces `gyotaku-gui`, the hashing
+  tool in a window (a sibling of `dorado-gui`, sharing its `style.rs` look). Hashes
+  text or streams a file with the same `dorado::skein` code the CLI uses, on a
+  worker thread, at a selectable output length. Depends on `dorado` + `iced`.
 
 Educational and unaudited. The cipher provides confidentiality only; the engine
 adds authentication (encrypt-then-MAC) for password files.

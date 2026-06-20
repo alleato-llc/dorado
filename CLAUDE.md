@@ -3,9 +3,9 @@
 This is the dorado monorepo. It has several parts:
 
 - `rust/` — the primary implementation: a Cargo workspace (the Threefish cipher,
-  the primitives library, the construction engine, and the `dorado` /
-  `dorado-gui` / `gyotaku` frontends). All Rust work, invariants, and verification
-  steps are in `rust/CLAUDE.md`. Run cargo from inside `rust/`.
+  the primitives library, the construction engine, and the `dorado` / `dorado-gui`
+  / `gyotaku` / `gyotaku-gui` frontends). All Rust work, invariants, and
+  verification steps are in `rust/CLAUDE.md`. Run cargo from inside `rust/`.
 - `go/` — a Go port (module `github.com/alleato-llc/dorado/go`) that mirrors the
   Rust implementation: same from-scratch primitives, same on-disk format
   (byte-for-byte cross-compatible, verified by decrypting each other's files),

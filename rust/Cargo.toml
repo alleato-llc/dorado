@@ -1,4 +1,4 @@
-# Workspace: the cipher library, the shared construction, and two frontends.
+# Workspace: the cipher library, the shared construction, and the frontends.
 [workspace]
 resolver = "2"
 members = [
@@ -7,6 +7,7 @@ members = [
     "crates/dorado-cli",
     "crates/dorado-gui",
     "crates/dorado-gyotaku",
+    "crates/dorado-gyotaku-gui",
 ]
 exclude = ["fuzz", "wasm"]
 

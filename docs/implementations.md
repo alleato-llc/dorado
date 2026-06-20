@@ -20,8 +20,8 @@ not).
 | From-scratch primitives (Threefish, CTR, Skein, BLAKE3, ChaCha20, Poly1305) | Yes | Yes | Yes | Yes |
 | On-disk format (`.mahi`, DRDO v4) | Yes | Yes | Yes | Yes |
 | Cross-compatible with the others | Yes | Yes | Yes | Yes |
-| Frontends | `dorado` CLI, GUI, `gyotaku` | `dorado` CLI, `gyotaku` | `dorado` CLI, `gyotaku` | in-browser demo |
-| GUI | Yes (iced) | No | No | No |
+| Frontends | `dorado` + `gyotaku` CLIs, two desktop GUIs | `dorado` + `gyotaku` CLIs | `dorado` + `gyotaku` CLIs | in-browser encrypt + hash demo |
+| GUI | Yes (iced): `dorado-gui` and `gyotaku-gui` | No | No | No |
 | Cipher engine actually run | native Rust | native Go | WASM (the verified Rust cipher); pure-TS available | WASM (the verified Rust cipher); pure-TS available |
 | KDFs (Argon2id / scrypt / PBKDF2) | `argon2`/`scrypt`/`pbkdf2` crates | `golang.org/x/crypto` + stdlib | `hash-wasm` (WASM) | `hash-wasm` (WASM) |
 | HMAC-SHA256 MAC | RustCrypto `hmac` + `sha2` | Go stdlib `crypto/hmac` | Web Crypto | Web Crypto |

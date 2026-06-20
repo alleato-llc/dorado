@@ -12,13 +12,14 @@ This is an educational, unaudited implementation. For real data, prefer an audit
 
 ## Project layout
 
-This is a Cargo workspace of five crates:
+This is a Cargo workspace of six crates:
 
 - `crates/dorado` — the primitives library, zero runtime dependencies. Threefish + CTR is the core; alongside it are several other from-scratch primitives, each verified against official test vectors or differentially against an audited crate: Skein-512 (the hash Threefish was built for), BLAKE3, and ChaCha20 / Poly1305 / ChaCha20-Poly1305. The ChaCha primitives are library code only and are deliberately not wired into the tool, which stays Threefish-based (see "How it works").
 - `crates/dorado-engine` — the shared construction (KDFs, the authenticated chunked container, raw CTR, the MAC menu). Depends on `dorado`.
 - `crates/dorado-cli` — the command-line frontend (produces the `dorado` binary).
-- `crates/dorado-gui` — the iced graphical frontend (produces `dorado-gui`).
+- `crates/dorado-gui` — the iced graphical frontend for the password tool (produces `dorado-gui`).
 - `crates/dorado-gyotaku` — a standalone Skein-512 hashing tool (produces the `gyotaku` binary), like `sha256sum` but Skein.
+- `crates/dorado-gyotaku-gui` — the iced graphical frontend for the hashing tool (produces `gyotaku-gui`), a sibling of `dorado-gui`.
 
 ## Using dorado
 
@@ -120,15 +121,20 @@ target/release/gyotaku file.txt > sums       # then verify, like sha256sum -c:
 target/release/gyotaku -c sums               # prints "file.txt: OK", fails on mismatch
 ```
 
-### GUI demo
+### GUI demos
 
-The `dorado-gui` crate is a small graphical demo built on [iced](https://iced.rs/). It is the password tool in a window: pick a source (typed text or a file) and a direction (encrypt or decrypt), enter a password, and run. A collapsible Options panel exposes the variant, KDF and its cost parameters, chunk size, and an optional tweak. The key derivation runs on a background thread so the window stays responsive; build with `--release` for snappy performance, since the KDF is deliberately slow and a debug build makes it much slower.
+Two small graphical demos built on [iced](https://iced.rs/), one per tool, sharing a look.
+
+`dorado-gui` is the password tool in a window: pick a source (typed text or a file) and a direction (encrypt or decrypt), enter a password, and run. A collapsible Options panel exposes the variant, KDF and its cost parameters, chunk size, and an optional tweak. The key derivation runs on a background thread so the window stays responsive; build with `--release` for snappy performance, since the KDF is deliberately slow and a debug build makes it much slower.
+
+`gyotaku-gui` is the hashing tool in a window: pick a source (typed text or a file) and an output length, and it shows the Skein-512 digest, computed by the same `dorado::skein` code as the CLI (streaming a file in constant memory on a worker thread). Paste an expected digest to verify a match.
 
 ```
-cargo run --release -p dorado-gui
+cargo run --release -p dorado-gui          # the password tool
+cargo run --release -p dorado-gyotaku-gui  # the hashing tool (gyotaku-gui)
 ```
 
-The GUI is a separate binary that shares the same construction as the CLI, so it is for the same educational purpose and carries the same caveats. iced pulls in a large graphics stack, which is why it is its own crate.
+Each GUI is a separate binary that shares the same library code as its CLI, so they are for the same educational purpose and carry the same caveats. iced pulls in a large graphics stack, which is why they are their own crates.
 
 ## How it works
 

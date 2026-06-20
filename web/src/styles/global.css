@@ -483,6 +483,59 @@ pre.snippet {
   color: var(--faint);
 }
 
+/* ---------- comparison table ---------- */
+
+.cmp-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.cmp {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 680px;
+  font-size: 0.86rem;
+}
+
+.cmp th,
+.cmp td {
+  text-align: left;
+  padding: 0.6rem 0.8rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.cmp thead th {
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  color: var(--text);
+  font: 600 0.8rem/1.2 ui-monospace, monospace;
+  border-bottom: 2px solid var(--border);
+}
+
+.cmp tbody th {
+  color: var(--text);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.cmp tbody td {
+  color: var(--muted);
+}
+
+/* the reference column */
+.cmp th:nth-child(2),
+.cmp td:nth-child(2) {
+  background: color-mix(in srgb, var(--gold) 8%, transparent);
+}
+
+.cmp tbody tr:last-child th,
+.cmp tbody tr:last-child td {
+  border-bottom: none;
+}
+
 /* ---------- footer ---------- */
 
 footer.site {

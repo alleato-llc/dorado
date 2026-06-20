@@ -29,7 +29,9 @@ This repository is a modular monorepo:
 
 The four implementations share one on-disk format and are byte-for-byte
 cross-compatible: each can decrypt the others' `.mahi` files, verified across every
-KDF, MAC, and cipher variant.
+KDF, MAC, and cipher variant. They differ in what their runtime allows (frontends,
+streaming, `no_std`, secret-memory protection); [`docs/implementations.md`](docs/implementations.md)
+compares them side by side.
 
 ## Quick start
 

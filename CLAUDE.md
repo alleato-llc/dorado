@@ -43,6 +43,15 @@ This is the dorado monorepo. It has several parts:
   `NULL` or a static error string. `make test` (KATs + cross-compat fixtures from
   the Rust CLI, also run under ASan/UBSan). Needs `libargon2` + OpenSSL installed
   (`brew install argon2 openssl@3` / `apt-get install libargon2-dev libssl-dev`).
+- `zig/` — a Zig port (Zig 0.16) with an SDK and the `dorado`/`gyotaku` CLIs: same
+  from-scratch primitives, same on-disk format (cross-compatible), streaming over a
+  Reader/Writer callback interface in constant memory like the Rust reference (the
+  CLIs wire it to `std.Io.File`). Zig's native `u64` makes the ARX direct. No
+  external library: the KDFs come from `std.crypto.pwhash` (Argon2id, scrypt,
+  PBKDF2) and HMAC from `std.crypto.auth.hmac`. `engine` functions return a Zig
+  error set. `zig build test` runs the suite, including cross-compat fixtures made
+  by the Rust CLI in `tests/fixtures/` (embedded via `@embedFile`). Run `zig build`
+  from inside `zig/`.
 - `rust/wasm/` — the verified Rust cipher compiled to WebAssembly via
   `wasm-bindgen` (a separate crate, excluded from the `rust/` workspace). It exports
   only the cipher/hash primitives (CTR, Skein, BLAKE3), not the engine; the engine
@@ -54,9 +63,9 @@ This is the dorado monorepo. It has several parts:
   are in `web/CLAUDE.md`. Run npm from inside `web/`.
 
 When changing the wire format or an algorithm, keep `rust/`, `go/`, `ts/`, `java/`,
-`python/`, and `c/` in sync or cross-compatibility breaks. The seven implementations
-are byte-for-byte cross-compatible and that property is tested. The Rust
-implementation is the reference and the baseline for vectors and fixtures.
+`python/`, `c/`, and `zig/` in sync or cross-compatibility breaks. The eight
+implementations are byte-for-byte cross-compatible and that property is tested. The
+Rust implementation is the reference and the baseline for vectors and fixtures.
 
 CI lives at the repo root in `.github/workflows/ci.yml`. The root `LICENSE` (MIT)
 covers the whole repository.

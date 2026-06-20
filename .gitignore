@@ -40,3 +40,7 @@
 /c/dorado
 /c/gyotaku
 /c/tests/test_dorado
+
+# Zig port (zig/) build artifacts.
+/zig/.zig-cache
+/zig/zig-out

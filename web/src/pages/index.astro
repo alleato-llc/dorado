@@ -27,54 +27,20 @@ const tools = [
   },
 ];
 
-const impls = ["Rust", "Go", "Java", "Python", "C", "TypeScript · Node", "TypeScript · Browser"];
-
-// One cipher and one format, seven runtimes. This table is the differences only;
-// the primitives, the wire format, and cross-compatibility are the same in all
-// (stated in the lead text). Kept in sync with docs/implementations.md.
-const comparison = [
-  { label: "Role", cells: ["Reference", "Port", "SDK only", "Port", "Port", "Port", "Same code, in-page"] },
-  {
-    label: "Frontends",
-    cells: [
-      "dorado + gyotaku CLIs, 2 GUIs",
-      "dorado + gyotaku CLIs",
-      "library only",
-      "dorado + gyotaku CLIs",
-      "dorado + gyotaku CLIs",
-      "dorado + gyotaku CLIs",
-      "encrypt + hash demo",
-    ],
-  },
-  {
-    label: "Cipher engine",
-    cells: ["native Rust", "native Go", "native Java", "native Python", "native C", "WASM (Rust core)", "WASM (Rust core)"],
-  },
-  {
-    label: "Key derivation",
-    cells: ["argon2 / scrypt / pbkdf2 crates", "x/crypto + stdlib", "Bouncy Castle", "argon2-cffi + hashlib", "libargon2 + OpenSSL", "hash-wasm", "hash-wasm"],
-  },
-  {
-    label: "Streaming (files larger than RAM)",
-    cells: ["Yes", "Yes", "Yes", "Yes", "Yes", "No (in-memory)", "No (in-memory)"],
-  },
-  { label: "no_std / bare-metal", cells: ["Yes", "No", "No", "No", "No", "No", "No"] },
-  {
-    label: "Secret memory",
-    cells: [
-      "wiped on drop (zeroize)",
-      "best-effort wipe",
-      "caller-managed",
-      "caller-managed (immutable)",
-      "caller-managed",
-      "locked off-heap buffers",
-      "off-heap WASM transients only",
-    ],
-  },
-  {
-    label: "Constant-time discipline",
-    cells: ["documented", "best-effort", "not in a JIT", "interpreted", "best-effort", "not in a JIT", "not in a JIT"],
-  },
+// Implementations as rows (so the table reads top-to-bottom and adding a language
+// is one more row, not a wider table). The columns are the differences only; the
+// primitives, wire format, and cross-compatibility are identical everywhere (stated
+// in the lead text). Kept in sync with docs/implementations.md.
+const cmpCols = ["Role / frontends", "Cipher engine", "Key derivation", "Streaming", "Secret memory"];
+const cmpRows = [
+  { name: "Rust", ref: true, cells: ["Reference; CLIs + 2 GUIs", "native", "argon2 / scrypt / pbkdf2 crates", "Yes", "wiped on drop (zeroize)"] },
+  { name: "Go", cells: ["Port; CLIs", "native", "x/crypto + stdlib", "Yes", "best-effort wipe"] },
+  { name: "Java", cells: ["Port; SDK only", "native", "Bouncy Castle", "Yes", "caller-managed"] },
+  { name: "Python", cells: ["Port; CLIs", "native", "argon2-cffi + hashlib", "Yes", "caller-managed"] },
+  { name: "C", cells: ["Port; CLIs", "native", "libargon2 + OpenSSL", "Yes", "caller-managed"] },
+  { name: "Zig", cells: ["Port; CLIs", "native", "Zig stdlib (no deps)", "Yes", "caller-managed"] },
+  { name: "TypeScript · Node", cells: ["Port; CLIs", "WASM (Rust core)", "hash-wasm", "No (in-memory)", "locked off-heap buffers"] },
+  { name: "TypeScript · Browser", cells: ["In-page demo", "WASM (Rust core)", "hash-wasm", "No (in-memory)", "none (demo)"] },
 ];
 
 const primitives = [
@@ -259,28 +225,28 @@ const primitives = [
 
   <section id="implementations">
     <div class="wrap">
-      <h2>One cipher, seven implementations</h2>
+      <h2>One cipher, eight implementations</h2>
       <p class="sub">
-        Dorado is written seven ways: Rust (the reference), Go, Java (a library
-        only), Python, C, and a TypeScript port that runs both in Node and in your
-        browser. All reimplement the same primitives from scratch, share the same
-        on-disk format, and are byte-for-byte cross-compatible, so a file made by one
-        opens in the others. What differs is what each runtime allows. (The last two
-        columns are the same code; only the runtime changes.)
+        Dorado is written eight ways: Rust (the reference), Go, Java (a library
+        only), Python, C, Zig, and a TypeScript port that runs both in Node and in
+        your browser. All reimplement the same primitives from scratch, share the
+        same on-disk format, and are byte-for-byte cross-compatible, so a file made
+        by one opens in the others. What differs is what each runtime allows; the
+        two TypeScript rows are the same code, only the runtime changes.
       </p>
       <div class="cmp-scroll">
         <table class="cmp">
           <thead>
             <tr>
-              <th></th>
-              {impls.map((name) => <th>{name}</th>)}
+              <th scope="col">Implementation</th>
+              {cmpCols.map((c) => <th scope="col">{c}</th>)}
             </tr>
           </thead>
           <tbody>
             {
-              comparison.map((row) => (
-                <tr>
-                  <th scope="row">{row.label}</th>
+              cmpRows.map((row) => (
+                <tr class={row.ref ? "cmp-ref" : undefined}>
+                  <th scope="row">{row.name}</th>
                   {row.cells.map((c) => (
                     <td>{c}</td>
                   ))}
@@ -291,7 +257,9 @@ const primitives = [
         </table>
       </div>
       <p class="demo-note" style="margin-top: 1rem;">
-        Full breakdown, including verification and secret-handling details, in{" "}
+        Two more axes are Rust-only and left out above: <code>no_std</code> /
+        bare-metal builds and a documented constant-time discipline. Full breakdown
+        in{" "}
         <a href={`${REPO}/blob/main/docs/implementations.md`}><code>docs/implementations.md</code></a>.
       </p>
     </div>

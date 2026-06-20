@@ -130,6 +130,22 @@ jobs:
       - run: make
       - run: make test
 
+  # Build and test the Zig port (SDK + CLIs). No external libraries: the KDFs come
+  # from Zig's standard library. Cross-compat tests decrypt fixtures made by the
+  # Rust CLI, committed in the repo.
+  zig:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: zig
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v1
+        with:
+          version: "0.16.0"
+      - run: zig build
+      - run: zig build test
+
   # Build the landing page in web/ so a broken site fails CI.
   web:
     runs-on: ubuntu-latest

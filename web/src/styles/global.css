@@ -550,10 +550,14 @@ pre.snippet {
   color: var(--muted);
 }
 
-/* the reference column */
-.cmp th:nth-child(2),
-.cmp td:nth-child(2) {
+/* the reference row (Rust) */
+.cmp tr.cmp-ref th,
+.cmp tr.cmp-ref td {
   background: color-mix(in srgb, var(--gold) 8%, transparent);
+}
+
+.cmp tr.cmp-ref th {
+  color: var(--gold);
 }
 
 .cmp tbody tr:last-child th,

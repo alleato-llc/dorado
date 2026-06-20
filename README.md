@@ -32,6 +32,10 @@ This repository is a modular monorepo:
   constant memory, with an SDK (`libdorado.a`) and the `dorado`/`gyotaku` CLIs. KDFs
   link the system `libargon2` and OpenSSL via `pkg-config`. See
   [`c/README.md`](c/README.md).
+- **[`zig/`](zig/)** — a Zig port (Zig 0.16): the same primitives and format,
+  streaming in constant memory, with an SDK and the `dorado`/`gyotaku` CLIs. No
+  external library: the KDFs come from Zig's standard library. See
+  [`zig/README.md`](zig/README.md).
 - **[`rust/wasm/`](rust/wasm/)** — the verified Rust cipher compiled to WebAssembly
   via `wasm-bindgen`. The same `.wasm` is the cipher backend for the `ts/` Node CLI
   and the browser demo, so the secret arithmetic runs in WASM linear memory rather
@@ -40,7 +44,7 @@ This repository is a modular monorepo:
   [Astro](https://astro.build/) site with an in-browser encrypt/decrypt demo. See
   [`web/README.md`](web/README.md).
 
-The seven implementations share one on-disk format and are byte-for-byte
+The eight implementations share one on-disk format and are byte-for-byte
 cross-compatible: each can decrypt the others' `.mahi` files, verified across every
 KDF, MAC, and cipher variant. They differ in what their runtime allows (frontends,
 streaming, `no_std`, secret-memory protection); [`docs/implementations.md`](docs/implementations.md)

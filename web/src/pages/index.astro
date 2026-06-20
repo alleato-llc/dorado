@@ -1,6 +1,7 @@
 ---
 import Layout from "../layouts/Layout.astro";
 import Demo from "../components/Demo.tsx";
+import HashDemo from "../components/HashDemo.tsx";
 
 // Update this to the real repository URL once it is published.
 const REPO = "https://github.com/nycjv321/dorado";
@@ -13,16 +14,16 @@ const tools = [
     body: "The cipher tool: encrypt and decrypt files or stdin, as bare raw-key CTR or a password-derived authenticated container. The command-line interface is ported to three languages plus the in-browser demo, all reading the same files.",
   },
   {
-    name: "dorado-gui",
-    badge: "desktop app",
-    langs: "Rust only",
-    body: "The password tool in a window, built with iced. Pick a source and a direction, enter a password, run; key derivation runs off the UI thread. The one frontend that is Rust-only.",
-  },
-  {
     name: "gyotaku",
     badge: "hashing",
-    langs: "Rust · Go · TypeScript",
+    langs: "Rust · Go · TypeScript · browser",
     body: "A standalone Skein-512 hashing tool, like sha256sum but Skein. Kept separate from the cipher tools so a hash needs no key stack. Named for the Japanese art of fish-printing: a fingerprint of a file.",
+  },
+  {
+    name: "dorado-gui · gyotaku-gui",
+    badge: "desktop apps",
+    langs: "Rust",
+    body: "Both tools in a native window, built with iced and sharing one look: a password encrypt/decrypt app and a Skein-512 hashing app. Key derivation and hashing run off the UI thread. The desktop frontends are Rust-only.",
   },
 ];
 
@@ -33,7 +34,10 @@ const impls = ["Rust", "Go", "TypeScript · Node", "TypeScript · Browser"];
 // four (stated in the lead text). Kept in sync with docs/implementations.md.
 const comparison = [
   { label: "Role", cells: ["Reference", "Port", "Port", "Same code, in-page"] },
-  { label: "Frontends", cells: ["CLI · GUI · gyotaku", "CLI · gyotaku", "CLI · gyotaku", "in-browser demo"] },
+  {
+    label: "Frontends",
+    cells: ["dorado + gyotaku CLIs, 2 GUIs", "dorado + gyotaku CLIs", "dorado + gyotaku CLIs", "encrypt + hash demo"],
+  },
   { label: "Cipher engine", cells: ["native Rust", "native Go", "WASM (Rust core)", "WASM (Rust core)"] },
   { label: "Key derivation", cells: ["argon2 / scrypt / pbkdf2 crates", "x/crypto + stdlib", "hash-wasm", "hash-wasm"] },
   { label: "Streaming (files larger than RAM)", cells: ["Yes", "Yes", "No (in-memory)", "No (in-memory)"] },
@@ -120,12 +124,25 @@ const primitives = [
     <div class="wrap">
       <h2>Try it in your browser</h2>
       <p class="sub">
-        Encrypt a message to a password container and decrypt it back, entirely
-        client-side. The cipher is the verified Rust core compiled to WebAssembly;
-        the container is the same one the CLIs read, so this output decrypts with
+        Both tools, entirely client-side, over the verified Rust core compiled to
+        WebAssembly. Nothing leaves your browser.
+      </p>
+
+      <h3 class="demo-heading">Encrypt and decrypt</h3>
+      <p class="sub">
+        Encrypt a message to a password container and decrypt it back. The
+        container is the same one the CLIs read, so this output decrypts with
         <code>dorado decrypt</code> and vice versa.
       </p>
       <Demo client:only="preact" />
+
+      <h3 class="demo-heading">Hash</h3>
+      <p class="sub">
+        Skein-512 hash a message at a chosen output length, the
+        <code>gyotaku</code> tool in the browser. The digest matches
+        <code>gyotaku</code> for the same input.
+      </p>
+      <HashDemo client:only="preact" />
     </div>
   </section>
 
@@ -199,10 +216,6 @@ const primitives = [
         <li>
           <b>Differential testing</b> against the RustCrypto crates: Threefish,
           and the from-scratch Skein-512 and BLAKE3, over many random inputs.
-        </li>
-        <li>
-          <b>RFC 8439 vectors</b> for the ChaCha20, Poly1305, and
-          ChaCha20-Poly1305 primitives.
         </li>
         <li>
           <b>Construction tests</b> for round-trips, wrong passwords, tampering,

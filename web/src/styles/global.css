@@ -366,6 +366,15 @@ pre.snippet {
   box-shadow: 0 1px 2px var(--shadow);
 }
 
+.demo-heading {
+  font-size: 1.1rem;
+  margin: 2.2rem 0 0.4rem;
+}
+
+.demo-heading:first-of-type {
+  margin-top: 0.5rem;
+}
+
 .demo-controls {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -489,6 +498,14 @@ pre.snippet {
   margin: 1rem 0 0;
   font-size: 0.82rem;
   color: var(--faint);
+}
+
+.demo-note strong {
+  color: var(--gold);
+}
+
+.demo-note a {
+  color: var(--accent);
 }
 
 /* ---------- comparison table ---------- */

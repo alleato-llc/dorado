@@ -193,8 +193,9 @@ export default function Demo() {
 
       <p class="demo-note">
         Runs entirely in your browser. The container bytes are identical to the CLI's, so this file decrypts with{" "}
-        <code>dorado decrypt</code>. Cost parameters here are deliberately low for speed; this is a demo, not a secure
-        tool.
+        <code>dorado decrypt</code>. Cost parameters here are deliberately low for speed; this is a demo,{" "}
+        <strong>not a secure tool</strong>. The Rust and Go builds work the same way but handle secrets more
+        carefully (<a href="#implementations">see the comparison below</a>).
       </p>
     </div>
   );

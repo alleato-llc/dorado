@@ -129,6 +129,7 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y libargon2-dev libssl-dev pkg-config
       - run: make
       - run: make test
+      - run: make freestanding   # the primitives build with no OS / allocator
 
   # Build and test the Zig port (SDK + CLIs). No external libraries: the KDFs come
   # from Zig's standard library. Cross-compat tests decrypt fixtures made by the
@@ -145,6 +146,7 @@ jobs:
           version: "0.16.0"
       - run: zig build
       - run: zig build test
+      - run: zig build freestanding   # the primitives cross-compile to bare-metal ARM
 
   # Build the landing page in web/ so a broken site fails CI.
   web:

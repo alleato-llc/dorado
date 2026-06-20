@@ -19,10 +19,25 @@ Educational and unaudited; for real data prefer a vetted library.
 ```
 zig build            # builds the dorado and gyotaku executables into zig-out/bin
 zig build test       # runs the test suite
+zig build freestanding   # cross-compiles the primitives to a bare-metal target
 ```
 
 Building against Zig 0.16 (a large breaking release): notes on the API churn and the
 gotchas hit while writing this port are in [`DEVELOPMENT.md`](DEVELOPMENT.md).
+
+## Secret handling and bare-metal
+
+The engine wipes the derived keys and the cipher's expanded key schedule after use
+with `std.crypto.secureZero` (which the compiler cannot optimize away), and the
+`dorado` CLI holds the password in a page-aligned, `mlock`'d buffer (the CLI links
+libc only for `mlock`; the SDK does not) that is kept out of swap and wiped on free.
+This reduces exposure; it is not a guarantee (the password still transits
+`argv`/stdin first, and `mlock` is best-effort).
+
+The from-scratch primitives (Threefish/CTR, Skein, BLAKE3) need no allocator and no
+OS, so `zig build freestanding` cross-compiles them (via `src/primitives.zig`) to a
+bare-metal ARM object, mirroring the Rust port's `no_std` cipher crate. The
+construction (its KDFs need an allocator) is not bare-metal.
 
 ## Layout
 

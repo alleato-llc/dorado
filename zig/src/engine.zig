@@ -124,6 +124,8 @@ pub fn encryptStream(
     io.randomSecure(iv[0..bl]) catch return Error.Rng;
 
     var keymat: [160]u8 = undefined;
+    // Wipe the derived keys on every exit (as the Rust reference does on drop).
+    defer std.crypto.secureZero(u8, &keymat);
     try kdf.derive(allocator, io, opts.kdf, password, &salt, keymat[0 .. bl + 32]);
     const enc_key = keymat[0..bl];
     const mac_key = keymat[bl .. bl + 32][0..32];
@@ -145,6 +147,7 @@ pub fn encryptStream(
     const hb_len = fmt.marshal(&h, &hb);
 
     var cipher = tf.Threefish.init(v, enc_key, &opts.tweak);
+    defer std.crypto.secureZero(u64, &cipher.ek);
     var ctr = cipher.newCtr(iv[0..bl]);
 
     try w.write(hb[0..hb_len]);
@@ -208,6 +211,7 @@ pub fn decryptStream(
     try kdf.validate(h.kdf);
 
     var keymat: [160]u8 = undefined;
+    defer std.crypto.secureZero(u8, &keymat);
     try kdf.derive(allocator, io, h.kdf, password, h.saltSlice(), keymat[0 .. bl + 32]);
     const enc_key = keymat[0..bl];
     const mac_key = keymat[bl .. bl + 32][0..32];
@@ -216,6 +220,7 @@ pub fn decryptStream(
     const hb_len = fmt.marshal(&h, &hb);
 
     var cipher = tf.Threefish.init(h.variant, enc_key, &h.tweak);
+    defer std.crypto.secureZero(u64, &cipher.ek);
     var ctr = cipher.newCtr(h.ivSlice());
 
     const cs = h.chunk_size;

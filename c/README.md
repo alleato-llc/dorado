@@ -24,9 +24,25 @@ sudo apt-get install -y libargon2-dev libssl-dev pkg-config
 
 make            # builds libdorado.a, dorado, gyotaku
 make test       # builds and runs the test suite
+make freestanding   # compiles the primitives with no OS / allocator
 ```
 
 On macOS the Makefile adds the Homebrew `pkg-config` paths automatically.
+
+## Secret handling and bare-metal
+
+The engine wipes the derived keys and the cipher's expanded key schedule after use
+with `OPENSSL_cleanse` (which the compiler cannot optimize away), and the `dorado`
+CLI holds the password in a page-aligned, `mlock`'d buffer that is kept out of swap
+and wiped on free. This is a reduction in exposure, not a guarantee: the password
+still transits `argv`/stdin first, and `mlock` is best-effort (it is skipped without
+error if `RLIMIT_MEMLOCK` forbids it).
+
+The from-scratch primitives (Threefish/CTR, Skein, BLAKE3) depend on no allocator
+and no OS, so `make freestanding` compiles them with `-ffreestanding` for a
+bare-metal target, mirroring the Rust port's `no_std` cipher crate. The construction
+(KDFs, container, CLIs) needs `malloc`/`FILE`/`libargon2`/OpenSSL and is not
+bare-metal.
 
 ## Layout
 

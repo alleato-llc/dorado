@@ -37,8 +37,8 @@ const cmpRows = [
   { name: "Go", cells: ["Port; CLIs", "native", "x/crypto + stdlib", "Yes", "best-effort wipe"] },
   { name: "Java", cells: ["Port; SDK only", "native", "Bouncy Castle", "Yes", "caller-managed"] },
   { name: "Python", cells: ["Port; CLIs", "native", "argon2-cffi + hashlib", "Yes", "caller-managed"] },
-  { name: "C", cells: ["Port; CLIs", "native", "libargon2 + OpenSSL", "Yes", "caller-managed"] },
-  { name: "Zig", cells: ["Port; CLIs", "native", "Zig stdlib (no deps)", "Yes", "caller-managed"] },
+  { name: "C", cells: ["Port; CLIs", "native", "libargon2 + OpenSSL", "Yes", "wipes keys; mlocks password"] },
+  { name: "Zig", cells: ["Port; CLIs", "native", "Zig stdlib (no deps)", "Yes", "wipes keys; mlocks password"] },
   { name: "TypeScript · Node", cells: ["Port; CLIs", "WASM (Rust core)", "hash-wasm", "No (in-memory)", "locked off-heap buffers"] },
   { name: "TypeScript · Browser", cells: ["In-page demo", "WASM (Rust core)", "hash-wasm", "No (in-memory)", "none (demo)"] },
 ];
@@ -257,9 +257,9 @@ const primitives = [
         </table>
       </div>
       <p class="demo-note" style="margin-top: 1rem;">
-        Two more axes are Rust-only and left out above: <code>no_std</code> /
-        bare-metal builds and a documented constant-time discipline. Full breakdown
-        in{" "}
+        Two more axes are left out above: the cipher primitives build bare-metal
+        (no OS, no allocator) in Rust, C, and Zig, and only Rust documents a full
+        constant-time discipline. Full breakdown in{" "}
         <a href={`${REPO}/blob/main/docs/implementations.md`}><code>docs/implementations.md</code></a>.
       </p>
     </div>

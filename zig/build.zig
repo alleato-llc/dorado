@@ -11,13 +11,15 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    // The two CLIs.
+    // The two CLIs. The dorado CLI links libc only to mlock its password buffer
+    // (keep it out of swap); the SDK module itself stays libc-free.
     const dorado_exe = b.addExecutable(.{
         .name = "dorado",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/cli_dorado.zig"),
             .target = target,
             .optimize = optimize,
+            .link_libc = true,
             .imports = &.{.{ .name = "dorado", .module = dorado_mod }},
         }),
     });
@@ -47,4 +49,18 @@ pub fn build(b: *std.Build) void {
     const run_tests = b.addRunArtifact(tests);
     const test_step = b.step("test", "Run the test suite");
     test_step.dependOn(&run_tests.step);
+
+    // Prove the primitives (Threefish/CTR, Skein, BLAKE3) build for a bare-metal
+    // freestanding target with no OS and no allocator, like the Rust port's
+    // bare-metal cipher crate. The engine (KDFs need an allocator) is excluded.
+    const freestanding_obj = b.addObject(.{
+        .name = "dorado-primitives",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/primitives.zig"),
+            .target = b.resolveTargetQuery(.{ .cpu_arch = .thumb, .os_tag = .freestanding, .abi = .eabi }),
+            .optimize = .ReleaseSmall,
+        }),
+    });
+    const freestanding_step = b.step("freestanding", "Build the primitives for a bare-metal target");
+    freestanding_step.dependOn(&freestanding_obj.step);
 }

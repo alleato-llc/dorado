@@ -6,6 +6,10 @@ const dorado = @import("dorado");
 const engine = dorado.engine;
 const fmt = dorado.format;
 
+// POSIX mlock/munlock (libc), to keep the password buffer out of swap.
+extern "c" fn mlock(addr: *const anyopaque, len: usize) c_int;
+extern "c" fn munlock(addr: *const anyopaque, len: usize) c_int;
+
 // Adapt a buffered std.Io.Reader to the engine's callback Reader.
 const ReaderAdapter = struct {
     r: *std.Io.Reader,
@@ -220,8 +224,16 @@ fn crypt(a: std.mem.Allocator, io: std.Io, args: *const Args, enc: bool, r: engi
     if (args.iv != null) die("--iv is not used in password mode; the IV is generated and stored", .{});
     if (args.password_stdin and args.in_path == null) die("with --password-stdin, pass the data via --in", .{});
 
-    var pw_buf: [1024]u8 = undefined;
-    const password = readPassword(io, args, &pw_buf);
+    // Hold the password in a page-aligned, mlock'd buffer (kept out of swap), wiped
+    // and unlocked on exit. page_allocator returns whole, page-aligned pages.
+    const pw_buf = std.heap.page_allocator.alloc(u8, std.heap.pageSize()) catch die("out of memory", .{});
+    defer {
+        std.crypto.secureZero(u8, pw_buf);
+        _ = munlock(pw_buf.ptr, pw_buf.len);
+        std.heap.page_allocator.free(pw_buf);
+    }
+    _ = mlock(pw_buf.ptr, pw_buf.len); // best-effort; wiping still happens on free
+    const password = readPassword(io, args, pw_buf);
 
     if (enc) {
         var opts = engine.Options{
@@ -239,7 +251,7 @@ fn crypt(a: std.mem.Allocator, io: std.Io, args: *const Args, enc: bool, r: engi
     }
 }
 
-fn readPassword(io: std.Io, args: *const Args, buf: *[1024]u8) []const u8 {
+fn readPassword(io: std.Io, args: *const Args, buf: []u8) []const u8 {
     if (!args.password_stdin) std.debug.print("Password: ", .{});
     var stdin = std.Io.File.stdin();
     var rbuf: [1024]u8 = undefined;

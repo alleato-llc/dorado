@@ -1,5 +1,6 @@
 #include "dorado/engine.h"
 
+#include <openssl/crypto.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/random.h>
@@ -9,6 +10,11 @@
 #include "internal.h"
 #include "kdf.h"
 #include "mac.h"
+
+/* Wipe a secret buffer so the compiler cannot optimize the clear away. */
+static void wipe(void *p, size_t n) {
+    OPENSSL_cleanse(p, n);
+}
 
 dorado_kdf_params dorado_kdf_argon2id(uint32_t m_cost_kib, uint32_t t_cost, uint32_t p_cost) {
     dorado_kdf_params k = {0};
@@ -129,6 +135,8 @@ const char *dorado_encrypt_password_stream(const uint8_t *password, size_t passw
     dorado_ctr_init(&ctr, &tf, iv);
 
     if (fwrite(hb, 1, hb_len, out) != hb_len) {
+        wipe(keymat, sizeof keymat);
+        wipe(&tf, sizeof tf);
         return "write error";
     }
 
@@ -137,6 +145,8 @@ const char *dorado_encrypt_password_stream(const uint8_t *password, size_t passw
     uint8_t *nxt = malloc(cs);
     uint8_t *aad = malloc(8 + hb_len + 13 + cs);
     if (!cur || !nxt || !aad) {
+        wipe(keymat, sizeof keymat);
+        wipe(&tf, sizeof tf);
         free(cur);
         free(nxt);
         free(aad);
@@ -162,6 +172,10 @@ const char *dorado_encrypt_password_stream(const uint8_t *password, size_t passw
         nxt = tmp;
         cur_len = nxt_len;
     }
+    /* Wipe the derived keys and the cipher's expanded key schedule (as the Rust
+     * reference does on drop). The counter and ciphertext buffers are not secret. */
+    wipe(keymat, sizeof keymat);
+    wipe(&tf, sizeof tf);
     free(cur);
     free(nxt);
     free(aad);
@@ -206,6 +220,8 @@ const char *dorado_decrypt_password_stream(const uint8_t *password, size_t passw
     uint8_t *ct = malloc(cs);
     uint8_t *aad = malloc(8 + hb_len + 13 + cs);
     if (!ct || !aad) {
+        wipe(keymat, sizeof keymat);
+        wipe(&tf, sizeof tf);
         free(ct);
         free(aad);
         return "out of memory";
@@ -262,6 +278,8 @@ const char *dorado_decrypt_password_stream(const uint8_t *password, size_t passw
         }
         index++;
     }
+    wipe(keymat, sizeof keymat);
+    wipe(&tf, sizeof tf);
     free(ct);
     free(aad);
     return err;

@@ -25,15 +25,20 @@ both run the verified Rust cipher compiled to WASM and work in memory.
 | **Go** | Port; CLIs | native | `golang.org/x/crypto` + stdlib | Yes | best-effort wipe |
 | **Java** | Port; SDK only | native | Bouncy Castle | Yes | caller-managed |
 | **Python** | Port; CLIs | native | `argon2-cffi` + `hashlib` | Yes | caller-managed (`bytes` immutable) |
-| **C** | Port; CLIs | native | system `libargon2` + OpenSSL | Yes | caller-managed |
-| **Zig** | Port; CLIs | native | Zig stdlib (no external deps) | Yes | caller-managed |
+| **C** | Port; CLIs | native | system `libargon2` + OpenSSL | Yes | engine wipes keys; CLI mlocks password |
+| **Zig** | Port; CLIs | native | Zig stdlib (no external deps) | Yes | engine wipes keys; CLI mlocks password |
 | **TypeScript · Node** | Port; CLIs | WASM (Rust cipher) | `hash-wasm` (WASM) | No (in-memory) | `sodium-native` locked buffers |
 | **TypeScript · Browser** | In-page demo | WASM (Rust cipher) | `hash-wasm` (WASM) | No (in-memory) | none (demo, not secure) |
 
-Two capabilities are Rust-only and so are not columns above: **`no_std` /
-bare-metal** (only the Rust cipher crate builds without an OS or allocator) and a
-**documented constant-time discipline** (the others use a constant-time tag compare
-but make no broader guarantee; JIT/interpreted runtimes cannot promise it at all).
+Two more axes are not columns above. **`no_std` / bare-metal:** the from-scratch
+cipher primitives (Threefish/CTR, Skein, BLAKE3) build with no OS and no allocator
+in **Rust, C, and Zig** (CI cross-compiles them to a bare-metal ARM target); the
+construction (whose KDFs need an allocator) is not bare-metal, and Go, Java, Python,
+and TypeScript require a managed runtime. **Constant time:** only Rust documents and
+preserves a full no-secret-dependent-branching discipline; every other port at least
+uses a constant-time tag compare, and the cipher is ARX (no secret-dependent table
+lookups) everywhere, but JIT/interpreted runtimes cannot promise constant time.
+
 HMAC-SHA256 uses each ecosystem's standard library (RustCrypto, Go stdlib, the JDK,
 Python `hmac`, OpenSSL, Zig stdlib, Web Crypto); Skein-512 and keyed BLAKE3 are
 from-scratch everywhere. Each port is verified with KATs and cross-compat fixtures
@@ -51,16 +56,23 @@ under ASan/UBSan).
 - **Streaming.** The six native ports process files chunk by chunk over
   reader/writer interfaces (constant memory). The TypeScript engine works in-memory
   over byte arrays, so its working set is the size of the file.
-- **`no_std` / bare-metal.** Only the Rust cipher crate builds without an operating
-  system or an allocator (CI builds it for a bare-metal target). Everything else
-  requires a runtime or links libc.
+- **`no_std` / bare-metal.** The from-scratch cipher primitives build with no OS and
+  no allocator in Rust, C, and Zig: Rust's cipher crate targets a bare-metal ARM
+  build, C's primitives compile with `-ffreestanding` (`make freestanding`), and
+  Zig cross-compiles them to a bare-metal ARM object (`zig build freestanding`). In
+  all three the construction (the KDFs need an allocator) is excluded. Go, Java,
+  Python, and TypeScript require a managed runtime.
 - **Secret handling.** This is the sharpest difference, and the reason the browser
   is the weakest tier:
   - *Rust* wipes secret buffers and the cipher's key schedule on drop (`zeroize`).
+  - *C* and *Zig* wipe the derived keys and the cipher's expanded key schedule after
+    use (`OPENSSL_cleanse` / `std.crypto.secureZero`, which the compiler cannot
+    optimize away), and their CLIs hold the password in a page-aligned, `mlock`'d
+    buffer that is kept out of swap and wiped on free.
   - *Go* zeroes secret slices best-effort, but the language cannot guarantee a wipe.
-  - *Java*, *Python*, *C*, and *Zig* are libraries that leave the lifetime of secret
-    buffers to the caller and do not wipe them (Python `bytes` are immutable, so they
-    cannot even be wiped in place).
+  - *Java* and *Python* are libraries that leave the lifetime of secret buffers to
+    the caller and do not wipe them (Python `bytes` are immutable, so they cannot
+    even be wiped in place).
   - *TypeScript on Node* holds CLI-held secrets in `sodium-native` locked, off-heap,
     guard-paged buffers and wipes them after use; the WASM backend keeps the
     cipher's transient values off the JavaScript heap.

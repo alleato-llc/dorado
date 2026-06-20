@@ -41,7 +41,19 @@ tests/test_dorado: tests/test_dorado.c libdorado.a
 test: tests/test_dorado
 	./tests/test_dorado
 
+# Prove the primitives (Threefish/CTR, Skein, BLAKE3) build with no hosted runtime:
+# -ffreestanding compiles them with no OS and no allocator, depending only on the
+# freestanding headers plus compiler-provided memcpy/memset (which any bare-metal
+# target supplies at link time). The engine, which needs malloc/FILE/libargon2/
+# OpenSSL, is intentionally excluded; this mirrors the Rust port's bare-metal cipher
+# crate (the cipher is portable; the construction is not).
+FREESTANDING_CFLAGS := -std=c17 -ffreestanding -Wall -Wextra -Iinclude
+freestanding:
+	@for f in threefish skein blake3; do \
+		$(CC) $(FREESTANDING_CFLAGS) -c src/$$f.c -o /dev/null && echo "  $$f.c: freestanding OK" || exit 1; \
+	done
+
 clean:
 	rm -f $(LIB_OBJS) src/cli_dorado.o src/cli_gyotaku.o libdorado.a dorado gyotaku tests/test_dorado
 
-.PHONY: all test clean
+.PHONY: all test freestanding clean

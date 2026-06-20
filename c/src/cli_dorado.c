@@ -1,12 +1,41 @@
 /* The dorado CLI: encrypt/decrypt/inspect, raw-key and password modes, streaming. */
 #include <getopt.h>
+#include <openssl/crypto.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
 #include <unistd.h>
 
 #include "dorado/engine.h"
 #include "dorado/threefish.h"
+
+/* A page-aligned, mlock'd buffer for a secret the CLI holds (the password): kept
+ * out of swap, and wiped + unlocked on free. mlock failure (e.g. RLIMIT_MEMLOCK on
+ * a locked-down host) is non-fatal: the buffer is still wiped on free. */
+static uint8_t *secure_alloc(size_t want, size_t *cap) {
+    long pg = sysconf(_SC_PAGESIZE);
+    if (pg < 1) {
+        pg = 4096;
+    }
+    size_t c = ((want + (size_t)pg - 1) / (size_t)pg) * (size_t)pg;
+    void *p = NULL;
+    if (posix_memalign(&p, (size_t)pg, c) != 0) {
+        return NULL;
+    }
+    mlock(p, c); /* best-effort */
+    *cap = c;
+    return p;
+}
+
+static void secure_free(uint8_t *p, size_t cap) {
+    if (!p) {
+        return;
+    }
+    OPENSSL_cleanse(p, cap);
+    munlock(p, cap);
+    free(p);
+}
 
 static int hexval(int c) {
     if (c >= '0' && c <= '9') return c - '0';
@@ -147,6 +176,8 @@ int main(int argc, char **argv) {
 
     int rc = 0;
     const char *err = NULL;
+    uint8_t *secpw = NULL; /* mlock'd password buffer, freed at done: */
+    size_t secpw_cap = 0;
 
     if (strcmp(command, "inspect") == 0) {
         dorado_container_info info;
@@ -222,6 +253,7 @@ int main(int argc, char **argv) {
                 goto done;
             }
             err = dorado_raw_ctr_stream(variant, key, tweak, iv, in, out);
+            OPENSSL_cleanse(key, sizeof key);
         } else {
             if (o.iv) {
                 rc = fail("--iv is not used in password mode; the IV is generated and stored");
@@ -231,8 +263,13 @@ int main(int argc, char **argv) {
                 rc = fail("with --password-stdin, pass the data via --in");
                 goto done;
             }
-            uint8_t password[1024];
-            size_t pw_len = read_password(&o, password, sizeof password);
+            secpw = secure_alloc(1024, &secpw_cap);
+            if (!secpw) {
+                rc = fail("out of memory");
+                goto done;
+            }
+            uint8_t *password = secpw;
+            size_t pw_len = read_password(&o, password, secpw_cap);
             if (encrypt) {
                 int variant = variant_from_str(o.variant);
                 int mac = mac_from_str(o.mac);
@@ -275,6 +312,7 @@ int main(int argc, char **argv) {
     if (err) rc = fail(err);
 
 done:
+    secure_free(secpw, secpw_cap);
     if (in != stdin) fclose(in);
     if (out != stdout) fclose(out);
     return rc;

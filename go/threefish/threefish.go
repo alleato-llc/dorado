@@ -16,6 +16,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math/bits"
+	"runtime"
 )
 
 // c240 is the Skein 1.3 key-schedule constant (the round-3 NIST value). It keeps
@@ -111,6 +112,21 @@ func newCipher(key, tweak []byte, nw, rounds int, rot [][8]uint32, perm []int) (
 
 // BlockSize reports the variant's block size in bytes.
 func (c *threefish) BlockSize() int { return c.blockBytes }
+
+// Zeroize wipes the expanded key schedule (the secret material derived from the
+// key). Callers that obtained a cipher.Block can reach this with a type assertion
+// to interface{ Zeroize() }. The clear is paired with runtime.KeepAlive to defeat
+// dead-store elimination; like the rest of Go's secret handling this is best-effort,
+// not a language-level guarantee.
+func (c *threefish) Zeroize() {
+	for i := range c.ek {
+		c.ek[i] = 0
+	}
+	for i := range c.et {
+		c.et[i] = 0
+	}
+	runtime.KeepAlive(c)
+}
 
 // addSubkey injects subkey s into the state word-wise (mod 2^64). uint64
 // arithmetic wraps in Go, so no explicit wrapping helper is needed.

@@ -27,12 +27,20 @@ gotchas hit while writing this port are in [`DEVELOPMENT.md`](DEVELOPMENT.md).
 
 ## Secret handling and bare-metal
 
-The engine wipes the derived keys and the cipher's expanded key schedule after use
-with `std.crypto.secureZero` (which the compiler cannot optimize away), and the
-`dorado` CLI holds the password in a page-aligned, `mlock`'d buffer (the CLI links
-libc only for `mlock`; the SDK does not) that is kept out of swap and wiped on free.
-This reduces exposure; it is not a guarantee (the password still transits
-`argv`/stdin first, and `mlock` is best-effort).
+The engine wipes the derived keys and the cipher's expanded key schedule with
+`std.crypto.secureZero` (which the compiler cannot optimize away), on every exit path
+via `defer` (the analog of Rust's `Drop`), and the `dorado` CLI holds the password in
+a page-aligned, `mlock`'d buffer (the CLI links libc only for `mlock`; the SDK does
+not) that is kept out of swap and wiped on free. This reduces exposure; it is not a
+guarantee (the password still transits `argv`/stdin first, and `mlock` is
+best-effort).
+
+A release build defaults to `ReleaseSafe`, not `ReleaseFast`: `zig build --release`
+keeps Zig's runtime safety checks (bounds, integer overflow, alignment) in the
+shipped binary, so a bug that could leak a secret panics instead of becoming silent
+undefined behavior. (Plain `zig build` stays `Debug` for development.) Zig has no
+borrow checker, so this is runtime detection of the common bug classes, not Rust's
+compile-time prevention.
 
 The from-scratch primitives (Threefish/CTR, Skein, BLAKE3) need no allocator and no
 OS, so `zig build freestanding` cross-compiles them (via `src/primitives.zig`) to a

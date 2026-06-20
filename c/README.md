@@ -31,12 +31,16 @@ On macOS the Makefile adds the Homebrew `pkg-config` paths automatically.
 
 ## Secret handling and bare-metal
 
-The engine wipes the derived keys and the cipher's expanded key schedule after use
-with `OPENSSL_cleanse` (which the compiler cannot optimize away), and the `dorado`
-CLI holds the password in a page-aligned, `mlock`'d buffer that is kept out of swap
-and wiped on free. This is a reduction in exposure, not a guarantee: the password
-still transits `argv`/stdin first, and `mlock` is best-effort (it is skipped without
-error if `RLIMIT_MEMLOCK` forbids it).
+The engine wipes the derived keys and the cipher's expanded key schedule with
+`OPENSSL_cleanse` (which the compiler cannot optimize away). The wipe runs
+automatically on every exit path via `__attribute__((cleanup(...)))` (a GCC/Clang
+extension, the C analog of Rust's `Drop` and Zig's `defer`), so a future early return
+cannot forget it. The `dorado` CLI holds the password in a page-aligned, `mlock`'d
+buffer kept out of swap and wiped on free. This is a reduction in exposure, not a
+guarantee: the password still transits `argv`/stdin first, and `mlock` is best-effort
+(skipped without error if `RLIMIT_MEMLOCK` forbids it). C is not memory-safe, so a
+bug elsewhere could still expose a secret; the test suite runs under
+AddressSanitizer and UndefinedBehaviorSanitizer to catch that class in CI.
 
 The from-scratch primitives (Threefish/CTR, Skein, BLAKE3) depend on no allocator
 and no OS, so `make freestanding` compiles them with `-ffreestanding` for a

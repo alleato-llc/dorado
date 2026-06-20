@@ -2,7 +2,12 @@ const std = @import("std");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
-    const optimize = b.standardOptimizeOption(.{});
+    // Default a release build to ReleaseSafe, not ReleaseFast: a security tool keeps
+    // Zig's runtime safety checks (bounds, integer overflow, alignment) in the
+    // shipped binary, so a bug that could leak a secret panics instead of becoming
+    // silent undefined behavior. Plain `zig build` stays Debug for development;
+    // `zig build --release` (or `-Doptimize=...`) selects the mode.
+    const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSafe });
 
     // The library module (the SDK).
     const dorado_mod = b.addModule("dorado", .{

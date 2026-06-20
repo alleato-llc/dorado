@@ -30,7 +30,7 @@ both run the verified Rust cipher compiled to WASM and work in memory.
 | **TypeScript · Node** | Port; CLIs | WASM (Rust cipher) | `hash-wasm` (WASM) | No (in-memory) | `sodium-native` locked buffers |
 | **TypeScript · Browser** | In-page demo | WASM (Rust cipher) | `hash-wasm` (WASM) | No (in-memory) | none (demo, not secure) |
 
-Two more axes are not columns above. **`no_std` / bare-metal:** the from-scratch
+Three more axes are not columns above. **`no_std` / bare-metal:** the from-scratch
 cipher primitives (Threefish/CTR, Skein, BLAKE3) build with no OS and no allocator
 in **Rust, C, and Zig** (CI cross-compiles them to a bare-metal ARM target); the
 construction (whose KDFs need an allocator) is not bare-metal, and Go, Java, Python,
@@ -38,6 +38,15 @@ and TypeScript require a managed runtime. **Constant time:** only Rust documents
 preserves a full no-secret-dependent-branching discipline; every other port at least
 uses a constant-time tag compare, and the cipher is ARX (no secret-dependent table
 lookups) everywhere, but JIT/interpreted runtimes cannot promise constant time.
+**Memory safety** is why Rust is the strongest tier overall (not the wipe/lock
+mechanism, which C and Zig match): a use-after-free or buffer overrun can leak a
+secret, and only Rust *prevents* those at compile time (with `#![forbid(unsafe_code)]`).
+Zig *detects* the common classes at runtime when built `ReleaseSafe` (its release
+default here: bounds, integer-overflow, and alignment checks stay in the binary), but
+has no borrow checker, so general use-after-free is not caught. C relies on external
+sanitizers (ASan/UBSan in CI), which detect bugs only on the paths a test exercises.
+Go and the managed runtimes are memory-safe but pay for it elsewhere (the GC is what
+makes Go's wipe a convention rather than a guarantee).
 
 HMAC-SHA256 uses each ecosystem's standard library (RustCrypto, Go stdlib, the JDK,
 Python `hmac`, OpenSSL, Zig stdlib, Web Crypto); Skein-512 and keyed BLAKE3 are
@@ -64,20 +73,21 @@ under ASan/UBSan).
   Python, and TypeScript require a managed runtime.
 - **Secret handling.** This is the sharpest difference, and the reason the browser
   is the weakest tier:
-  - *Rust* wipes secret buffers and the cipher's key schedule on drop (`zeroize`),
-    and its CLI `mlock`s the password buffer out of swap (via the `region` crate, so
-    `#![forbid(unsafe_code)]` still holds). This is the strongest tier: a
-    non-elidable wipe *and* a lock.
-  - *C* and *Zig* wipe the derived keys and the cipher's expanded key schedule after
-    use (`OPENSSL_cleanse` / `std.crypto.secureZero`, which the compiler cannot
-    optimize away), and their CLIs hold the password in a page-aligned, `mlock`'d
-    buffer that is kept out of swap and wiped on free.
-  - *Go* wipes the derived keys (a clear plus `runtime.KeepAlive` to defeat dead-
-    store elimination; Go's heap is non-moving, so the slice does not get relocated),
-    and its CLI holds the password in an off-heap `mmap`'d, `mlock`'d buffer (out of
-    swap, and not subject to growable-stack copies). This is close to C/Zig parity;
-    what Go lacks is a non-elidable wipe guaranteed by the language, the way Rust's
-    `zeroize` and C's `OPENSSL_cleanse` are.
+  - *Rust* wipes secret buffers and the cipher's key schedule on drop (`zeroize`,
+    automatically on every path), and its CLI `mlock`s the password buffer out of
+    swap (via the `region` crate, so `#![forbid(unsafe_code)]` still holds).
+  - *C* and *Zig* wipe the derived keys and the cipher's expanded key schedule with a
+    non-elidable clear (`OPENSSL_cleanse` / `std.crypto.secureZero`), and their CLIs
+    hold the password in a page-aligned, `mlock`'d buffer kept out of swap. The wipe
+    runs automatically on every exit path: C via `__attribute__((cleanup))`, Zig via
+    `defer`, the analogs of Rust's `Drop`.
+  - *Go* wipes the derived keys and the cipher's key schedule (a clear plus
+    `runtime.KeepAlive` to defeat dead-store elimination; Go's heap is non-moving, so
+    the slice is not relocated), and its CLI holds the password in an off-heap
+    `mmap`'d, `mlock`'d buffer (out of swap, and not subject to growable-stack
+    copies). What Go still lacks is a non-elidable wipe guaranteed the way Rust's
+    `zeroize`, C's `OPENSSL_cleanse`, and Zig's `secureZero` are; its `KeepAlive`
+    clear is reliable in practice but is a convention, not a language guarantee.
   - *Java* and *Python* are libraries that leave the lifetime of secret buffers to
     the caller and do not wipe them (Python `bytes` are immutable, so they cannot
     even be wiped in place).

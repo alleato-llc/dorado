@@ -257,9 +257,12 @@ const primitives = [
         </table>
       </div>
       <p class="demo-note" style="margin-top: 1rem;">
-        Two more axes are left out above: the cipher primitives build bare-metal
-        (no OS, no allocator) in Rust, C, and Zig, and only Rust documents a full
-        constant-time discipline. Full breakdown in{" "}
+        Axes left out above: the cipher primitives build bare-metal (no OS, no
+        allocator) in Rust, C, and Zig; only Rust documents a full constant-time
+        discipline; and memory safety is why Rust leads overall, since it alone
+        prevents the use-after-free and overrun bugs that can leak a secret at
+        compile time (the wipe-and-lock mechanism itself is matched by C, Zig, and
+        Go). Full breakdown in{" "}
         <a href={`${REPO}/blob/main/docs/implementations.md`}><code>docs/implementations.md</code></a>.
       </p>
     </div>

@@ -117,6 +117,11 @@ to move again.
   &.{...} })` to wire the `dorado` module into the executables and the test module,
   `b.addExecutable(.{ .root_module = ... })`, and `b.addTest(.{ .root_module = ... })`.
   The test step's root module is `tests/test.zig` (see the `@embedFile` note).
+- `standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSafe })` makes
+  `--release` build `ReleaseSafe` (safety checks kept) rather than `ReleaseFast`,
+  which is the right default for a security tool. Setting `preferred_optimize_mode`
+  changes the flag surface: the build offers `-Drelease=[bool]` (Debug vs the
+  preferred mode) instead of a free `-Doptimize=<mode>` choice.
 
 ## Workflow that worked
 

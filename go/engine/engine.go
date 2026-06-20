@@ -37,6 +37,14 @@ func newBlock(v Variant, key, tweak []byte) (cipher.Block, error) {
 	return nil, fmt.Errorf("unknown variant %d", v)
 }
 
+// zeroizeBlock wipes a cipher's expanded key schedule if it supports it (the
+// threefish package does), so the key material does not linger until the GC runs.
+func zeroizeBlock(block cipher.Block) {
+	if z, ok := block.(interface{ Zeroize() }); ok {
+		z.Zeroize()
+	}
+}
+
 // PasswordOptions controls password encryption. Decryption reads them from the
 // header.
 type PasswordOptions struct {
@@ -180,6 +188,7 @@ func EncryptPasswordStream(password []byte, opts PasswordOptions, r io.Reader, w
 	if err != nil {
 		return err
 	}
+	defer zeroizeBlock(block)
 	stream := cipher.NewCTR(block, iv)
 
 	if _, err := w.Write(headerBytes); err != nil {
@@ -254,6 +263,7 @@ func DecryptPasswordStreamExpecting(password, expectedLabel []byte, r io.Reader,
 	if err != nil {
 		return err
 	}
+	defer zeroizeBlock(block)
 	stream := cipher.NewCTR(block, h.IV)
 
 	var index uint64
@@ -291,6 +301,7 @@ func RawCTRStream(v Variant, key, tweak, iv []byte, r io.Reader, w io.Writer) er
 	if err != nil {
 		return err
 	}
+	defer zeroizeBlock(block)
 	stream := cipher.NewCTR(block, iv)
 	_, err = io.Copy(w, cipher.StreamReader{S: stream, R: r})
 	return err

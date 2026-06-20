@@ -11,9 +11,17 @@
 #include "kdf.h"
 #include "mac.h"
 
-/* Wipe a secret buffer so the compiler cannot optimize the clear away. */
-static void wipe(void *p, size_t n) {
-    OPENSSL_cleanse(p, n);
+/* Cleanup handlers for __attribute__((cleanup(...))): the keymat and the cipher's
+ * expanded key schedule wipe themselves when they leave scope, on every exit path
+ * (return, early error return), so a future early return cannot forget the wipe.
+ * OPENSSL_cleanse is non-elidable. The GCC/Clang cleanup attribute is the C analog
+ * of Rust's Drop and Zig's defer. */
+static void cleanup_keymat(uint8_t (*p)[160]) {
+    OPENSSL_cleanse(*p, sizeof *p);
+}
+
+static void cleanup_cipher(dorado_threefish *p) {
+    OPENSSL_cleanse(p, sizeof *p);
 }
 
 dorado_kdf_params dorado_kdf_argon2id(uint32_t m_cost_kib, uint32_t t_cost, uint32_t p_cost) {
@@ -105,7 +113,7 @@ const char *dorado_encrypt_password_stream(const uint8_t *password, size_t passw
         return "RNG failure";
     }
     int kl = bl;
-    uint8_t keymat[160];
+    uint8_t keymat[160] __attribute__((cleanup(cleanup_keymat)));
     const char *e = dorado_kdf_derive(&opts->kdf, password, password_len, salt, 16, keymat, (size_t)kl + 32);
     if (e) {
         return e;
@@ -129,14 +137,14 @@ const char *dorado_encrypt_password_stream(const uint8_t *password, size_t passw
     uint8_t hb[DORADO_HEADER_MAX_BYTES];
     size_t hb_len = dorado_format_marshal(&h, hb);
 
-    dorado_threefish tf;
+    /* keymat and tf wipe themselves on every return via the cleanup attribute (the
+     * counter and ciphertext buffers are not secret). */
+    dorado_threefish tf __attribute__((cleanup(cleanup_cipher)));
     dorado_threefish_init(&tf, v, keymat, opts->tweak);
     dorado_ctr ctr;
     dorado_ctr_init(&ctr, &tf, iv);
 
     if (fwrite(hb, 1, hb_len, out) != hb_len) {
-        wipe(keymat, sizeof keymat);
-        wipe(&tf, sizeof tf);
         return "write error";
     }
 
@@ -145,8 +153,6 @@ const char *dorado_encrypt_password_stream(const uint8_t *password, size_t passw
     uint8_t *nxt = malloc(cs);
     uint8_t *aad = malloc(8 + hb_len + 13 + cs);
     if (!cur || !nxt || !aad) {
-        wipe(keymat, sizeof keymat);
-        wipe(&tf, sizeof tf);
         free(cur);
         free(nxt);
         free(aad);
@@ -172,10 +178,6 @@ const char *dorado_encrypt_password_stream(const uint8_t *password, size_t passw
         nxt = tmp;
         cur_len = nxt_len;
     }
-    /* Wipe the derived keys and the cipher's expanded key schedule (as the Rust
-     * reference does on drop). The counter and ciphertext buffers are not secret. */
-    wipe(keymat, sizeof keymat);
-    wipe(&tf, sizeof tf);
     free(cur);
     free(nxt);
     free(aad);
@@ -203,7 +205,7 @@ const char *dorado_decrypt_password_stream(const uint8_t *password, size_t passw
         return e;
     }
     int kl = bl;
-    uint8_t keymat[160];
+    uint8_t keymat[160] __attribute__((cleanup(cleanup_keymat)));
     e = dorado_kdf_derive(&h.kdf, password, password_len, h.salt, h.salt_len, keymat, (size_t)kl + 32);
     if (e) {
         return e;
@@ -211,7 +213,7 @@ const char *dorado_decrypt_password_stream(const uint8_t *password, size_t passw
     uint8_t hb[DORADO_HEADER_MAX_BYTES];
     size_t hb_len = dorado_format_marshal(&h, hb);
 
-    dorado_threefish tf;
+    dorado_threefish tf __attribute__((cleanup(cleanup_cipher)));
     dorado_threefish_init(&tf, h.variant, keymat, h.tweak);
     dorado_ctr ctr;
     dorado_ctr_init(&ctr, &tf, h.iv);
@@ -220,8 +222,6 @@ const char *dorado_decrypt_password_stream(const uint8_t *password, size_t passw
     uint8_t *ct = malloc(cs);
     uint8_t *aad = malloc(8 + hb_len + 13 + cs);
     if (!ct || !aad) {
-        wipe(keymat, sizeof keymat);
-        wipe(&tf, sizeof tf);
         free(ct);
         free(aad);
         return "out of memory";
@@ -278,8 +278,6 @@ const char *dorado_decrypt_password_stream(const uint8_t *password, size_t passw
         }
         index++;
     }
-    wipe(keymat, sizeof keymat);
-    wipe(&tf, sizeof tf);
     free(ct);
     free(aad);
     return err;

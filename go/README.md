@@ -34,15 +34,17 @@ and the streaming container is idiomatic with `io`.
 
 ## Secret handling
 
-The engine wipes the derived keys after use (a clear plus `runtime.KeepAlive` to
-defeat dead-store elimination; Go's heap is non-moving, so the slice is not
-relocated), and the `dorado` CLI holds the password in an off-heap, `mlock`'d buffer
-(the `secure` package: anonymous `mmap` memory kept out of swap and not subject to
-growable-stack copies, wiped and unmapped on free). On non-Unix platforms the
-`secure` buffer falls back to a wiped heap slice. This reduces exposure but is not a
-guarantee: the password still transits the Go heap and may arrive as an immutable
-string first, and `mlock` is best-effort. See `secure/secure.go` for the full
-caveats.
+The engine wipes the derived keys and the cipher's expanded key schedule after use
+(a clear plus `runtime.KeepAlive` to defeat dead-store elimination; Go's heap is
+non-moving, so the slice is not relocated; the key schedule is reached through a
+`Zeroize()` method on the `threefish` type via a type assertion). The `dorado` CLI
+holds the password in an off-heap, `mlock`'d buffer (the `secure` package: anonymous
+`mmap` memory kept out of swap and not subject to growable-stack copies, wiped and
+unmapped on free). On non-Unix platforms the `secure` buffer falls back to a wiped
+heap slice. This reduces exposure but is not a guarantee: the password still transits
+the Go heap and may arrive as an immutable string first, `mlock` is best-effort, and
+the `KeepAlive` clear is a convention rather than a non-elidable wipe the way Rust's
+`zeroize` or C's `OPENSSL_cleanse` are. See `secure/secure.go` for the full caveats.
 
 ## Build and test
 

@@ -7,6 +7,7 @@ import process from "node:process";
 import * as engine from "../engine/engine";
 import * as fmt from "../engine/format";
 import { wasmBackend } from "../engine/wasm-backend";
+import { type Secret, secureFrom, wipe } from "./secret";
 import { hexToBytes, utf8, bytesToHex, fromUtf8 } from "../bytes";
 
 const options = {
@@ -91,10 +92,12 @@ function promptPassword(prompt: string): Promise<string> {
   });
 }
 
-async function readPassword(o: Opts, confirm: boolean): Promise<Uint8Array> {
+async function readPassword(o: Opts, confirm: boolean): Promise<Secret> {
   if (o["password-stdin"]) {
-    const all = fromUtf8(new Uint8Array(readFileSync(0)));
-    return utf8(all.split(/\r?\n/)[0]);
+    const raw = new Uint8Array(readFileSync(0));
+    const all = fromUtf8(raw);
+    wipe(raw);
+    return secureFrom(utf8(all.split(/\r?\n/)[0]));
   }
   const pw = await promptPassword("Password: ");
   if (confirm) {
@@ -102,7 +105,9 @@ async function readPassword(o: Opts, confirm: boolean): Promise<Uint8Array> {
     if (pw !== again) throw new Error("passwords do not match");
   }
   if (pw.length === 0) throw new Error("password must not be empty");
-  return utf8(pw);
+  // utf8(pw) is an ordinary heap buffer; secureFrom copies it into a guarded
+  // buffer and wipes that copy. The JS string `pw` itself cannot be wiped.
+  return secureFrom(utf8(pw));
 }
 
 function passwordMode(o: Opts): boolean {
@@ -120,27 +125,40 @@ async function cmdCrypt(o: Opts, encrypt: boolean): Promise<void> {
     const variant = ({ 32: fmt.T256, 64: fmt.T512, 128: fmt.T1024 } as Record<number, fmt.Variant>)[key.length];
     if (variant === undefined) throw new Error(`key must be 32, 64, or 128 bytes, got ${key.length}`);
     if (!o.iv) throw new Error("--iv is required with --key/--key-file");
-    const out = engine.rawCTR(variant, key, dehex(str(o.tweak)), dehex(str(o.iv)), readInput(o), wasmBackend);
-    writeOutput(o, out);
+    try {
+      const out = engine.rawCTR(variant, key, dehex(str(o.tweak)), dehex(str(o.iv)), readInput(o), wasmBackend);
+      writeOutput(o, out);
+    } finally {
+      wipe(key);
+    }
     return;
   }
   if (o.iv) throw new Error("--iv is not used in password mode; the IV is generated and stored");
   if (o["password-stdin"] && !o.in) throw new Error("with --password-stdin, pass the data via --in");
 
   const password = await readPassword(o, encrypt);
-  if (encrypt) {
-    const opts: engine.PasswordOptions = {
-      variant: variantOf(o),
-      kdf: kdfOf(o),
-      mac: macOf(o),
-      tweak: dehex(str(o.tweak)),
-      chunkSize: int(str(o["chunk-kib"])) * 1024,
-      label: o.label ? utf8(str(o.label)) : new Uint8Array(0),
-    };
-    writeOutput(o, await engine.encryptPasswordBytes(password, opts, readInput(o), wasmBackend));
-  } else {
-    const expect = o["expect-label"] ? utf8(str(o["expect-label"])) : undefined;
-    writeOutput(o, await engine.decryptPasswordBytes(password, readInput(o), expect, wasmBackend));
+  try {
+    if (encrypt) {
+      const opts: engine.PasswordOptions = {
+        variant: variantOf(o),
+        kdf: kdfOf(o),
+        mac: macOf(o),
+        tweak: dehex(str(o.tweak)),
+        chunkSize: int(str(o["chunk-kib"])) * 1024,
+        label: o.label ? utf8(str(o.label)) : new Uint8Array(0),
+      };
+      const plaintext = readInput(o);
+      try {
+        writeOutput(o, await engine.encryptPasswordBytes(password.bytes, opts, plaintext, wasmBackend));
+      } finally {
+        wipe(plaintext);
+      }
+    } else {
+      const expect = o["expect-label"] ? utf8(str(o["expect-label"])) : undefined;
+      writeOutput(o, await engine.decryptPasswordBytes(password.bytes, readInput(o), expect, wasmBackend));
+    }
+  } finally {
+    password.wipe();
   }
 }
 

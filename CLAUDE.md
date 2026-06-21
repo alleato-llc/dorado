@@ -40,8 +40,12 @@ This is the dorado monorepo. It has several parts:
   streaming over `FILE *` in constant memory like the Rust reference. The KDFs are
   delegated to system libraries (no vendoring): Argon2id from `libargon2`,
   scrypt/PBKDF2/HMAC from OpenSSL, both via `pkg-config`. Engine functions return
-  `NULL` or a static error string. `make test` (KATs + cross-compat fixtures from
-  the Rust CLI, also run under ASan/UBSan). Needs `libargon2` + OpenSSL installed
+  `NULL` or a static error string (with stable `dorado_err_auth`/`_malformed`/`_params`
+  sentinels a caller can classify by pointer; wrong-password and tampering stay merged
+  into `dorado_err_auth`). `make test` (KATs + cross-compat fixtures from the Rust CLI,
+  plus a randomized decrypt "smash" pass); CI reruns it under ASan/UBSan via `make test
+  SAN=1`, and `make fuzz` builds a libFuzzer harness for the decrypt path. Needs
+  `libargon2` + OpenSSL installed
   (`brew install argon2 openssl@3` / `apt-get install libargon2-dev libssl-dev`).
 - `zig/` — a Zig port (Zig 0.16) with an SDK and the `dorado`/`gyotaku` CLIs: same
   from-scratch primitives, same on-disk format (cross-compatible), streaming over a

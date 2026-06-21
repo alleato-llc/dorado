@@ -59,32 +59,32 @@ public final class Kdf {
         switch (p.kind) {
             case Format.KDF_ARGON2ID -> {
                 if (p.mCost > (1L << 21)) {
-                    throw new DoradoException("argon2 memory cost too large");
+                    throw new MalformedContainerException("argon2 memory cost too large");
                 }
                 if (p.tCost > 64) {
-                    throw new DoradoException("argon2 time cost too large");
+                    throw new MalformedContainerException("argon2 time cost too large");
                 }
                 if (p.pCost > 16) {
-                    throw new DoradoException("argon2 parallelism too large");
+                    throw new MalformedContainerException("argon2 parallelism too large");
                 }
             }
             case Format.KDF_SCRYPT -> {
                 if (p.logN > 21) {
-                    throw new DoradoException("scrypt cost (log2 N) too large");
+                    throw new MalformedContainerException("scrypt cost (log2 N) too large");
                 }
                 if (p.r > 32) {
-                    throw new DoradoException("scrypt block factor r too large");
+                    throw new MalformedContainerException("scrypt block factor r too large");
                 }
                 if (p.p > 16) {
-                    throw new DoradoException("scrypt parallelism p too large");
+                    throw new MalformedContainerException("scrypt parallelism p too large");
                 }
             }
             case Format.KDF_PBKDF2 -> {
                 if (p.rounds > 50_000_000L) {
-                    throw new DoradoException("pbkdf2 rounds too large");
+                    throw new MalformedContainerException("pbkdf2 rounds too large");
                 }
             }
-            default -> throw new DoradoException("unknown kdf kind " + p.kind);
+            default -> throw new MalformedContainerException("unknown kdf kind " + p.kind);
         }
     }
 }

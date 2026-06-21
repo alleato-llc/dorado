@@ -9,6 +9,7 @@ import hashlib
 import hmac
 
 from . import blake3, format as fmt, skein
+from .errors import InvalidParams
 
 
 def tag(mac_id: int, mac_key: bytes, signed: bytes) -> bytes:
@@ -19,7 +20,7 @@ def tag(mac_id: int, mac_key: bytes, signed: bytes) -> bytes:
         return blake3.keyed_mac(mac_key, fmt.TAG_LEN, signed)
     if mac_id == fmt.MAC_HMAC:
         return hmac.new(mac_key, signed, hashlib.sha256).digest()
-    raise ValueError(f"unknown mac id {mac_id}")
+    raise InvalidParams(f"unknown mac id {mac_id}")
 
 
 def verify(mac_id: int, mac_key: bytes, signed: bytes, received: bytes) -> bool:

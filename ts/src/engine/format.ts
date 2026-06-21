@@ -3,6 +3,7 @@
 // big-endian.
 
 import { concat } from "../bytes";
+import { MalformedContainerError } from "./errors";
 
 export const MAGIC = "DRDO";
 export const FORMAT_VERSION = 4;
@@ -113,7 +114,7 @@ class Cursor {
   pos = 0;
   constructor(private readonly data: Uint8Array) {}
   read(n: number, what: string): Uint8Array {
-    if (this.pos + n > this.data.length) throw new Error(`header truncated reading ${what}`);
+    if (this.pos + n > this.data.length) throw new MalformedContainerError(`header truncated reading ${what}`);
     const s = this.data.subarray(this.pos, this.pos + n);
     this.pos += n;
     return s;
@@ -135,12 +136,12 @@ class Cursor {
 export function readHeader(data: Uint8Array): { header: Header; offset: number } {
   const c = new Cursor(data);
   if (new TextDecoder().decode(c.read(4, "magic")) !== MAGIC) {
-    throw new Error("not a dorado password file (bad magic)");
+    throw new MalformedContainerError("not a dorado password file (bad magic)");
   }
   const version = c.byte("version");
-  if (version !== 3 && version !== FORMAT_VERSION) throw new Error(`unsupported format version ${version}`);
+  if (version !== 3 && version !== FORMAT_VERSION) throw new MalformedContainerError(`unsupported format version ${version}`);
   const variant = c.byte("variant");
-  if (variant > 2) throw new Error(`unknown variant code ${variant}`);
+  if (variant > 2) throw new MalformedContainerError(`unknown variant code ${variant}`);
 
   const kdfId = c.byte("kdf id");
   const kdf: KDFParams = { kind: kdfId };
@@ -154,13 +155,13 @@ export function readHeader(data: Uint8Array): { header: Header; offset: number }
     kdf.p = c.u32("p");
   } else if (kdfId === KDF_PBKDF2) {
     kdf.rounds = c.u32("rounds");
-    if (c.byte("prf") !== 1) throw new Error("unknown prf id");
+    if (c.byte("prf") !== 1) throw new MalformedContainerError("unknown prf id");
   } else {
-    throw new Error(`unknown kdf id ${kdfId}`);
+    throw new MalformedContainerError(`unknown kdf id ${kdfId}`);
   }
 
   const mac = c.byte("mac id");
-  if (mac < 1 || mac > 3) throw new Error(`unknown mac id ${mac}`);
+  if (mac < 1 || mac > 3) throw new MalformedContainerError(`unknown mac id ${mac}`);
   const chunkSize = c.u32("chunk size");
   const saltLen = c.byte("salt len");
   const salt = c.read(saltLen, "salt").slice();
@@ -169,7 +170,7 @@ export function readHeader(data: Uint8Array): { header: Header; offset: number }
   let label = new Uint8Array(0);
   if (version >= 4) {
     const labelLen = c.u16("label len");
-    if (labelLen > MAX_LABEL_LEN) throw new Error(`label too long (${labelLen} bytes)`);
+    if (labelLen > MAX_LABEL_LEN) throw new MalformedContainerError(`label too long (${labelLen} bytes)`);
     label = c.read(labelLen, "label").slice();
   }
 

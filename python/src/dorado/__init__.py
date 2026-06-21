@@ -21,7 +21,7 @@ from .engine import (
     raw_ctr,
     raw_ctr_stream,
 )
-from .errors import DoradoError
+from .errors import AuthError, DoradoError, InvalidParams, MalformedContainer
 from .format import (
     KDF_ARGON2ID,
     KDF_PBKDF2,
@@ -43,6 +43,9 @@ __all__ = [
     "ContainerInfo",
     "KdfParams",
     "DoradoError",
+    "AuthError",
+    "MalformedContainer",
+    "InvalidParams",
     "default_options",
     "encrypt_password",
     "decrypt_password",

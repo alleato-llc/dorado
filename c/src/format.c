@@ -96,10 +96,14 @@ static int read_u32(FILE *in, uint32_t *x) {
     return 1;
 }
 
+/* All header read failures (truncation and bad fields) are the malformed class so a
+ * caller can classify by pointer; the human-readable "what" is dropped in favor of
+ * the stable sentinel. */
 #define RD(call, what) \
     do {               \
         if (!(call)) { \
-            return "header truncated reading " what; \
+            (void)(what); \
+            return dorado_err_malformed; \
         }              \
     } while (0)
 
@@ -107,18 +111,18 @@ const char *dorado_format_read(FILE *in, dorado_header *h) {
     uint8_t magic[4];
     RD(dorado_read_full(in, magic, 4), "magic");
     if (memcmp(magic, DORADO_MAGIC, 4) != 0) {
-        return "not a dorado password file (bad magic)";
+        return dorado_err_malformed;
     }
     uint8_t v;
     RD(dorado_read_full(in, &v, 1), "version");
     if (v != 3 && v != DORADO_VERSION) {
-        return "unsupported format version";
+        return dorado_err_malformed;
     }
     h->version = v;
     uint8_t var;
     RD(dorado_read_full(in, &var, 1), "variant");
     if (var > 2) {
-        return "unknown variant code";
+        return dorado_err_malformed;
     }
     h->variant = var;
 
@@ -141,17 +145,17 @@ const char *dorado_format_read(FILE *in, dorado_header *h) {
         uint8_t prf;
         RD(dorado_read_full(in, &prf, 1), "prf");
         if (prf != 1) {
-            return "unknown prf id";
+            return dorado_err_malformed;
         }
         h->kdf.prf = prf;
     } else {
-        return "unknown kdf id";
+        return dorado_err_malformed;
     }
 
     uint8_t mac;
     RD(dorado_read_full(in, &mac, 1), "mac id");
     if (mac < 1 || mac > 3) {
-        return "unknown mac id";
+        return dorado_err_malformed;
     }
     h->mac = mac;
     RD(read_u32(in, &h->chunk_size), "chunk size");
@@ -166,7 +170,7 @@ const char *dorado_format_read(FILE *in, dorado_header *h) {
         RD(dorado_read_full(in, ll, 2), "label len");
         size_t label_len = dorado_load16_be(ll);
         if (label_len > DORADO_MAX_LABEL_LEN) {
-            return "label too long";
+            return dorado_err_params;
         }
         RD(dorado_read_full(in, h->label, label_len), "label");
         h->label_len = label_len;

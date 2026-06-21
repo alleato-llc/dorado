@@ -1,5 +1,15 @@
 import { describe, it, expect } from "vitest";
-import { encryptPasswordBytes, decryptPasswordBytes, inspect, rawCTR, defaultOptions, type PasswordOptions } from "./engine";
+import {
+  encryptPasswordBytes,
+  decryptPasswordBytes,
+  inspect,
+  rawCTR,
+  defaultOptions,
+  AuthError,
+  InvalidParamsError,
+  MalformedContainerError,
+  type PasswordOptions,
+} from "./engine";
 import { KDF_PBKDF2, MAC_SKEIN, MAC_HMAC, MAC_BLAKE3, T256, T512, T1024, blockLen } from "./format";
 import { utf8, equalBytes } from "../bytes";
 
@@ -14,10 +24,15 @@ describe("engine", () => {
     const pt = utf8("a secret message that spans more than nothing");
     const ct = await encryptPasswordBytes(utf8("pw"), fastOpts(), pt);
     expect(equalBytes(await decryptPasswordBytes(utf8("pw"), ct), pt)).toBe(true);
-    await expect(decryptPasswordBytes(utf8("wrong"), ct)).rejects.toThrow();
+    // Wrong password and tampering must both surface as the same AuthError class
+    // and message so the two stay indistinguishable.
+    const wrongPw = await decryptPasswordBytes(utf8("wrong"), ct).catch((e) => e);
+    expect(wrongPw).toBeInstanceOf(AuthError);
     const bad = ct.slice();
     bad[bad.length - 1] ^= 1;
-    await expect(decryptPasswordBytes(utf8("pw"), bad)).rejects.toThrow();
+    const tampered = await decryptPasswordBytes(utf8("pw"), bad).catch((e) => e);
+    expect(tampered).toBeInstanceOf(AuthError);
+    expect(tampered.message).toBe(wrongPw.message);
   });
 
   it("every MAC round-trips", async () => {
@@ -49,7 +64,7 @@ describe("engine", () => {
     expect(equalBytes(info.label, utf8("backup-2026"))).toBe(true);
     expect(info.version).toBe(4);
     expect(equalBytes(await decryptPasswordBytes(utf8("pw"), ct, utf8("backup-2026")), utf8("secret"))).toBe(true);
-    await expect(decryptPasswordBytes(utf8("pw"), ct, utf8("other"))).rejects.toThrow();
+    await expect(decryptPasswordBytes(utf8("pw"), ct, utf8("other"))).rejects.toBeInstanceOf(InvalidParamsError);
   });
 
   it("truncation rejected", async () => {
@@ -58,7 +73,9 @@ describe("engine", () => {
     const pt = new Uint8Array(200);
     const ct = await encryptPasswordBytes(utf8("pw"), o, pt);
     for (const cut of [1, 33, 80, 150]) {
-      await expect(decryptPasswordBytes(utf8("pw"), ct.subarray(0, ct.length - cut))).rejects.toThrow();
+      await expect(
+        decryptPasswordBytes(utf8("pw"), ct.subarray(0, ct.length - cut)),
+      ).rejects.toBeInstanceOf(MalformedContainerError);
     }
   });
 

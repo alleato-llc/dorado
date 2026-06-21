@@ -11,6 +11,13 @@
 #include "kdf.h"
 #include "mac.h"
 
+/* Stable sentinel error strings (see engine.h). The engine returns these exact
+ * pointers at the corresponding sites so a caller can classify by identity; the text
+ * is human-readable. Auth keeps wrong-password and tampering merged. */
+const char *const dorado_err_auth = "authentication failed (wrong password, corruption, or tampering)";
+const char *const dorado_err_malformed = "malformed or truncated container";
+const char *const dorado_err_params = "invalid parameters";
+
 /* Cleanup handlers for __attribute__((cleanup(...))): the keymat and the cipher's
  * expanded key schedule wipe themselves when they leave scope, on every exit path
  * (return, early error return), so a future early return cannot forget the wipe.
@@ -97,16 +104,16 @@ static const char *write_frame(FILE *out, int is_last, const uint8_t *ct, size_t
 const char *dorado_encrypt_password_stream(const uint8_t *password, size_t password_len, const dorado_options *opts,
                                            FILE *in, FILE *out) {
     if (opts->label_len > DORADO_MAX_LABEL_LEN) {
-        return "label too long";
+        return dorado_err_params;
     }
     int v = opts->variant;
     int bl = dorado_variant_len(v);
     if (bl == 0) {
-        return "unknown variant";
+        return dorado_err_params;
     }
     if (opts->chunk_size == 0 || opts->chunk_size > dorado_effective_max_chunk_bytes() ||
         opts->chunk_size % (uint32_t)bl != 0) {
-        return "chunk size must be a positive multiple of the block size";
+        return dorado_err_params;
     }
     uint8_t salt[16];
     uint8_t iv[128];
@@ -199,7 +206,7 @@ const char *dorado_decrypt_password_stream(const uint8_t *password, size_t passw
     }
     int bl = dorado_variant_len(h.variant);
     if (h.chunk_size == 0 || h.chunk_size > dorado_effective_max_chunk_bytes() || h.chunk_size % (uint32_t)bl != 0) {
-        return "invalid chunk size in header";
+        return dorado_err_params;
     }
     e = dorado_kdf_validate(&h.kdf);
     if (e) {
@@ -232,37 +239,33 @@ const char *dorado_decrypt_password_stream(const uint8_t *password, size_t passw
     for (;;) {
         uint8_t head[5];
         size_t got = fread(head, 1, 5, in);
-        if (got == 0) {
-            err = "stream ended before the final chunk (truncated)";
-            break;
-        }
         if (got < 5) {
-            err = "incomplete frame header (truncated)";
+            err = dorado_err_malformed;
             break;
         }
         int flag = head[0];
         if (flag > 1) {
-            err = "invalid frame flag";
+            err = dorado_err_malformed;
             break;
         }
         int is_last = flag == 1;
         uint32_t ct_len = dorado_load32_be(head + 1);
         if (ct_len > cs) {
-            err = "frame length exceeds the header chunk size";
+            err = dorado_err_malformed;
             break;
         }
         if (!dorado_read_full(in, ct, ct_len)) {
-            err = "truncated frame ciphertext";
+            err = dorado_err_malformed;
             break;
         }
         uint8_t tag[32];
         if (!dorado_read_full(in, tag, 32)) {
-            err = "truncated frame tag";
+            err = dorado_err_malformed;
             break;
         }
         size_t aad_len = build_aad(aad, hb, hb_len, index, is_last, ct, ct_len);
         if (!dorado_mac_verify(h.mac, keymat + kl, aad, aad_len, tag)) {
-            err = "authentication failed (wrong password, corruption, or tampering)";
+            err = dorado_err_auth;
             break;
         }
         dorado_ctr_apply(&ctr, ct, ct_len);
@@ -274,7 +277,7 @@ const char *dorado_decrypt_password_stream(const uint8_t *password, size_t passw
             break;
         }
         if (ct_len != cs) {
-            err = "non-final chunk is not full size";
+            err = dorado_err_malformed;
             break;
         }
         index++;
@@ -288,7 +291,7 @@ const char *dorado_raw_ctr_stream(int variant, const uint8_t *key, const uint8_t
                                   FILE *out) {
     int bl = dorado_variant_len(variant);
     if (bl == 0) {
-        return "unknown variant";
+        return dorado_err_params;
     }
     dorado_threefish tf;
     dorado_threefish_init(&tf, variant, key, tweak);

@@ -12,6 +12,33 @@ must say so explicitly, since they affect cross-compatibility across all ports.
 
 ## [Unreleased]
 
+### Security
+
+- Security audit of all five remaining ports (Java, Python, C, Zig, TypeScript),
+  following the Rust and Go audits, with the actionable findings addressed:
+  - **Typed/classifiable errors** added so callers can tell failure kinds apart, with
+    wrong password and tampering kept indistinguishable (same type and message) in
+    every port. Java: `AuthenticationException` / `MalformedContainerException` under
+    `DoradoException`. Python: `AuthError` / `MalformedContainer` / `InvalidParams`
+    under `DoradoError` (unifying the stray `ValueError`s). C: pointer-classifiable
+    sentinel error strings (`dorado_err_auth` / `_malformed` / `_params`) with no API
+    change. TypeScript: `AuthError` / `MalformedContainerError` / `InvalidParamsError`
+    under `DoradoError`. Zig already distinguished kinds via its error set.
+  - **Fuzz/smash harnesses** over the decrypt path in each port (Java property test,
+    Python stdlib-random test, C libFuzzer target + a 20k-iteration smash test run
+    under the sanitizers, Zig seeded smash test, TypeScript seeded property test). No
+    new bug surfaced; the existing untrusted-input bounds hold.
+  - **C: the ASan/UBSan claim is now real.** `make test SAN=1` builds and runs the
+    suite (including the smash test) under AddressSanitizer + UndefinedBehaviorSanitizer,
+    CI runs it, and the docs were corrected to describe this accurately (plain
+    `make test` is unsanitized).
+  - **Java: best-effort zeroization** of derived key material (`Arrays.fill` in a
+    `finally`), with an honest note on the JVM's limits. Python and TypeScript cannot
+    reliably wipe memory (immutable bytes/strings), documented rather than papered over.
+- TypeScript `npm audit` reports five advisories confined to the `vitest` dev-tooling
+  chain (dev-only, not in the published library or browser bundle); the only fix is a
+  breaking major bump, deferred for maintainer triage.
+
 ### Fixed
 
 - `bench/report.html` was regenerated empty; rebuilt it from `results.json` with the

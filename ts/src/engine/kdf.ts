@@ -4,6 +4,7 @@
 
 import { argon2id, scrypt, pbkdf2, createSHA256 } from "hash-wasm";
 import { type KDFParams, KDF_ARGON2ID, KDF_SCRYPT, KDF_PBKDF2 } from "./format";
+import { InvalidParamsError } from "./errors";
 
 export async function derive(p: KDFParams, password: Uint8Array, salt: Uint8Array, outLen: number): Promise<Uint8Array> {
   switch (p.kind) {
@@ -37,20 +38,20 @@ export async function derive(p: KDFParams, password: Uint8Array, salt: Uint8Arra
         outputType: "binary",
       })) as Uint8Array;
   }
-  throw new Error(`unknown kdf kind ${p.kind}`);
+  throw new InvalidParamsError(`unknown kdf kind ${p.kind}`);
 }
 
 /** Reject KDF parameters whose cost is unreasonably large (untrusted header). */
 export function validate(p: KDFParams): void {
   if (p.kind === KDF_ARGON2ID) {
-    if (p.mCost! > 1 << 21) throw new Error("argon2 memory cost too large");
-    if (p.tCost! > 64) throw new Error("argon2 time cost too large");
-    if (p.pCost! > 16) throw new Error("argon2 parallelism too large");
+    if (p.mCost! > 1 << 21) throw new InvalidParamsError("argon2 memory cost too large");
+    if (p.tCost! > 64) throw new InvalidParamsError("argon2 time cost too large");
+    if (p.pCost! > 16) throw new InvalidParamsError("argon2 parallelism too large");
   } else if (p.kind === KDF_SCRYPT) {
-    if (p.logN! > 21) throw new Error("scrypt cost (log2 N) too large");
-    if (p.r! > 32) throw new Error("scrypt block factor r too large");
-    if (p.p! > 16) throw new Error("scrypt parallelism p too large");
+    if (p.logN! > 21) throw new InvalidParamsError("scrypt cost (log2 N) too large");
+    if (p.r! > 32) throw new InvalidParamsError("scrypt block factor r too large");
+    if (p.p! > 16) throw new InvalidParamsError("scrypt parallelism p too large");
   } else if (p.kind === KDF_PBKDF2) {
-    if (p.rounds! > 50_000_000) throw new Error("pbkdf2 rounds too large");
+    if (p.rounds! > 50_000_000) throw new InvalidParamsError("pbkdf2 rounds too large");
   }
 }

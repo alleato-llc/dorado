@@ -230,6 +230,116 @@ test "cross-compat with Rust fixtures" {
     for (mc) |b| try testing.expectEqual(@as(u8, 'x'), b);
 }
 
+// Accept only the engine's declared errors; anything else (or a panic / UB trap
+// under ReleaseSafe) fails the test. A panic would abort before we get here, which
+// is exactly the failure we are hunting for.
+fn assertEngineErrorOrOk(result: engine.Error![]u8, a: std.mem.Allocator) !void {
+    if (result) |buf| {
+        a.free(buf);
+    } else |err| switch (err) {
+        // The full closed set the decrypt path is allowed to surface.
+        error.LabelTooLong,
+        error.InvalidChunkSize,
+        error.BadContainer,
+        error.AuthFailed,
+        error.Truncated,
+        error.WriteFailed,
+        error.OutOfMemory,
+        error.Rng,
+        error.KdfFailed,
+        error.HostileCost,
+        error.BadMagic,
+        error.UnsupportedVersion,
+        error.UnknownVariant,
+        error.UnknownKdf,
+        error.UnknownPrf,
+        error.UnknownMac,
+        => {},
+    }
+}
+
+// Deterministic randomized "smash" test for the decrypt entrypoint. It feeds many
+// pseudo-random, truncated, and bit-mutated byte slices to engine.decrypt and asserts
+// that every call either succeeds or returns one of the engine's errors, and never
+// panics or triggers undefined behavior. Because the build defaults to ReleaseSafe and
+// tests keep safety checks on, any out-of-bounds or overflow would trap and fail here
+// rather than be silently accepted. Seeded for reproducibility.
+test "smash: decrypt never panics on hostile input" {
+    const a = testing.allocator;
+    var threaded = std.Io.Threaded.init(a, .{});
+    defer threaded.deinit();
+    const io = threaded.io();
+
+    var prng = std.Random.DefaultPrng.init(0x5EED_D0_8ADA);
+    const rand = prng.random();
+
+    // A cheap-KDF base container so mutating its bytes stays fast: pbkdf2 with low
+    // rounds. Mutations that flip the header into an expensive-but-valid KDF are
+    // statistically rare (a random u32 cost almost always exceeds validate()'s cap
+    // and is rejected as HostileCost).
+    const opts = engine.Options{ .kdf = fmt.Kdf.mkPbkdf2(1000), .mac = .skein };
+    const base = try engine.encrypt(a, io, "pw", opts, "the smash test plaintext payload");
+    defer a.free(base);
+
+    const ITERS = 3000;
+
+    // 1) Pure pseudo-random slices of varied lengths (most rejected early at the
+    //    magic / header parse, but exercises the length and bounds logic).
+    {
+        var buf: [512]u8 = undefined;
+        var i: usize = 0;
+        while (i < ITERS) : (i += 1) {
+            const len = rand.intRangeAtMost(usize, 0, buf.len);
+            rand.bytes(buf[0..len]);
+            // Half the time, start from a valid magic so we get deeper into the parser.
+            if (rand.boolean() and len >= 4) @memcpy(buf[0..4], fmt.MAGIC);
+            try assertEngineErrorOrOk(engine.decrypt(a, io, "pw", null, buf[0..len]), a);
+        }
+    }
+
+    // 2) Truncations of a real container at every prefix length.
+    {
+        var cut: usize = 0;
+        while (cut <= base.len) : (cut += 1) {
+            try assertEngineErrorOrOk(engine.decrypt(a, io, "pw", null, base[0..cut]), a);
+        }
+    }
+
+    // 3) Single- and multi-byte mutations of a real container, with an occasional
+    //    random expected_label to exercise the label-binding branch too.
+    {
+        const scratch = try a.alloc(u8, base.len);
+        defer a.free(scratch);
+        var i: usize = 0;
+        while (i < ITERS) : (i += 1) {
+            @memcpy(scratch, base);
+            const flips = rand.intRangeAtMost(usize, 1, 6);
+            var f: usize = 0;
+            while (f < flips) : (f += 1) {
+                const pos = rand.intRangeLessThan(usize, 0, scratch.len);
+                scratch[pos] ^= rand.int(u8);
+            }
+            const label: ?[]const u8 = if (rand.boolean()) "ctx" else null;
+            try assertEngineErrorOrOk(engine.decrypt(a, io, "pw", label, scratch), a);
+        }
+    }
+
+    // 4) Random-length grows and shrinks built around a real container (changes the
+    //    frame layout / trailing bytes without staying byte-aligned to it).
+    {
+        var i: usize = 0;
+        while (i < ITERS) : (i += 1) {
+            const extra = rand.intRangeAtMost(usize, 0, 64);
+            const keep = rand.intRangeAtMost(usize, 0, base.len);
+            const mutated = try a.alloc(u8, keep + extra);
+            defer a.free(mutated);
+            @memcpy(mutated[0..keep], base[0..keep]);
+            rand.bytes(mutated[keep..]);
+            try assertEngineErrorOrOk(engine.decrypt(a, io, "pw", null, mutated), a);
+        }
+    }
+}
+
 comptime {
     _ = TestEnv;
 }

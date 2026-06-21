@@ -104,7 +104,7 @@ public final class Engine {
     public static void encryptPasswordStream(byte[] password, PasswordOptions opts, InputStream in, OutputStream out)
             throws IOException {
         if (opts.label.length > Format.MAX_LABEL_LEN) {
-            throw new DoradoException("label too long (" + opts.label.length + " bytes)");
+            throw new MalformedContainerException("label too long (" + opts.label.length + " bytes)");
         }
         int v = opts.variant;
         int blockLen = Format.blockLen(v);
@@ -132,24 +132,33 @@ public final class Engine {
         h.label = opts.label.clone();
         byte[] headerBytes = Format.marshal(h);
 
-        Threefish.Ctr ctr = cipher(v, encKey, opts.tweak).newCtr(iv);
-        out.write(headerBytes);
+        try {
+            Threefish.Ctr ctr = cipher(v, encKey, opts.tweak).newCtr(iv);
+            out.write(headerBytes);
 
-        // Read one chunk ahead so each chunk knows whether it is the last.
-        byte[] current = in.readNBytes(opts.chunkSize);
-        long index = 0;
-        while (true) {
-            byte[] next = in.readNBytes(opts.chunkSize);
-            boolean isLast = next.length == 0;
-            byte[] chunk = current.clone();
-            ctr.apply(chunk, chunk.length);
-            byte[] tag = Mac.tag(opts.mac, macKey, frameAAD(headerBytes, index, isLast, chunk));
-            writeFrame(out, isLast, chunk, tag);
-            if (isLast) {
-                break;
+            // Read one chunk ahead so each chunk knows whether it is the last.
+            byte[] current = in.readNBytes(opts.chunkSize);
+            long index = 0;
+            while (true) {
+                byte[] next = in.readNBytes(opts.chunkSize);
+                boolean isLast = next.length == 0;
+                byte[] chunk = current.clone();
+                ctr.apply(chunk, chunk.length);
+                byte[] tag = Mac.tag(opts.mac, macKey, frameAAD(headerBytes, index, isLast, chunk));
+                writeFrame(out, isLast, chunk, tag);
+                if (isLast) {
+                    break;
+                }
+                index++;
+                current = next;
             }
-            index++;
-            current = next;
+        } finally {
+            // Best-effort wipe of derived key material. This is not a guarantee: the
+            // JVM may have copied these arrays and GC may have relocated them, so the
+            // original bytes can survive in memory beyond our reach.
+            Arrays.fill(keymat, (byte) 0);
+            Arrays.fill(encKey, (byte) 0);
+            Arrays.fill(macKey, (byte) 0);
         }
     }
 
@@ -158,27 +167,27 @@ public final class Engine {
     private static Frame readFrame(InputStream in, long chunkSize) throws IOException {
         byte[] head = in.readNBytes(5);
         if (head.length == 0) {
-            throw new DoradoException("stream ended before the final chunk (truncated)");
+            throw new MalformedContainerException("stream ended before the final chunk (truncated)");
         }
         if (head.length < 5) {
-            throw new DoradoException("incomplete frame header (truncated)");
+            throw new MalformedContainerException("incomplete frame header (truncated)");
         }
         int flag = head[0] & 0xff;
         if (flag > 1) {
-            throw new DoradoException("invalid frame flag " + flag);
+            throw new MalformedContainerException("invalid frame flag " + flag);
         }
         boolean isLast = flag == 1;
         long ctLen = (head[1] & 0xffL) << 24 | (head[2] & 0xffL) << 16 | (head[3] & 0xffL) << 8 | (head[4] & 0xffL);
         if (ctLen > chunkSize) {
-            throw new DoradoException("frame length exceeds the header chunk size");
+            throw new MalformedContainerException("frame length exceeds the header chunk size");
         }
         byte[] ct = in.readNBytes((int) ctLen);
         if (ct.length != ctLen) {
-            throw new DoradoException("truncated frame ciphertext");
+            throw new MalformedContainerException("truncated frame ciphertext");
         }
         byte[] tag = in.readNBytes(Format.TAG_LEN);
         if (tag.length != Format.TAG_LEN) {
-            throw new DoradoException("truncated frame tag");
+            throw new MalformedContainerException("truncated frame tag");
         }
         return new Frame(isLast, ct, tag);
     }
@@ -196,12 +205,12 @@ public final class Engine {
             throws IOException {
         Header h = Format.read(in);
         if (expectedLabel != null && !Arrays.equals(expectedLabel, h.label)) {
-            throw new DoradoException("container label does not match the expected label");
+            throw new MalformedContainerException("container label does not match the expected label");
         }
         byte[] headerBytes = Format.marshal(h);
         int blockLen = Format.blockLen(h.variant);
         if (h.chunkSize == 0 || h.chunkSize > Format.maxChunkBytes() || h.chunkSize % blockLen != 0) {
-            throw new DoradoException("invalid chunk size " + h.chunkSize + " in header");
+            throw new MalformedContainerException("invalid chunk size " + h.chunkSize + " in header");
         }
         Kdf.validate(h.kdf);
 
@@ -209,23 +218,33 @@ public final class Engine {
         byte[] encKey = Arrays.copyOfRange(keymat, 0, Format.keyLen(h.variant));
         byte[] macKey = Arrays.copyOfRange(keymat, Format.keyLen(h.variant), keymat.length);
 
-        Threefish.Ctr ctr = cipher(h.variant, encKey, h.tweak).newCtr(h.iv);
-        long index = 0;
-        while (true) {
-            Frame fr = readFrame(in, h.chunkSize);
-            if (!Mac.verify(h.mac, macKey, frameAAD(headerBytes, index, fr.isLast, fr.ct), fr.tag)) {
-                throw new DoradoException("authentication failed (wrong password, corruption, or tampering)");
+        try {
+            Threefish.Ctr ctr = cipher(h.variant, encKey, h.tweak).newCtr(h.iv);
+            long index = 0;
+            while (true) {
+                Frame fr = readFrame(in, h.chunkSize);
+                if (!Mac.verify(h.mac, macKey, frameAAD(headerBytes, index, fr.isLast, fr.ct), fr.tag)) {
+                    throw new AuthenticationException(
+                        "authentication failed (wrong password, corruption, or tampering)");
+                }
+                byte[] plain = fr.ct.clone();
+                ctr.apply(plain, plain.length);
+                out.write(plain);
+                if (fr.isLast) {
+                    break;
+                }
+                if (fr.ct.length != h.chunkSize) {
+                    throw new MalformedContainerException("non-final chunk is not full size");
+                }
+                index++;
             }
-            byte[] plain = fr.ct.clone();
-            ctr.apply(plain, plain.length);
-            out.write(plain);
-            if (fr.isLast) {
-                break;
-            }
-            if (fr.ct.length != h.chunkSize) {
-                throw new DoradoException("non-final chunk is not full size");
-            }
-            index++;
+        } finally {
+            // Best-effort wipe of derived key material. This is not a guarantee: the
+            // JVM may have copied these arrays and GC may have relocated them, so the
+            // original bytes can survive in memory beyond our reach.
+            Arrays.fill(keymat, (byte) 0);
+            Arrays.fill(encKey, (byte) 0);
+            Arrays.fill(macKey, (byte) 0);
         }
     }
 

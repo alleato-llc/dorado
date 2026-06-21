@@ -40,6 +40,9 @@
 /c/dorado
 /c/gyotaku
 /c/tests/test_dorado
+/c/tests/test_dorado_san
+/c/tests/*.dSYM
+/c/fuzz/fuzz_decrypt
 
 # Zig port (zig/) build artifacts.
 /zig/.zig-cache

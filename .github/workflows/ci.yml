@@ -130,6 +130,7 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y libargon2-dev libssl-dev pkg-config
       - run: make
       - run: make test
+      - run: make test SAN=1     # rerun the suite under AddressSanitizer + UndefinedBehaviorSanitizer
       - run: make freestanding   # the primitives build with no OS / allocator
 
   # Build and test the Zig port (SDK + CLIs). No external libraries: the KDFs come

@@ -199,7 +199,7 @@ public final class Format {
     private static byte[] readExact(InputStream in, int n, String what) throws IOException {
         byte[] b = in.readNBytes(n);
         if (b.length != n) {
-            throw new DoradoException("header truncated reading " + what);
+            throw new MalformedContainerException("header truncated reading " + what);
         }
         return b;
     }
@@ -222,12 +222,12 @@ public final class Format {
     public static Header read(InputStream in) throws IOException {
         byte[] m = readExact(in, 4, "magic");
         if (!new String(m, US_ASCII).equals(MAGIC)) {
-            throw new DoradoException("not a dorado password file (bad magic)");
+            throw new MalformedContainerException("not a dorado password file (bad magic)");
         }
         Header h = new Header();
         h.version = readU8(in, "version");
         if (h.version != 3 && h.version != VERSION) {
-            throw new DoradoException("unsupported format version " + h.version);
+            throw new MalformedContainerException("unsupported format version " + h.version);
         }
         h.variant = readU8(in, "variant");
         keyLen(h.variant); // validates the code
@@ -252,17 +252,17 @@ public final class Format {
                 kdf.rounds = readU32(in, "rounds");
                 int prf = readU8(in, "prf");
                 if (prf != PRF_HMAC_SHA256) {
-                    throw new DoradoException("unknown prf id " + prf);
+                    throw new MalformedContainerException("unknown prf id " + prf);
                 }
                 kdf.prf = prf;
             }
-            default -> throw new DoradoException("unknown kdf id " + kdfId);
+            default -> throw new MalformedContainerException("unknown kdf id " + kdfId);
         }
         h.kdf = kdf;
 
         h.mac = readU8(in, "mac id");
         if (h.mac < 1 || h.mac > 3) {
-            throw new DoradoException("unknown mac id " + h.mac);
+            throw new MalformedContainerException("unknown mac id " + h.mac);
         }
         h.chunkSize = readU32(in, "chunk size");
         int saltLen = readU8(in, "salt len");
@@ -272,7 +272,7 @@ public final class Format {
         if (h.version >= 4) {
             int labelLen = readU16(in, "label len");
             if (labelLen > MAX_LABEL_LEN) {
-                throw new DoradoException("label too long (" + labelLen + " bytes)");
+                throw new MalformedContainerException("label too long (" + labelLen + " bytes)");
             }
             h.label = readExact(in, labelLen, "label");
         } else {

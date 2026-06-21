@@ -9,7 +9,7 @@ import struct
 from dataclasses import dataclass
 from typing import BinaryIO
 
-from .errors import DoradoError
+from .errors import InvalidParams, MalformedContainer
 
 MAGIC = b"DRDO"
 VERSION = 4
@@ -77,7 +77,7 @@ def key_len(variant: int) -> int:
         return 64
     if variant == T1024:
         return 128
-    raise ValueError(f"unknown variant code {variant}")
+    raise InvalidParams(f"unknown variant code {variant}")
 
 
 def block_len(variant: int) -> int:
@@ -133,7 +133,7 @@ def marshal(h: Header) -> bytes:
     elif h.kdf.kind == KDF_PBKDF2:
         out += bytes([3]) + struct.pack(">I", h.kdf.rounds) + bytes([h.kdf.prf])
     else:
-        raise ValueError(f"unknown kdf kind {h.kdf.kind}")
+        raise InvalidParams(f"unknown kdf kind {h.kdf.kind}")
     out += bytes([h.mac]) + struct.pack(">I", h.chunk_size)
     out += bytes([len(h.salt)]) + h.salt + h.tweak + h.iv
     if h.version >= 4:
@@ -157,7 +157,7 @@ def read_full(reader: BinaryIO, n: int) -> bytes:
 def _exact(reader: BinaryIO, n: int, what: str) -> bytes:
     b = read_full(reader, n)
     if len(b) != n:
-        raise DoradoError(f"header truncated reading {what}")
+        raise MalformedContainer(f"header truncated reading {what}")
     return b
 
 
@@ -176,13 +176,13 @@ def _u32(reader: BinaryIO, what: str) -> int:
 def read(reader: BinaryIO) -> Header:
     """Read a header from reader, leaving it positioned at the first frame."""
     if _exact(reader, 4, "magic") != MAGIC:
-        raise DoradoError("not a dorado password file (bad magic)")
+        raise MalformedContainer("not a dorado password file (bad magic)")
     version = _u8(reader, "version")
     if version not in (3, VERSION):
-        raise DoradoError(f"unsupported format version {version}")
+        raise MalformedContainer(f"unsupported format version {version}")
     variant = _u8(reader, "variant")
     if variant > 2:
-        raise DoradoError(f"unknown variant code {variant}")
+        raise MalformedContainer(f"unknown variant code {variant}")
 
     kdf_id = _u8(reader, "kdf id")
     if kdf_id == KDF_ARGON2ID:
@@ -193,14 +193,14 @@ def read(reader: BinaryIO) -> Header:
         rounds = _u32(reader, "rounds")
         prf = _u8(reader, "prf")
         if prf != PRF_HMAC_SHA256:
-            raise DoradoError(f"unknown prf id {prf}")
+            raise MalformedContainer(f"unknown prf id {prf}")
         kdf = KdfParams(KDF_PBKDF2, rounds=rounds, prf=prf)
     else:
-        raise DoradoError(f"unknown kdf id {kdf_id}")
+        raise MalformedContainer(f"unknown kdf id {kdf_id}")
 
     mac = _u8(reader, "mac id")
     if not 1 <= mac <= 3:
-        raise DoradoError(f"unknown mac id {mac}")
+        raise MalformedContainer(f"unknown mac id {mac}")
     chunk_size = _u32(reader, "chunk size")
     salt_len = _u8(reader, "salt len")
     salt = _exact(reader, salt_len, "salt")
@@ -209,7 +209,7 @@ def read(reader: BinaryIO) -> Header:
     if version >= 4:
         label_len = _u16(reader, "label len")
         if label_len > MAX_LABEL_LEN:
-            raise DoradoError(f"label too long ({label_len} bytes)")
+            raise MalformedContainer(f"label too long ({label_len} bytes)")
         label = _exact(reader, label_len, "label")
     else:
         label = b""

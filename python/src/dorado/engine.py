@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from typing import BinaryIO, Optional
 
 from . import format as fmt, kdf as kdf_mod, mac as mac_mod
-from .errors import DoradoError
+from .errors import AuthError, InvalidParams, MalformedContainer
 from .format import KdfParams
 from .threefish import Threefish
 
@@ -58,7 +58,7 @@ def _cipher(variant: int, key: bytes, tweak: bytes) -> Threefish:
         return Threefish.t512(key, tweak)
     if variant == fmt.T1024:
         return Threefish.t1024(key, tweak)
-    raise ValueError(f"unknown variant {variant}")
+    raise InvalidParams(f"unknown variant {variant}")
 
 
 def _frame_aad(header_bytes: bytes, index: int, is_last: bool, ct: bytes) -> bytes:
@@ -79,15 +79,19 @@ def _write_frame(writer: BinaryIO, is_last: bool, ct: bytes, tag: bytes) -> None
 def encrypt_password_stream(password: bytes, opts: PasswordOptions, reader: BinaryIO, writer: BinaryIO) -> None:
     """Encrypt reader into writer as an authenticated password container."""
     if len(opts.label) > fmt.MAX_LABEL_LEN:
-        raise DoradoError(f"label too long ({len(opts.label)} bytes)")
+        raise InvalidParams(f"label too long ({len(opts.label)} bytes)")
     v = opts.variant
     bl = fmt.block_len(v)
     if opts.chunk_size <= 0 or opts.chunk_size > fmt.effective_max_chunk_bytes() or opts.chunk_size % bl != 0:
-        raise ValueError(f"chunk size must be a positive multiple of {bl}")
+        raise InvalidParams(f"chunk size must be a positive multiple of {bl}")
     salt = os.urandom(16)
     iv = os.urandom(bl)
     keymat = kdf_mod.derive(opts.kdf, password, salt, fmt.key_len(v) + fmt.MAC_KEY_LEN)
     enc_key, mac_key = keymat[: fmt.key_len(v)], keymat[fmt.key_len(v):]
+    # Best-effort zeroization is fundamentally limited in Python: keymat and the key
+    # slices are immutable bytes and cannot be wiped, and the KDF and slicing make
+    # extra copies the GC frees on its own schedule. There is nothing safe to clear
+    # here without contorting the code, so we accept the limitation.
 
     header = fmt.Header(fmt.VERSION, v, opts.kdf, opts.mac, opts.chunk_size, salt, opts.tweak, iv, opts.label)
     header_bytes = fmt.marshal(header)
@@ -114,22 +118,22 @@ def encrypt_password_stream(password: bytes, opts: PasswordOptions, reader: Bina
 def _read_frame(reader: BinaryIO, chunk_size: int):
     head = fmt.read_full(reader, 5)
     if len(head) == 0:
-        raise DoradoError("stream ended before the final chunk (truncated)")
+        raise MalformedContainer("stream ended before the final chunk (truncated)")
     if len(head) < 5:
-        raise DoradoError("incomplete frame header (truncated)")
+        raise MalformedContainer("incomplete frame header (truncated)")
     flag = head[0]
     if flag > 1:
-        raise DoradoError(f"invalid frame flag {flag}")
+        raise MalformedContainer(f"invalid frame flag {flag}")
     is_last = flag == 1
     ct_len = struct.unpack(">I", head[1:5])[0]
     if ct_len > chunk_size:
-        raise DoradoError("frame length exceeds the header chunk size")
+        raise MalformedContainer("frame length exceeds the header chunk size")
     ct = fmt.read_full(reader, ct_len)
     if len(ct) != ct_len:
-        raise DoradoError("truncated frame ciphertext")
+        raise MalformedContainer("truncated frame ciphertext")
     tag = fmt.read_full(reader, fmt.TAG_LEN)
     if len(tag) != fmt.TAG_LEN:
-        raise DoradoError("truncated frame tag")
+        raise MalformedContainer("truncated frame tag")
     return is_last, ct, tag
 
 
@@ -140,29 +144,32 @@ def decrypt_password_stream(
     expected_label is not None, the container's label must equal it."""
     h = fmt.read(reader)
     if expected_label is not None and expected_label != h.label:
-        raise DoradoError("container label does not match the expected label")
+        raise MalformedContainer("container label does not match the expected label")
     header_bytes = fmt.marshal(h)
     bl = fmt.block_len(h.variant)
     if h.chunk_size == 0 or h.chunk_size > fmt.effective_max_chunk_bytes() or h.chunk_size % bl != 0:
-        raise DoradoError(f"invalid chunk size {h.chunk_size} in header")
+        raise MalformedContainer(f"invalid chunk size {h.chunk_size} in header")
     kdf_mod.validate(h.kdf)
 
     keymat = kdf_mod.derive(h.kdf, password, h.salt, fmt.key_len(h.variant) + fmt.MAC_KEY_LEN)
     enc_key, mac_key = keymat[: fmt.key_len(h.variant)], keymat[fmt.key_len(h.variant):]
+    # See the note in encrypt_password_stream: these keys are immutable bytes and
+    # cannot be reliably wiped from memory in Python. Best-effort zeroization is not
+    # achievable here without contorting the code.
 
     ctr = _cipher(h.variant, enc_key, h.tweak).new_ctr(h.iv)
     index = 0
     while True:
         is_last, ct, tag = _read_frame(reader, h.chunk_size)
         if not mac_mod.verify(h.mac, mac_key, _frame_aad(header_bytes, index, is_last, ct), tag):
-            raise DoradoError("authentication failed (wrong password, corruption, or tampering)")
+            raise AuthError("authentication failed (wrong password, corruption, or tampering)")
         plain = bytearray(ct)
         ctr.apply(plain)
         writer.write(bytes(plain))
         if is_last:
             break
         if len(ct) != h.chunk_size:
-            raise DoradoError("non-final chunk is not full size")
+            raise MalformedContainer("non-final chunk is not full size")
         index += 1
 
 
@@ -170,7 +177,7 @@ def raw_ctr_stream(variant: int, key: bytes, tweak: bytes, iv: bytes, reader: Bi
     """Apply bare, unauthenticated CTR with a user-supplied key and IV, streaming."""
     bl = fmt.block_len(variant)
     if len(iv) != bl:
-        raise ValueError(f"iv must be {bl} bytes, got {len(iv)}")
+        raise InvalidParams(f"iv must be {bl} bytes, got {len(iv)}")
     ctr = _cipher(variant, key, tweak).new_ctr(iv)
     buf_size = (_RAW_BUF // bl) * bl
     while True:

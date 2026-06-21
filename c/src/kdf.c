@@ -34,35 +34,24 @@ const char *dorado_kdf_derive(const dorado_kdf_params *p, const uint8_t *passwor
 }
 
 const char *dorado_kdf_validate(const dorado_kdf_params *p) {
+    /* Out-of-range cost parameters are the params class (see engine.h). */
     switch (p->kind) {
         case DORADO_KDF_ARGON2ID:
-            if (p->m_cost > (1u << 21)) {
-                return "argon2 memory cost too large";
-            }
-            if (p->t_cost > 64) {
-                return "argon2 time cost too large";
-            }
-            if (p->p_cost > 16) {
-                return "argon2 parallelism too large";
+            if (p->m_cost > (1u << 21) || p->t_cost > 64 || p->p_cost > 16) {
+                return dorado_err_params;
             }
             return NULL;
         case DORADO_KDF_SCRYPT:
-            if (p->log_n > 21) {
-                return "scrypt cost (log2 N) too large";
-            }
-            if (p->r > 32) {
-                return "scrypt block factor r too large";
-            }
-            if (p->p > 16) {
-                return "scrypt parallelism p too large";
+            if (p->log_n > 21 || p->r > 32 || p->p > 16) {
+                return dorado_err_params;
             }
             return NULL;
         case DORADO_KDF_PBKDF2:
             if (p->rounds > 50000000u) {
-                return "pbkdf2 rounds too large";
+                return dorado_err_params;
             }
             return NULL;
         default:
-            return "unknown kdf kind";
+            return dorado_err_params;
     }
 }

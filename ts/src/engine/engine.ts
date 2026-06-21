@@ -3,6 +3,7 @@
 // so .mahi files are cross-compatible). Async because the KDFs and HMAC are.
 
 import { concat, equalBytes } from "../bytes";
+import { AuthError, InvalidParamsError, MalformedContainerError } from "./errors";
 import { derive, validate } from "./kdf";
 import { macTag, macVerify } from "./mac";
 import { type CipherBackend, tsBackend } from "./backend";
@@ -25,6 +26,10 @@ import {
   TAG_LEN,
   T256,
 } from "./format";
+
+// Re-export the typed error hierarchy so consumers of the engine can branch on
+// failures with instanceof without reaching into a second module.
+export { DoradoError, AuthError, MalformedContainerError, InvalidParamsError } from "./errors";
 
 const FRAME_DOMAIN = "DRDOchnk";
 
@@ -70,10 +75,10 @@ export async function encryptPasswordBytes(
   plaintext: Uint8Array,
   backend: CipherBackend = tsBackend,
 ): Promise<Uint8Array> {
-  if (opts.label.length > MAX_LABEL_LEN) throw new Error("label too long");
+  if (opts.label.length > MAX_LABEL_LEN) throw new InvalidParamsError("label too long");
   const cap = effectiveMaxChunkBytes();
   if (opts.chunkSize === 0 || opts.chunkSize > cap) {
-    throw new Error(`invalid chunk size ${opts.chunkSize} (cap ${cap})`);
+    throw new InvalidParamsError(`invalid chunk size ${opts.chunkSize} (cap ${cap})`);
   }
   const v = opts.variant;
   const salt = crypto.getRandomValues(new Uint8Array(16));
@@ -117,12 +122,12 @@ export async function decryptPasswordBytes(
 ): Promise<Uint8Array> {
   const { header, offset } = readHeader(data);
   if (expectedLabel !== undefined && !equalBytes(expectedLabel, header.label)) {
-    throw new Error("container label does not match the expected label");
+    throw new InvalidParamsError("container label does not match the expected label");
   }
   const headerBytes = marshalHeader(header);
   const bl = blockLen(header.variant);
   if (header.chunkSize === 0 || header.chunkSize > effectiveMaxChunkBytes() || header.chunkSize % bl !== 0) {
-    throw new Error(`invalid chunk size ${header.chunkSize} in header`);
+    throw new MalformedContainerError(`invalid chunk size ${header.chunkSize} in header`);
   }
   validate(header.kdf);
   const keymat = await derive(header.kdf, password, header.salt, keyLen(header.variant) + MAC_KEY_LEN);
@@ -133,24 +138,24 @@ export async function decryptPasswordBytes(
   let index = 0;
   const chunks: Uint8Array[] = [];
   for (;;) {
-    if (pos + 5 > data.length) throw new Error("stream ended before the final chunk (truncated)");
+    if (pos + 5 > data.length) throw new MalformedContainerError("stream ended before the final chunk (truncated)");
     const flag = data[pos];
-    if (flag > 1) throw new Error(`invalid frame flag ${flag}`);
+    if (flag > 1) throw new MalformedContainerError(`invalid frame flag ${flag}`);
     const isLast = flag === 1;
     const ctLen = ((data[pos + 1] << 24) | (data[pos + 2] << 16) | (data[pos + 3] << 8) | data[pos + 4]) >>> 0;
     pos += 5;
-    if (ctLen > header.chunkSize) throw new Error("frame length exceeds the header chunk size");
-    if (pos + ctLen + TAG_LEN > data.length) throw new Error("truncated frame");
+    if (ctLen > header.chunkSize) throw new MalformedContainerError("frame length exceeds the header chunk size");
+    if (pos + ctLen + TAG_LEN > data.length) throw new MalformedContainerError("truncated frame");
     const ct = data.subarray(pos, pos + ctLen);
     pos += ctLen;
     const tag = data.subarray(pos, pos + TAG_LEN);
     pos += TAG_LEN;
     if (!(await macVerify(backend, header.mac, macKey, frameAAD(headerBytes, index, isLast, ct), tag))) {
-      throw new Error("authentication failed (wrong password, corruption, or tampering)");
+      throw new AuthError("authentication failed (wrong password, corruption, or tampering)");
     }
     chunks.push(ct.slice());
     if (isLast) break;
-    if (ct.length !== header.chunkSize) throw new Error("non-final chunk is not full size");
+    if (ct.length !== header.chunkSize) throw new MalformedContainerError("non-final chunk is not full size");
     index++;
   }
 
@@ -191,6 +196,6 @@ export function rawCTR(
   data: Uint8Array,
   backend: CipherBackend = tsBackend,
 ): Uint8Array {
-  if (iv.length !== blockLen(v)) throw new Error(`iv must be ${blockLen(v)} bytes, got ${iv.length}`);
+  if (iv.length !== blockLen(v)) throw new InvalidParamsError(`iv must be ${blockLen(v)} bytes, got ${iv.length}`);
   return backend.ctr(v, key, tweak, iv, data);
 }

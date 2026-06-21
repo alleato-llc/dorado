@@ -1,12 +1,14 @@
 // Byte/hex helpers shared across the dorado TS port.
 
+import { InvalidParamsError } from "./engine/errors";
+
 export function hexToBytes(s: string): Uint8Array {
   const clean = s.replace(/\s/g, "");
-  if (clean.length % 2 !== 0) throw new Error("odd number of hex digits");
+  if (clean.length % 2 !== 0) throw new InvalidParamsError("odd number of hex digits");
   const out = new Uint8Array(clean.length / 2);
   for (let i = 0; i < out.length; i++) {
     const byte = parseInt(clean.slice(i * 2, i * 2 + 2), 16);
-    if (Number.isNaN(byte)) throw new Error(`invalid hex at byte ${i}`);
+    if (Number.isNaN(byte)) throw new InvalidParamsError(`invalid hex at byte ${i}`);
     out[i] = byte;
   }
   return out;

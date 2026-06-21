@@ -21,6 +21,16 @@ PKG_LIBS := $(shell pkg-config --libs $(DEPS))
 LIB_SRCS := src/threefish.c src/skein.c src/blake3.c src/format.c src/kdf.c src/mac.c src/engine.c
 LIB_OBJS := $(LIB_SRCS:.c=.o)
 
+# Sanitizers for the test binary. `make test` is plain (no sanitizers); `make test
+# SAN=1` (or `make test-san`) builds the test AND the library sources together with
+# AddressSanitizer + UndefinedBehaviorSanitizer so the whole construction (not just
+# the test translation unit) is instrumented. SAN only affects the test target, so
+# the shipped library and CLIs keep their normal flags. On Linux (CI) the combined
+# ASan+UBSan link works; on macOS the combination can be finicky to link, so if it
+# fails there try `make test-san SAN_FLAGS='-fsanitize=address -g'` (ASan alone).
+SAN ?=
+SAN_FLAGS := -fsanitize=address,undefined -fno-omit-frame-pointer -g
+
 all: dorado gyotaku
 
 %.o: %.c
@@ -38,8 +48,22 @@ gyotaku: src/cli_gyotaku.o libdorado.a
 tests/test_dorado: tests/test_dorado.c libdorado.a
 	$(CC) $(CFLAGS) $(PKG_CFLAGS) $< -L. -ldorado $(PKG_LIBS) -o $@
 
+# Plain `make test` runs the unsanitized binary; `make test SAN=1` runs the
+# sanitized one (the same thing as `make test-san`).
+ifeq ($(SAN),1)
+test: test-san
+else
 test: tests/test_dorado
 	./tests/test_dorado
+endif
+
+# Sanitized test binary: compile the test together with the library sources (not the
+# prebuilt archive) under ASan/UBSan so the whole construction is instrumented.
+tests/test_dorado_san: tests/test_dorado.c $(LIB_SRCS)
+	$(CC) $(CFLAGS) $(SAN_FLAGS) $(PKG_CFLAGS) $^ $(PKG_LIBS) -o $@
+
+test-san: tests/test_dorado_san
+	./tests/test_dorado_san
 
 # Prove the primitives (Threefish/CTR, Skein, BLAKE3) build with no hosted runtime:
 # -ffreestanding compiles them with no OS and no allocator, depending only on the
@@ -53,7 +77,16 @@ freestanding:
 		$(CC) $(FREESTANDING_CFLAGS) -c src/$$f.c -o /dev/null && echo "  $$f.c: freestanding OK" || exit 1; \
 	done
 
-clean:
-	rm -f $(LIB_OBJS) src/cli_dorado.o src/cli_gyotaku.o libdorado.a dorado gyotaku tests/test_dorado
+# libFuzzer harness for the decrypt path. Needs a clang with libFuzzer. The library
+# sources are compiled in (not the archive) so they are instrumented too. Run it as
+# `./fuzz/fuzz_decrypt` (libFuzzer defaults) or with `-max_total_time=N`.
+FUZZ_CC ?= clang
+fuzz: fuzz/fuzz_decrypt
+fuzz/fuzz_decrypt: fuzz/fuzz_decrypt.c $(LIB_SRCS)
+	$(FUZZ_CC) $(CFLAGS) -g -fsanitize=fuzzer,address,undefined $(PKG_CFLAGS) $^ $(PKG_LIBS) -o $@
 
-.PHONY: all test freestanding clean
+clean:
+	rm -f $(LIB_OBJS) src/cli_dorado.o src/cli_gyotaku.o libdorado.a dorado gyotaku \
+		tests/test_dorado tests/test_dorado_san fuzz/fuzz_decrypt
+
+.PHONY: all test test-san fuzz freestanding clean

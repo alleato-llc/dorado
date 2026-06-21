@@ -10,6 +10,21 @@
 #include <stdint.h>
 #include <stdio.h>
 
+/* Sentinel error strings the engine returns BY IDENTITY so a caller can classify a
+ * failure by pointer comparison and still print the (human-readable) text. The three
+ * classes are stable:
+ *   - dorado_err_auth: authentication failed. Wrong password, corruption, and
+ *     tampering are deliberately merged into this one value and are indistinguishable.
+ *   - dorado_err_malformed: the input is not a well-formed container (bad magic,
+ *     unsupported version, unknown id, truncated/short frame, inconsistent framing).
+ *   - dorado_err_params: invalid parameters (bad chunk size, oversized label,
+ *     unknown variant, out-of-range KDF cost).
+ * A caller can do `if (err == dorado_err_auth) ...`. Other failures (out of memory,
+ * I/O, RNG) still return their own literals and are not in these classes. */
+extern const char *const dorado_err_auth;
+extern const char *const dorado_err_malformed;
+extern const char *const dorado_err_params;
+
 /* MAC ids (on-disk header values). */
 enum {
     DORADO_MAC_HMAC = 1,

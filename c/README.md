@@ -39,8 +39,12 @@ cannot forget it. The `dorado` CLI holds the password in a page-aligned, `mlock`
 buffer kept out of swap and wiped on free. This is a reduction in exposure, not a
 guarantee: the password still transits `argv`/stdin first, and `mlock` is best-effort
 (skipped without error if `RLIMIT_MEMLOCK` forbids it). C is not memory-safe, so a
-bug elsewhere could still expose a secret; the test suite runs under
-AddressSanitizer and UndefinedBehaviorSanitizer to catch that class in CI.
+bug elsewhere could still expose a secret. To catch that class, CI reruns the test
+suite under AddressSanitizer and UndefinedBehaviorSanitizer via `make test SAN=1`
+(plain `make test` stays unsanitized); the suite includes a deterministic randomized
+"smash" pass that feeds thousands of random, truncated, and mutated inputs to the
+decrypt entrypoint, so the sanitizers exercise the untrusted parse path. A libFuzzer
+harness for the same path is in `fuzz/` (`make fuzz`, needs a clang with libFuzzer).
 
 The from-scratch primitives (Threefish/CTR, Skein, BLAKE3) depend on no allocator
 and no OS, so `make freestanding` compiles them with `-ffreestanding` for a
@@ -56,8 +60,12 @@ bare-metal.
 - `src/format.c`, `kdf.c`, `mac.c`, `engine.c` — the construction: the container
   header, the KDFs (libargon2 + OpenSSL), the MAC menu, and the streaming password
   container, raw CTR, and inspect. Functions return `NULL` on success or a static
-  error string.
+  error string; the three failure classes are exposed as stable sentinels
+  (`dorado_err_auth`, `dorado_err_malformed`, `dorado_err_params`) a caller can
+  classify by pointer identity. Wrong-password and tampering both map to
+  `dorado_err_auth` and stay indistinguishable.
 - `src/cli_dorado.c`, `src/cli_gyotaku.c` — the two CLIs.
+- `fuzz/fuzz_decrypt.c` — a libFuzzer harness for the decrypt path (`make fuzz`).
 
 ## Use
 
@@ -83,5 +91,6 @@ gyotaku --bits 256 notes.txt
 The container bytes are identical to the other ports: each can decrypt the others'
 `.mahi` files. `make test` decrypts fixtures produced by the Rust reference (in
 `tests/fixtures/`) covering every KDF, MAC, and variant plus a labeled and a
-multi-frame file; the reverse direction is verified during development. The test
-suite is also run under AddressSanitizer and UndefinedBehaviorSanitizer.
+multi-frame file; the reverse direction is verified during development. CI also
+reruns the suite under AddressSanitizer and UndefinedBehaviorSanitizer (`make test
+SAN=1`).

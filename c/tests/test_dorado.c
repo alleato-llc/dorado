@@ -139,19 +139,23 @@ static void test_engine(void) {
     const char *e = dorado_decrypt_password(pw, pwl, NULL, 0, ct, ctl, &back, &bl);
     check(!e && bl == 0, "empty plaintext round-trip");
 
-    /* wrong password */
-    check(dorado_decrypt_password((const uint8_t *)"wrong", 5, NULL, 0, ct, ctl, &back, &bl) != NULL, "wrong password");
-    /* tampering */
+    /* wrong password: classifies as auth by pointer identity */
+    check(dorado_decrypt_password((const uint8_t *)"wrong", 5, NULL, 0, ct, ctl, &back, &bl) == dorado_err_auth,
+          "wrong password -> dorado_err_auth");
+    /* tampering: indistinguishable from wrong password (same sentinel) */
     ct[ctl - 1] ^= 1;
-    check(dorado_decrypt_password(pw, pwl, NULL, 0, ct, ctl, &back, &bl) != NULL, "tampering");
+    check(dorado_decrypt_password(pw, pwl, NULL, 0, ct, ctl, &back, &bl) == dorado_err_auth,
+          "tampering -> dorado_err_auth (merged)");
     ct[ctl - 1] ^= 1;
-    /* truncation */
-    check(dorado_decrypt_password(pw, pwl, NULL, 0, ct, ctl - 8, &back, &bl) != NULL, "truncation");
+    /* truncation: a short/malformed frame is the malformed class */
+    check(dorado_decrypt_password(pw, pwl, NULL, 0, ct, ctl - 8, &back, &bl) == dorado_err_malformed,
+          "truncation -> dorado_err_malformed");
     free(ct);
 
-    /* bad magic */
+    /* bad magic: malformed class */
     dorado_container_info info;
-    check(dorado_inspect((const uint8_t *)"XXXX\x00\x00\x00\x00", 8, &info) != NULL, "bad magic");
+    check(dorado_inspect((const uint8_t *)"XXXX\x00\x00\x00\x00", 8, &info) == dorado_err_malformed,
+          "bad magic -> dorado_err_malformed");
 
     /* label binding */
     dorado_options ol = opts(DORADO_T256, dorado_kdf_pbkdf2(20000), DORADO_MAC_SKEIN);
@@ -228,11 +232,84 @@ static void test_chunk_cap(void) {
           "chunk cap: overflow -> default");
 }
 
+/* xorshift64: a tiny deterministic PRNG so the smash test is reproducible (no
+ * dependency on rand()/srand() and the same bytes across runs and platforms). */
+static uint64_t smash_rng_state = 0x123456789abcdef0ULL;
+static uint64_t smash_rand(void) {
+    uint64_t x = smash_rng_state;
+    x ^= x << 13;
+    x ^= x >> 7;
+    x ^= x << 17;
+    smash_rng_state = x;
+    return x;
+}
+
+/* Deterministic randomized decrypt fuzzing. Feed thousands of pseudo-random,
+ * truncated, and mutated-valid inputs to the decrypt entrypoint and assert it never
+ * crashes. Run under SAN=1 this lets AddressSanitizer/UBSan catch any out-of-bounds
+ * read or UB on the parse/framing path. A few inputs legitimately decrypt (e.g. an
+ * untruncated copy of the valid container), so success is fine; the property under
+ * test is "no crash, no leak", enforced by reaching the end and by the sanitizers. */
+static void test_smash(void) {
+    const uint8_t *pw = (const uint8_t *)"pw-cross";
+    size_t pwl = 8;
+
+    /* A real container to seed the mutated-valid arm. */
+    dorado_options o = opts(DORADO_T256, dorado_kdf_pbkdf2(4096), DORADO_MAC_SKEIN);
+    uint8_t *valid = NULL;
+    size_t valid_len = 0;
+    if (dorado_encrypt_password(pw, pwl, &o, (const uint8_t *)"smash me", 8, &valid, &valid_len) != NULL) {
+        check(0, "smash: seed container");
+        return;
+    }
+
+    int ok = 1;
+    uint8_t buf[512];
+    for (int iter = 0; iter < 20000 && ok; iter++) {
+        size_t n;
+        int arm = iter & 3;
+        if (arm == 0) {
+            /* fully random bytes, random length */
+            n = (size_t)(smash_rand() % sizeof buf);
+            for (size_t i = 0; i < n; i++) buf[i] = (uint8_t)smash_rand();
+        } else if (arm == 1) {
+            /* random bytes that start with the real magic, to dive past it */
+            n = (size_t)(smash_rand() % sizeof buf);
+            if (n < 4) n = 4;
+            memcpy(buf, "DRDO", 4);
+            for (size_t i = 4; i < n; i++) buf[i] = (uint8_t)smash_rand();
+        } else if (arm == 2) {
+            /* a truncated prefix of the valid container */
+            n = (size_t)(smash_rand() % (valid_len + 1));
+            if (n > sizeof buf) n = sizeof buf;
+            memcpy(buf, valid, n);
+        } else {
+            /* the valid container with a handful of bytes flipped */
+            n = valid_len < sizeof buf ? valid_len : sizeof buf;
+            memcpy(buf, valid, n);
+            int flips = (int)(smash_rand() % 8) + 1;
+            for (int f = 0; f < flips && n; f++) buf[smash_rand() % n] ^= (uint8_t)(1u << (smash_rand() & 7));
+        }
+        uint8_t *out = NULL;
+        size_t ol = 0;
+        const char *e = dorado_decrypt_password(pw, pwl, NULL, 0, buf, n, &out, &ol);
+        /* On success the engine mallocs *out; free it. On error nothing is allocated.
+         * Either outcome is acceptable; a memory bug would trip ASan/UBSan and abort
+         * before we get here. */
+        if (e == NULL) {
+            free(out);
+        }
+    }
+    check(ok, "smash: decrypt 20000 random/truncated/mutated inputs without crashing");
+    free(valid);
+}
+
 int main(void) {
     test_threefish();
     test_hashes();
     test_engine();
     test_chunk_cap();
+    test_smash();
     test_crosscompat();
     printf("%d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;

@@ -34,8 +34,8 @@ fn block_encrypt(c: &mut Criterion) {
     g.finish();
 }
 
-/// Stream throughput over a 64 KiB buffer (Threefish-CTR per variant, plus
-/// ChaCha20 for comparison). The group reports bytes/second.
+/// Stream throughput over a 64 KiB buffer (Threefish-CTR per variant). The
+/// group reports bytes/second.
 fn stream_throughput(c: &mut Criterion) {
     const LEN: usize = 64 * 1024;
     let mut g = c.benchmark_group("stream_throughput");
@@ -60,11 +60,6 @@ fn stream_throughput(c: &mut Criterion) {
     g.bench_function("threefish1024_ctr", |b| {
         let mut d = vec![0u8; LEN];
         b.iter(|| t1024.ctr_apply(&iv1024, black_box(&mut d)));
-    });
-
-    g.bench_function("chacha20", |b| {
-        let mut d = vec![0u8; LEN];
-        b.iter(|| dorado::chacha::apply(&[0x11; 32], 1, &[0x22; 12], black_box(&mut d)));
     });
 
     g.finish();

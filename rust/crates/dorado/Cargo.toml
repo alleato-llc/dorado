@@ -10,10 +10,10 @@ license.workspace = true
 [features]
 # default = std/no_std with an allocator and key-schedule zeroization.
 # `--no-default-features` gives the bare allocation-free, dependency-free core
-# (Threefish + CTR + ChaCha20 + Poly1305 + the `*_into` hash functions).
+# (Threefish + CTR + the `*_into` hash functions).
 default = ["alloc", "zeroize"]
 # `alloc` enables the owned-buffer conveniences: the `Vec`-returning Skein/BLAKE3
-# wrappers and the ChaCha20-Poly1305 AEAD.
+# wrappers.
 alloc = []
 # Wipe each cipher's expanded key schedule from memory on drop.
 zeroize = ["dep:zeroize"]

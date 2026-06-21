@@ -56,3 +56,12 @@ This changelog starts in 2026-06; for earlier history see the git log.
   cross-compat invariant, a change to the wire-format spec (`docs/spec.md`) or to the
   workflow itself re-runs every port's suite; a pure docs/changelog change runs no
   build jobs. Skipped jobs are reported as passing, so required checks are unaffected.
+
+### Removed
+
+- **ChaCha20-Poly1305 extracted to its own project.** The from-scratch ChaCha20
+  stream cipher, Poly1305 one-time MAC, and ChaCha20-Poly1305 AEAD (RFC 8439) were
+  removed from the Rust, Go, and TypeScript ports and moved into a standalone sibling
+  project, `foxtrot`. They were verified library code only, never wired into the
+  container (dorado stays Threefish-based), so this is not a wire-format change and
+  cross-compatibility is unaffected. Per-port removals are in each port's changelog.

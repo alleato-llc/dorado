@@ -144,9 +144,8 @@ readable.
 provides confidentiality and integrity together, optionally binding associated
 data. dorado's password mode is effectively a hand-built streaming AEAD (CTR plus a
 MAC); it composes the cipher and MAC itself rather than using a single integrated
-AEAD primitive. (ChaCha20-Poly1305, an integrated AEAD, is implemented from scratch
-in the library as a verified primitive but is intentionally not wired into the tool,
-since using it would replace Threefish rather than build on it.)
+AEAD primitive. (ChaCha20-Poly1305 is a well-known integrated AEAD; it would replace
+Threefish rather than build on it, so it is not part of dorado.)
 
 **Tag / authentication tag.** The MAC output stored with the data and checked on
 decryption. In dorado each chunk ends with a 32-byte tag.
@@ -168,16 +167,6 @@ it two ways: as the default authentication MAC and as the `gyotaku` hashing tool
 **BLAKE3.** A modern, fast cryptographic hash built on a binary tree of
 compressions, with a built-in keyed mode. dorado implements it from scratch and
 offers its keyed mode as one of the three MAC choices.
-
-**ChaCha20.** A widely used stream cipher (an ARX design, like Threefish but built
-directly as a stream cipher rather than a block cipher). dorado implements it from
-scratch as a verified library primitive, but it is not part of the encryption tool,
-which stays Threefish-based.
-
-**Poly1305.** A fast one-time MAC, normally paired with ChaCha20 to form the
-ChaCha20-Poly1305 AEAD. Its key must never be reused across messages, which is why
-it does not fit dorado's modular encrypt-then-MAC step the way the three PRF MACs
-do. dorado implements it from scratch for the standalone ChaCha20-Poly1305 primitive.
 
 **Blowfish / Twofish / Threefish.** Three block ciphers from Bruce Schneier's
 lineage. The names count up, but they are distinct designs, not versions of one
@@ -211,8 +200,7 @@ exactly. dorado embeds official Threefish vectors for each block size.
 **Differential testing.** Checking your implementation against a second,
 independent one over many random inputs; if they ever disagree, at least one has a
 bug. dorado tests Threefish against the RustCrypto `threefish` crate, and Skein-512
-and BLAKE3 against the RustCrypto `skein` and `blake3` crates. (ChaCha20, Poly1305,
-and ChaCha20-Poly1305 are instead pinned to the published RFC 8439 test vectors.)
+and BLAKE3 against the RustCrypto `skein` and `blake3` crates.
 
 **Fuzzing.** Feeding a function many automatically generated, malformed inputs to
 hunt for crashes, panics, or hangs. It is a testing technique, not shipped code.

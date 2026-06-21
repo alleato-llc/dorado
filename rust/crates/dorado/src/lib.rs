@@ -36,18 +36,14 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
-// The whole crate is allocation-free at its core: Threefish, CTR, ChaCha20,
-// Poly1305, the `*_into` hash functions, and the AEAD `*_in_place` functions all
-// work without a heap. `alloc` (an allocator, not a full std/OS) is only needed
-// for the owned-buffer conveniences: the `Vec`-returning hash and AEAD wrappers.
-// Under `cargo test` the crate is std.
+// The whole crate is allocation-free at its core: Threefish, CTR, and the
+// `*_into` hash functions all work without a heap. `alloc` (an allocator, not a
+// full std/OS) is only needed for the owned-buffer conveniences: the
+// `Vec`-returning hash wrappers. Under `cargo test` the crate is std.
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
 pub mod blake3;
-pub mod chacha;
-pub mod chacha20poly1305;
-pub mod poly1305;
 pub mod skein;
 
 // RustCrypto trait impls for ecosystem interop, behind the optional `cipher`

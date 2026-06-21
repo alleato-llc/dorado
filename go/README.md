@@ -12,9 +12,6 @@ Module path: `github.com/alleato-llc/dorado/go`.
 - `threefish/` — Threefish 256/512/1024, verified against the official KAT
   vectors. Implements `crypto/cipher.Block`, so `cipher.NewCTR` and the rest of
   the standard library's modes work over it.
-- `chacha/`, `poly1305/`, `chacha20poly1305/` — the ChaCha20-Poly1305 family
-  (RFC 8439). The AEAD has allocation-free `*InPlace` forms and implements
-  `crypto/cipher.AEAD`.
 - `skein/`, `blake3/` — the hashers, implementing `hash.Hash`. BLAKE3 uses the
   streaming chunk-stack algorithm and is differential-tested against
   `lukechampine.com/blake3`.

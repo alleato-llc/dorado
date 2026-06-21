@@ -24,7 +24,7 @@ to move again.
   immediately once the engine compiled.
 - **Native `u64` with wrapping operators (`+%`, `-%`) made the Threefish ARX
   direct.** No `BigInt` (the TypeScript port) and no `& MASK64` masking (Python,
-  JavaScript). The 32-bit BLAKE3/ChaCha math is the same story with `u32`.
+  JavaScript). The 32-bit BLAKE3 math is the same story with `u32`.
 - **The constant-time and secret-zeroing primitives already exist in std:**
   `std.crypto.timing_safe.eql` for the tag compare, and `std.crypto.secureZero` for
   wiping (relevant if you add secret-memory hygiene).

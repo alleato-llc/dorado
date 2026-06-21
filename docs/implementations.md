@@ -7,8 +7,7 @@ what each runtime can do around that shared core. Rust is the reference
 implementation and the baseline for test vectors and cross-compat fixtures.
 
 What is identical in all eight (so it is left out of the table below): the
-from-scratch primitives (Threefish 256/512/1024 + CTR, Skein-512, BLAKE3; Java,
-Python, C, and Zig additionally omit the library-only ChaCha20-Poly1305), the
+from-scratch primitives (Threefish 256/512/1024 + CTR, Skein-512, BLAKE3), the
 DRDO v4 on-disk format, cross-compatibility, and encrypt-then-MAC authentication
 with a constant-time tag compare.
 

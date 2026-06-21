@@ -14,7 +14,7 @@ This is an educational, unaudited implementation. For real data, prefer an audit
 
 This is a Cargo workspace of six crates:
 
-- `crates/dorado` — the primitives library, zero runtime dependencies. Threefish + CTR is the core; alongside it are several other from-scratch primitives, each verified against official test vectors or differentially against an audited crate: Skein-512 (the hash Threefish was built for), BLAKE3, and ChaCha20 / Poly1305 / ChaCha20-Poly1305. The ChaCha primitives are library code only and are deliberately not wired into the tool, which stays Threefish-based (see "How it works").
+- `crates/dorado` — the primitives library, zero runtime dependencies. Threefish + CTR is the core; alongside it are the from-scratch hashes, each verified against official test vectors or differentially against an audited crate: Skein-512 (the hash Threefish was built for) and BLAKE3.
 - `crates/dorado-engine` — the shared construction (KDFs, the authenticated chunked container, raw CTR, the MAC menu). Depends on `dorado`.
 - `crates/dorado-cli` — the command-line frontend (produces the `dorado` binary).
 - `crates/dorado-gui` — the iced graphical frontend for the password tool (produces `dorado-gui`).
@@ -35,9 +35,8 @@ The `dorado` primitives crate is `no_std` and supports three environment levels.
 With the default `alloc` feature it runs anywhere with an allocator (no OS needed),
 so it builds for bare-metal targets, for example `cargo build -p dorado --target
 thumbv7em-none-eabi`. With `--no-default-features` it is fully allocation-free, with
-the heap not even linked: Threefish, CTR, ChaCha20, Poly1305, the incremental
-hashers (`Skein512`, `blake3::Hasher`) and their `*_into` one-shots, and the
-in-place ChaCha20-Poly1305 AEAD. The hashers stream, so an input larger than memory
+the heap not even linked: Threefish, CTR, and the incremental hashers
+(`Skein512`, `blake3::Hasher`) and their `*_into` one-shots. The hashers stream, so an input larger than memory
 can be hashed (the `gyotaku` CLI reads files in fixed buffers). Only the
 `Vec`-returning convenience wrappers require `alloc`. The default `zeroize` feature
 wipes each cipher's key schedule on drop. For RustCrypto interop, the optional
@@ -144,7 +143,7 @@ Dorado is built in layers, each wrapped around the one below:
 - **CTR is a mode**: a generic recipe that wraps the cipher to handle any length. It only calls the cipher and contains no cipher internals.
 - **The frontends add the rest**: key derivation from a password, encrypt-then-MAC authentication, and a streaming chunked file format, all standard constructions on top of CTR. This shared construction lives in one place and is used by both the CLI and the GUI demo. The MAC is a choice of three from-scratch keyed hashes (Skein-512 by default, HMAC-SHA256, or BLAKE3 keyed); all are pseudorandom-function MACs that drop into the same encrypt-then-MAC slot.
 
-Skein, the hash function Threefish was designed to power, is another construction on Threefish, a sibling of CTR. It is built from scratch in `crates/dorado` and surfaced two ways: as the default authentication MAC above, and as the standalone `gyotaku` hashing tool. ChaCha20-Poly1305 is also implemented from scratch as library code, but it is an integrated cipher-plus-MAC, so wiring it in would replace Threefish rather than extend it; dorado stays a Threefish project, so it is left as a verified primitive only and is not part of the tool. See the documentation below for the full picture, threat model, and wire format.
+Skein, the hash function Threefish was designed to power, is another construction on Threefish, a sibling of CTR. It is built from scratch in `crates/dorado` and surfaced two ways: as the default authentication MAC above, and as the standalone `gyotaku` hashing tool. See the documentation below for the full picture, threat model, and wire format.
 
 ## Security note
 

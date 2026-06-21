@@ -66,8 +66,8 @@ Within that scope it aims to provide:
 
 ## Cryptographic choices
 
-The primitives are written from scratch (Threefish, Skein-512, BLAKE3, HMAC-SHA256,
-ChaCha20/Poly1305) and verified against official test vectors or differentially
+The primitives are written from scratch (Threefish, Skein-512, BLAKE3,
+HMAC-SHA256) and verified against official test vectors or differentially
 against audited crates; the KDFs (Argon2id, scrypt, PBKDF2) come from established
 libraries. The default MAC is Skein-512, keeping the default construction within the
 Threefish family. None of this substitutes for an audit.

@@ -30,3 +30,10 @@ the Rust-specific details. Format: [Keep a Changelog](https://keepachangelog.com
   conversions in the cipher and hashers in favor of explicit array indexing or `expect`
   with an invariant message. Behavior is byte-identical (verified by the known-answer and
   differential tests) and throughput is unchanged.
+
+### Removed
+
+- `dorado`: the `chacha`, `poly1305`, and `chacha20poly1305` modules (the from-scratch
+  ChaCha20, Poly1305, and ChaCha20-Poly1305 AEAD) were removed and moved to the standalone
+  `foxtrot` project, along with the bench's `chacha20` case. They were verified library
+  code only, never used by the engine, so nothing else changes. See [Core](../CHANGELOG.md).

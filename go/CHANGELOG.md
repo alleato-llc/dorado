@@ -29,3 +29,10 @@ the master table.
   change was needed there.)
 - CI: the Go job runs `go test -race` and `govulncheck`, on Go 1.25 (matching `go.mod`,
   which the previous 1.24 pin did not satisfy).
+
+### Removed
+
+- The `chacha`, `poly1305`, and `chacha20poly1305` packages (the from-scratch ChaCha20,
+  Poly1305, and ChaCha20-Poly1305 AEAD) were removed and moved to the standalone `foxtrot`
+  project. They were verified library code only, never used by the engine, so nothing else
+  changes. See [Core](../CHANGELOG.md).

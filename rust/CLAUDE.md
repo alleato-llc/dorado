@@ -12,11 +12,8 @@ Dorado is a Cargo workspace of six crates:
 - `crates/dorado` — the primitives library, zero runtime dependencies. The core is
   a from-scratch Threefish (256/512/1024) following Skein 1.3, plus CTR mode.
   Alongside it, each verified against official vectors or differentially against an
-  audited crate, are: Skein-512 (`src/skein.rs`, UBI over Threefish-512), BLAKE3
-  (`src/blake3.rs`), and ChaCha20 / Poly1305 / ChaCha20-Poly1305 (`src/chacha.rs`,
-  `src/poly1305.rs`, `src/chacha20poly1305.rs`). The ChaCha primitives are
-  deliberately not wired into the tool (see below); they exist as verified library
-  code only.
+  audited crate, are: Skein-512 (`src/skein.rs`, UBI over Threefish-512) and BLAKE3
+  (`src/blake3.rs`).
 - `crates/dorado-engine` — the construction over the cipher: the three KDFs, the
   authenticated chunked password container, raw CTR, and the MAC menu. Depends on
   `dorado`.
@@ -37,9 +34,10 @@ adds authentication (encrypt-then-MAC) for password files.
 Threefish is the project's reason to exist; dorado stays Threefish-based. Skein is
 a construction on Threefish, so it is built and surfaced (as the default MAC and as
 the `gyotaku` CLI). ChaCha20-Poly1305 is an integrated cipher-plus-MAC that would
-*replace* Threefish, so it is kept as a standalone verified primitive and is not
-part of the tool. Do not wire ChaCha into the container or rearchitect for it
-without an explicit request.
+*replace* Threefish, so it is not part of dorado; the from-scratch ChaCha20,
+Poly1305, and ChaCha20-Poly1305 that once lived here were extracted into their own
+project, `foxtrot` (a sibling repo). Do not reintroduce ChaCha into the container
+or rearchitect for it without an explicit request.
 
 ## Architecture
 
@@ -151,15 +149,12 @@ all three environment levels through the `alloc` feature (default on):
   bare-metal target.
 
 To make that work, the hashers are incremental and allocation-free. Each exposes a
-fixed-size streaming type (`skein::Skein512`, `blake3::Hasher`, `poly1305::Poly1305`)
+fixed-size streaming type (`skein::Skein512`, `blake3::Hasher`)
 with `new`/`update`/`finalize`, plus one-shot `*_into` functions that write into a
-caller buffer; the `Vec`-returning `hash`/`mac` are thin `#[cfg(feature = "alloc")]`
-wrappers over them. Because the hashers stream, an input larger than RAM can be
-hashed (the `gyotaku` CLI does this, reading files in fixed buffers). The
-ChaCha20-Poly1305 AEAD has allocation-free `seal_in_place`/`open_in_place` (it feeds
-the incremental Poly1305 piece by piece instead of assembling a buffer); the
-`Vec`-returning `seal`/`open` are the `alloc` wrappers. Threefish/CTR, ChaCha20, and
-Poly1305 are allocation-free throughout. It is `std` under `cargo test` so the
+caller buffer; the `Vec`-returning `hash` is a thin `#[cfg(feature = "alloc")]`
+wrapper over them. Because the hashers stream, an input larger than RAM can be
+hashed (the `gyotaku` CLI does this, reading files in fixed buffers). Threefish and
+CTR are allocation-free throughout. It is `std` under `cargo test` so the
 differential harness is unaffected.
 
 The incremental hashers share the hold-back-the-final-block pattern: `update`
@@ -199,8 +194,7 @@ cargo build -p dorado --no-default-features          # dependency-free core buil
 
 The cipher crate has the known-answer and CTR tests plus the differential harness
 (`crates/dorado/tests/diff.rs`, vs the RustCrypto `threefish` crate over random
-inputs). The other primitives are verified the same way: ChaCha20, Poly1305, and
-ChaCha20-Poly1305 against the RFC 8439 vectors, and Skein-512 and BLAKE3
+inputs). The other primitives are verified the same way: Skein-512 and BLAKE3
 differentially against the RustCrypto `skein` and `blake3` crates over random
 inputs (all in `crates/dorado/src/<module>.rs` test modules). The engine crate has
 the KDF/header/MAC tests and the construction tests: password round-trip,
@@ -241,10 +235,9 @@ Skein fixed-output wrappers `Skein512_256`/`Skein512_512`); `no_std` for the
 cipher crate at all three levels
 (`#![cfg_attr(not(test), no_std)]` plus the `alloc` feature; bare-metal CI for the
 allocator and no-allocator builds); incremental, allocation-free hashers
-(`Skein512`, `blake3::Hasher`, `Poly1305`) with one-shot `*_into` wrappers, so
-inputs larger than RAM can be hashed (the `gyotaku` CLI streams files); an
-allocation-free ChaCha20-Poly1305 AEAD (`seal_in_place`/`open_in_place` over the
-incremental Poly1305); library key-schedule zeroization (default `zeroize`
+(`Skein512`, `blake3::Hasher`) with one-shot `*_into` wrappers, so
+inputs larger than RAM can be hashed (the `gyotaku` CLI streams files); library
+key-schedule zeroization (default `zeroize`
 feature); criterion throughput benchmarks (`benches/throughput.rs`); format v4
 label binding.
 

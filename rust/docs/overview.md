@@ -203,8 +203,7 @@ Confidence comes from several independent checks:
 - **Differential tests**: dorado compared against an independent implementation
   (the RustCrypto `threefish` crate) over thousands of random inputs. The other
   from-scratch primitives are checked the same way: Skein-512 and BLAKE3 against the
-  RustCrypto `skein` and `blake3` crates, and ChaCha20, Poly1305, and
-  ChaCha20-Poly1305 against the published RFC 8439 vectors.
+  RustCrypto `skein` and `blake3` crates.
 - **CTR tests**: anchored to the verified cipher, plus round-trips at awkward
   lengths.
 - **Unit tests** for the file header, the KDFs, each of the three MACs, and the

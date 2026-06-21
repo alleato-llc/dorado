@@ -7,7 +7,7 @@ the same CLIs, and the engine behind the in-browser demo on the landing page. No
 GUI.
 
 It is isomorphic: the same code runs in Node and the browser. The 64-bit ARX in
-Threefish/Skein uses `BigInt` (clarity over speed); ChaCha20/BLAKE3 use native
+Threefish/Skein uses `BigInt` (clarity over speed); BLAKE3 uses native
 32-bit math. Educational and unaudited; constant time is not achievable in JS, so
 do not use it for real secrets.
 
@@ -35,8 +35,8 @@ browser has no equivalent.
 
 ## Layout
 
-- `src/threefish.ts`, `chacha.ts`, `poly1305.ts`, `chacha20poly1305.ts`,
-  `skein.ts`, `blake3.ts` — the primitives, verified against the same vectors
+- `src/threefish.ts`, `skein.ts`, `blake3.ts` — the primitives, verified against
+  the same vectors
   (BLAKE3 differential-tested against `@noble/hashes`).
 - `src/engine/` — the container: KDFs via `hash-wasm` (WASM Argon2id/scrypt/
   PBKDF2, isomorphic), HMAC via Web Crypto, the MAC menu, v4 label binding,

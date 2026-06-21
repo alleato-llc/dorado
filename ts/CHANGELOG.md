@@ -27,6 +27,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   [Core](../CHANGELOG.md). (The tag compare already used a length-independent
   XOR-accumulate and salt/IV `crypto.getRandomValues`, so no change there.)
 
+### Removed
+
+- `src/chacha.ts`, `src/poly1305.ts`, `src/chacha20poly1305.ts`, and `src/aead.test.ts`
+  (the from-scratch ChaCha20, Poly1305, and ChaCha20-Poly1305 AEAD) were removed and moved
+  to the standalone `foxtrot` project. They were verified library code only, never used by
+  the engine, so nothing else changes. See [Core](../CHANGELOG.md).
+
 ### Notes
 
 - Key zeroization is fundamentally limited in JS (GC-managed, immutable strings); the Node

@@ -10,6 +10,8 @@ the master table.
 
 ### Added
 
+- CLI parity: `dorado` and `gyotaku` gained `--version` (`<name> 0.1.0`); `--help`
+  already worked via argparse. See [Core](../CHANGELOG.md).
 - Exception subclasses `AuthError`, `MalformedContainer`, and `InvalidParams` under
   `DoradoError` (unifying the previous stray `ValueError`s), exported from the package, so
   callers can classify failures. Wrong password and tampering stay merged as `AuthError`

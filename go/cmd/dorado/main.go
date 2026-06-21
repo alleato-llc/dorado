@@ -35,7 +35,8 @@ func main() {
 		fmt.Println("dorado", version)
 		return
 	case "-h", "--help", "help":
-		usage()
+		printUsage(os.Stdout)
+		return
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n", os.Args[1])
 		usage()
@@ -46,8 +47,8 @@ func main() {
 	}
 }
 
-func usage() {
-	fmt.Fprint(os.Stderr, `usage: dorado <command> [flags]
+func printUsage(w io.Writer) {
+	fmt.Fprint(w, `usage: dorado <command> [flags]
 
 Commands:
   encrypt   encrypt input with Threefish-CTR
@@ -57,7 +58,15 @@ Commands:
 Supply the key directly with --key/--key-file (raw, unauthenticated CTR), or
 derive it from a password with --password/--password-stdin (authenticated
 container). Run "dorado encrypt -h" for the full flag list.
+
+  --version   print version and exit
+  -h, --help  print this help and exit
 `)
+}
+
+// usage prints to stderr and exits nonzero, for an actual usage error.
+func usage() {
+	printUsage(os.Stderr)
 	os.Exit(2)
 }
 

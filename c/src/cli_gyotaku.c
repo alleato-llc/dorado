@@ -6,6 +6,25 @@
 
 #include "dorado/skein.h"
 
+#define GYOTAKU_CLI_VERSION "0.1.0"
+
+static void print_usage(FILE *f) {
+    fprintf(f,
+            "gyotaku %s - Skein-512 file hashing (educational, unaudited)\n"
+            "\n"
+            "Usage: gyotaku [flags] [files...]\n"
+            "\n"
+            "Hashes each file with Skein-512, or stdin when no files are given.\n"
+            "\n"
+            "Flags:\n"
+            "      --bits <N>   Output length in bits, a multiple of 8 (default: 256)\n"
+            "      --tag        Print BSD-style tagged output: SKEIN-512 (file) = digest\n"
+            "  -c, --check      Verify digests from checksum files\n"
+            "  -h, --help       Print this help and exit\n"
+            "      --version    Print the version and exit\n",
+            GYOTAKU_CLI_VERSION);
+}
+
 static int digest_stream(FILE *f, size_t out_len, uint8_t *out) {
     dorado_skein512 s;
     dorado_skein512_init(&s, out_len);
@@ -36,19 +55,25 @@ int main(int argc, char **argv) {
     long bits = 256;
     int tag = 0;
 
+    enum { HELP = 1000, VERSION };
     static const struct option longs[] = {
         {"bits", required_argument, 0, 'b'},
         {"tag", no_argument, 0, 't'},
         {"check", no_argument, 0, 'c'},
+        {"help", no_argument, 0, HELP},
+        {"version", no_argument, 0, VERSION},
         {0, 0, 0, 0},
     };
     int check = 0;
     int c;
-    while ((c = getopt_long(argc, argv, "c", longs, NULL)) != -1) {
+    while ((c = getopt_long(argc, argv, "ch", longs, NULL)) != -1) {
         switch (c) {
             case 'b': bits = atol(optarg); break;
             case 't': tag = 1; break;
             case 'c': check = 1; break;
+            case 'h':
+            case HELP: print_usage(stdout); return 0;
+            case VERSION: printf("gyotaku %s\n", GYOTAKU_CLI_VERSION); return 0;
             default: return fail("usage: gyotaku [--bits N] [--tag] [-c] [files...]");
         }
     }

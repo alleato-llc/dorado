@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from importlib.metadata import version as _pkg_version
 
 from .. import skein
 
@@ -71,6 +72,7 @@ def _parse_check_line(line: str):
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="gyotaku", description="Skein-512 file hashing (educational, unaudited).")
+    p.add_argument("--version", action="version", version=f"gyotaku {_pkg_version('dorado')}")
     p.add_argument("--bits", type=int, default=256, help="output length in bits (a multiple of 8)")
     p.add_argument("-c", "--check", action="store_true", help="verify checksum lists")
     p.add_argument("--tag", action="store_true", help='BSD-style output: "SKEIN-512 (file) = digest"')

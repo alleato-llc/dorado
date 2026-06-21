@@ -10,6 +10,34 @@ fn die(comptime msg: []const u8, args: anytype) noreturn {
     std.process.exit(1);
 }
 
+const VERSION = "0.1.0";
+
+const USAGE =
+    \\gyotaku 0.1.0
+    \\Skein-512 file hashing, a fish-print fingerprint. Educational, unaudited.
+    \\
+    \\Usage: gyotaku [flags] [FILES...]
+    \\
+    \\Hashes each FILE with Skein-512, or stdin when no files are given.
+    \\
+    \\Flags:
+    \\  --bits <n>        Output length in bits, a multiple of 8 (default 256).
+    \\  --tag             Print BSD-style tagged output: "SKEIN-512 (file) = digest".
+    \\  -c, --check       Read digests from the FILES and verify them (not implemented).
+    \\  -h, --help        Print this help and exit.
+    \\      --version     Print the version and exit.
+    \\
+;
+
+fn printAndExit(io: std.Io, text: []const u8) noreturn {
+    var stdout = std.Io.File.stdout();
+    var wbuf: [4096]u8 = undefined;
+    var fw = stdout.writer(io, &wbuf);
+    fw.interface.writeAll(text) catch {};
+    fw.interface.flush() catch {};
+    std.process.exit(0);
+}
+
 fn digestStream(io: std.Io, file: std.Io.File, out_len: usize, out: []u8) !void {
     var rbuf: [64 * 1024]u8 = undefined;
     var fr = file.reader(io, &rbuf);
@@ -36,7 +64,11 @@ pub fn main(init: std.process.Init) !void {
     var files: std.ArrayList([]const u8) = .empty;
     defer files.deinit(a);
     while (it.next()) |arg| {
-        if (std.mem.eql(u8, arg, "--bits")) {
+        if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
+            printAndExit(io, USAGE);
+        } else if (std.mem.eql(u8, arg, "--version")) {
+            printAndExit(io, "gyotaku " ++ VERSION ++ "\n");
+        } else if (std.mem.eql(u8, arg, "--bits")) {
             const v = it.next() orelse die("--bits needs a value", .{});
             bits = std.fmt.parseInt(usize, v, 10) catch die("invalid --bits", .{});
         } else if (std.mem.eql(u8, arg, "--tag")) {

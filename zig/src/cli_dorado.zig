@@ -39,6 +39,62 @@ fn die(comptime msg: []const u8, args: anytype) noreturn {
     std.process.exit(1);
 }
 
+const VERSION = "0.1.0";
+
+const USAGE =
+    \\dorado 0.1.0
+    \\Threefish in CTR mode (educational, unaudited).
+    \\
+    \\Usage: dorado <encrypt|decrypt|inspect> [flags]
+    \\
+    \\Commands:
+    \\  encrypt   Encrypt input with Threefish-CTR.
+    \\  decrypt   Decrypt input with Threefish-CTR (the same operation as encrypt).
+    \\  inspect   Print a password file's non-secret parameters without decrypting it.
+    \\
+    \\Key (one is required for encrypt/decrypt):
+    \\  --key <hex>           Raw key as hex (32/64/128 bytes). Requires --iv.
+    \\  --key-file <path>     Read the raw key hex from a file. Requires --iv.
+    \\  --password            Derive the key from a password (prompted on the terminal).
+    \\  --password-stdin      Read the password from stdin (use --in for the data).
+    \\
+    \\Common flags:
+    \\  --iv <hex>            IV for raw-key mode (must match the block size).
+    \\  --tweak <hex>         16-byte tweak (default all zero).
+    \\  --variant <256|512|1024>   Threefish variant for password mode (default 256).
+    \\  --kdf <argon2id|scrypt|pbkdf2>   KDF for password mode (default argon2id).
+    \\  --mac <skein|hmac-sha256|blake3> Container MAC (default skein).
+    \\  --chunk-kib <n>      Chunk size in KiB (default 64).
+    \\  --label <text>       Bind a non-secret label into the container.
+    \\  --expect-label <text>   Require this label when decrypting.
+    \\  --in <path>          Input file (default stdin).
+    \\  --out <path>         Output file (default stdout).
+    \\
+    \\KDF tuning: --argon2-mem-mib, --argon2-time, --argon2-par,
+    \\            --scrypt-logn, --scrypt-r, --scrypt-p, --pbkdf2-rounds.
+    \\
+    \\  -h, --help           Print this help and exit.
+    \\      --version        Print the version and exit.
+    \\
+;
+
+fn printAndExit(io: std.Io, text: []const u8) noreturn {
+    var stdout = std.Io.File.stdout();
+    var wbuf: [4096]u8 = undefined;
+    var fw = stdout.writer(io, &wbuf);
+    fw.interface.writeAll(text) catch {};
+    fw.interface.flush() catch {};
+    std.process.exit(0);
+}
+
+fn printHelp(io: std.Io) noreturn {
+    printAndExit(io, USAGE);
+}
+
+fn printVersion(io: std.Io) noreturn {
+    printAndExit(io, "dorado " ++ VERSION ++ "\n");
+}
+
 const Args = struct {
     command: []const u8 = "",
     key: ?[]const u8 = null,
@@ -109,6 +165,15 @@ pub fn main(init: std.process.Init) !void {
     var it = std.process.Args.Iterator.init(init.minimal.args);
     while (it.next()) |arg| try arglist.append(a, arg);
     const argv = arglist.items;
+
+    // Recognize --help/-h and --version before anything is treated as a
+    // subcommand, so `dorado --help` (with no subcommand) prints help and
+    // `dorado --version` prints the version, matching the Rust/Go CLIs.
+    for (argv[1..]) |arg| {
+        if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) printHelp(io);
+        if (std.mem.eql(u8, arg, "--version")) printVersion(io);
+    }
+
     if (argv.len < 2) die("usage: dorado <encrypt|decrypt|inspect> [flags]", .{});
 
     var args = Args{ .command = argv[1] };

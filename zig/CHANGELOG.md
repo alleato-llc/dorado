@@ -10,6 +10,9 @@ the master table.
 
 ### Added
 
+- CLI parity: `dorado` and `gyotaku` now support `--help`/`-h` (usage to stdout,
+  exit 0) and `--version` (`<name> 0.1.0`); previously both printed the error-usage and
+  `gyotaku --help` tried to open `--help` as a file. See [Core](../CHANGELOG.md).
 - A seeded smash/fuzz test over the decrypt path (random, truncated, and mutated inputs),
   asserting only the engine's declared errors and no panic or UB under ReleaseSafe. It
   surfaced no bug; the existing parse bounds hold.

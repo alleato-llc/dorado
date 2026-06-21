@@ -60,21 +60,38 @@ function runCheck(files: string[]): void {
   if (failed > 0) throw new Error(`${failed} of ${checked} digests did NOT match`);
 }
 
+const USAGE = `usage: gyotaku [flags] [FILE...]
+
+Hash files (or stdin when no FILE is given) with Skein-512, like sha256sum.
+
+  --bits N      output length in bits, a multiple of 8 (default 256)
+  --tag         BSD-style output: "SKEIN-512 (file) = digest"
+  -c, --check   read digests from the FILEs and verify them
+  --version     print version and exit
+  -h, --help    print this help and exit
+`;
+
 function main(): void {
   const { values, positionals } = parseArgs({
     options: {
       bits: { type: "string", default: "256" },
       tag: { type: "boolean", default: false },
       c: { type: "boolean", short: "c", default: false },
+      check: { type: "boolean", default: false },
       version: { type: "boolean", default: false },
+      help: { type: "boolean", short: "h", default: false },
     },
     allowPositionals: true,
   });
+  if (values.help) {
+    process.stdout.write(USAGE);
+    return;
+  }
   if (values.version) {
     console.log("gyotaku 0.1.0");
     return;
   }
-  if (values.c) {
+  if (values.c || values.check) {
     if (values.tag) throw new Error("--tag cannot be combined with -c");
     if (positionals.length === 0) throw new Error("-c needs at least one checksum file");
     runCheck(positionals);

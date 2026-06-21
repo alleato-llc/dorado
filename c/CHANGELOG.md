@@ -10,6 +10,9 @@ the master table.
 
 ### Added
 
+- CLI parity: `dorado` and `gyotaku` now support `--help`/`-h` (usage to stdout,
+  exit 0) and `--version` (`<name> 0.1.0`); both previously errored on `--help`. See
+  [Core](../CHANGELOG.md).
 - Pointer-classifiable sentinel error strings (`dorado_err_auth`, `dorado_err_malformed`,
   `dorado_err_params`) returned by identity, so a caller can classify a failure by pointer
   comparison without an API change. Wrong password and tampering both map to

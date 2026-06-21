@@ -23,6 +23,12 @@ This changelog starts in 2026-06; for earlier history see the git log.
 
 ### Added
 
+- CLI feature parity across every CLI port (`go`, `python`, `c`, `zig`, `ts`; Rust is
+  the reference). Both binaries (`dorado` and `gyotaku`) in every port now accept
+  `--help`/`-h` (usage to stdout, exit 0) and `--version` (`<name> 0.1.0`), and
+  `gyotaku` accepts both `-c` and `--check`. The flag surface (encrypt/decrypt/inspect
+  plus every option) was already consistent; this closes the `--help`/`--version`
+  gaps. Per-port specifics are in each port's changelog.
 - `SECURITY.md`: the project threat model, explicit non-goals, and the vulnerability
   reporting process.
 - Per-component versioning: a [`VERSIONS.md`](VERSIONS.md) master table and a changelog

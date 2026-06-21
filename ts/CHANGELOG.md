@@ -10,6 +10,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- CLI parity: `dorado`/`gyotaku` now support `--help`/`-h` (usage to stdout, exit 0),
+  and `gyotaku` accepts `--check` as well as `-c`; `--version` already worked. See
+  [Core](../CHANGELOG.md).
 - A `DoradoError` base with `AuthError`, `MalformedContainerError`, and
   `InvalidParamsError` subclasses, exported for `instanceof`, so callers can classify
   failures. Wrong password and tampering stay merged as `AuthError` (same class and

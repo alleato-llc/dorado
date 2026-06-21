@@ -33,7 +33,22 @@ const options = {
   in: { type: "string" },
   out: { type: "string" },
   version: { type: "boolean", default: false },
+  help: { type: "boolean", short: "h", default: false },
 } as const;
+
+const USAGE = `usage: dorado <encrypt|decrypt|inspect> [flags]
+
+Apply Threefish in CTR mode: raw-key (--key/--key-file, unauthenticated) or a
+password-derived authenticated container (--password/--password-stdin).
+
+  --variant 256|512|1024     block size (password mode)
+  --kdf argon2id|scrypt|pbkdf2   key derivation
+  --mac skein|hmac-sha256|blake3 authentication
+  --label / --expect-label   bind/require a non-secret label
+  --in FILE / --out FILE      default stdin/stdout
+  --version                  print version and exit
+  -h, --help                 print this help and exit
+`;
 
 type Opts = { [K in keyof typeof options]?: string | boolean };
 
@@ -182,6 +197,10 @@ function cmdInspect(o: Opts): void {
 async function main(): Promise<void> {
   const { values, positionals } = parseArgs({ options, allowPositionals: true });
   const o = values as Opts;
+  if (o.help) {
+    process.stdout.write(USAGE);
+    return;
+  }
   if (o.version) {
     console.log("dorado 0.1.0");
     return;

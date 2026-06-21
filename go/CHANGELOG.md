@@ -19,6 +19,9 @@ the master table.
 
 ### Changed
 
+- CLI parity: `dorado --help`/`-h` and `gyotaku --help`/`-h` now print usage to stdout
+  and exit 0 (were exit 2 via the error path), and `gyotaku` accepts `--check` as well
+  as `-c` (`--version` already worked). See [Core](../CHANGELOG.md).
 - Applied the chunk-size cap policy (64 MiB default, 1 GiB hard ceiling,
   `DORADO_MAX_CHUNK_BYTES`); the Go CLI caps `--chunk-kib` to the effective max so
   encryption matches the default decrypt cap. See [Core](../CHANGELOG.md). (RNG was

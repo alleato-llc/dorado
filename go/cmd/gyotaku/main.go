@@ -16,10 +16,18 @@ import (
 )
 
 func main() {
+	for _, a := range os.Args[1:] {
+		if a == "-h" || a == "--help" {
+			printUsage(os.Stdout)
+			return
+		}
+	}
 	bits := flag.Int("bits", 256, "output length in bits (a multiple of 8)")
 	tag := flag.Bool("tag", false, `print BSD-style "SKEIN-512 (file) = digest" output`)
 	check := flag.Bool("c", false, "read digests from the FILES and verify them (like sha256sum -c)")
+	checkLong := flag.Bool("check", false, "verify checksum lists (long form of -c)")
 	showVersion := flag.Bool("version", false, "print version and exit")
+	flag.Usage = func() { printUsage(os.Stderr) }
 	flag.Parse()
 
 	if *showVersion {
@@ -27,10 +35,23 @@ func main() {
 		return
 	}
 
-	if err := run(*bits, *tag, *check, flag.Args()); err != nil {
+	if err := run(*bits, *tag, *check || *checkLong, flag.Args()); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
+}
+
+func printUsage(w io.Writer) {
+	fmt.Fprint(w, `usage: gyotaku [flags] [FILE...]
+
+Hash files (or stdin when no FILE is given) with Skein-512, like sha256sum.
+
+  --bits N      output length in bits, a multiple of 8 (default 256)
+  --tag         BSD-style output: "SKEIN-512 (file) = digest"
+  -c, --check   read digests from the FILEs and verify them
+  --version     print version and exit
+  -h, --help    print this help and exit
+`)
 }
 
 func run(bits int, tag, check bool, files []string) error {

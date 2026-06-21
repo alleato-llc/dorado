@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import getpass
 import sys
+from importlib.metadata import version as _pkg_version
 from typing import BinaryIO
 
 from .. import engine
@@ -22,6 +23,8 @@ def _dehex(s: str) -> bytes:
 
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="dorado", description="Threefish encryption (educational, unaudited).")
+    # --version short-circuits before the required positional is validated.
+    p.add_argument("--version", action="version", version=f"dorado {_pkg_version('dorado')}")
     p.add_argument("command", choices=["encrypt", "decrypt", "inspect"])
     p.add_argument("--key")
     p.add_argument("--key-file")

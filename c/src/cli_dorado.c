@@ -10,6 +10,47 @@
 #include "dorado/engine.h"
 #include "dorado/threefish.h"
 
+#define DORADO_CLI_VERSION "0.1.0"
+
+static void print_usage(FILE *f) {
+    fprintf(f,
+            "dorado %s - Threefish in CTR mode (educational, unaudited)\n"
+            "\n"
+            "Usage: dorado <encrypt|decrypt|inspect> [flags]\n"
+            "\n"
+            "Commands:\n"
+            "  encrypt   Encrypt input with Threefish-CTR\n"
+            "  decrypt   Decrypt input (the same operation as encrypt)\n"
+            "  inspect   Show a password container's non-secret parameters\n"
+            "\n"
+            "Credentials (choose exactly one for encrypt/decrypt):\n"
+            "  --key <hex>            Raw key as hex (requires --iv)\n"
+            "  --key-file <FILE>      Read the raw key hex from a file (requires --iv)\n"
+            "  --password             Derive the key from a prompted password\n"
+            "  --password-stdin       Read the password from stdin (pass data via --in)\n"
+            "\n"
+            "Common flags:\n"
+            "  --in <FILE>            Input file (default: stdin)\n"
+            "  --out <FILE>           Output file (default: stdout)\n"
+            "  --iv <hex>             IV for raw-key mode (block-size length)\n"
+            "  --tweak <hex>          16-byte tweak (default: all zero)\n"
+            "  --variant <256|512|1024>   Threefish variant (default: 256)\n"
+            "  --kdf <argon2id|scrypt|pbkdf2>   Password KDF (default: argon2id)\n"
+            "  --mac <skein|hmac-sha256|blake3> Container MAC (default: skein)\n"
+            "  --label <text>         Bind a non-secret label (encrypt)\n"
+            "  --expect-label <text>  Require a label match (decrypt)\n"
+            "  --chunk-kib <N>        Chunk size in KiB (default: 64)\n"
+            "\n"
+            "KDF cost flags:\n"
+            "  --argon2-mem-mib <N> --argon2-time <N> --argon2-par <N>\n"
+            "  --scrypt-logn <N> --scrypt-r <N> --scrypt-p <N>\n"
+            "  --pbkdf2-rounds <N>\n"
+            "\n"
+            "  -h, --help     Print this help and exit\n"
+            "      --version  Print the version and exit\n",
+            DORADO_CLI_VERSION);
+}
+
 /* A page-aligned, mlock'd buffer for a secret the CLI holds (the password): kept
  * out of swap, and wiped + unlocked on free. mlock failure (e.g. RLIMIT_MEMLOCK on
  * a locked-down host) is non-fatal: the buffer is still wiped on free. */
@@ -107,6 +148,19 @@ static int fail(const char *msg) {
 }
 
 int main(int argc, char **argv) {
+    /* Top-level --help/-h/--version work with or without a subcommand, matching
+     * the Rust reference. Scan all args so "dorado encrypt --help" works too. */
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
+            print_usage(stdout);
+            return 0;
+        }
+        if (strcmp(argv[i], "--version") == 0) {
+            printf("dorado %s\n", DORADO_CLI_VERSION);
+            return 0;
+        }
+    }
+
     if (argc < 2) return fail("usage: dorado <encrypt|decrypt|inspect> [flags]");
     const char *command = argv[1];
 

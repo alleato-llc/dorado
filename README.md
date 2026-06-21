@@ -86,13 +86,19 @@ CI lives at the repository root in [`.github/workflows/ci.yml`](.github/workflow
 It runs the Rust jobs (fmt, clippy, test, and `cargo audit`) from `rust/` and builds
 the `web/` site.
 
-## Changelog
+## Changelog and versions
 
-Notable changes are recorded in [`CHANGELOG.md`](CHANGELOG.md)
-([Keep a Changelog](https://keepachangelog.com/) format). **Rule:** any change worth
-noting updates the `Unreleased` section of `CHANGELOG.md` in the *same commit or PR*;
-treat it as part of the change. Wire-format or algorithm changes must say so, since
-they affect cross-compatibility across the ports.
+dorado is versioned **per component**: each port (and `bench/`, `web/`) carries its own
+[semantic version](https://semver.org/) and changelog, and the on-disk container format
+has its own version. [`VERSIONS.md`](VERSIONS.md) is the master table. The top-level
+[`CHANGELOG.md`](CHANGELOG.md) is the Core log (project-wide docs, CI, cross-port
+decisions); per-port history lives in each `<port>/CHANGELOG.md`. All use the
+[Keep a Changelog](https://keepachangelog.com/) format.
+
+**Rule:** route each change to the changelog of whatever it touches (a port vs. Core),
+in the same commit or PR; a cross-port decision is recorded once in Core and pointed to
+from each port. Wire-format or algorithm changes must say so, since they affect
+cross-compatibility across the ports.
 
 ## License
 

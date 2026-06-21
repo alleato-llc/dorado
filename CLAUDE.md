@@ -97,6 +97,12 @@ covers the whole repository.
 - Keep changes scoped to what is asked.
 - Do not add dependencies without asking first.
 - Be honest about limitations rather than papering over them.
-- Update the changelog as you go: any change worth noting adds a bullet to the
-  `Unreleased` section of `CHANGELOG.md` (grouped under Added / Changed / Fixed /
-  Removed) in the same commit or PR. Call out wire-format/algorithm changes explicitly.
+- Update the changelog as you go, routed by what you touched. Versioning is
+  per-component (see `VERSIONS.md`): a change to a single port goes in that port's
+  `<port>/CHANGELOG.md` (likewise `bench/` and `web/`); a project-wide doc, CI, or a
+  cross-port decision goes in the top-level `CHANGELOG.md` (Core); a wire-format change
+  is a coordinated `format::VERSION` bump recorded in Core and every port's changelog.
+  A cross-port decision is recorded once in Core and pointed to from each port's log
+  (do not duplicate the rationale across ports). Add the bullet under Added / Changed /
+  Fixed / Removed in the same commit or PR, and call out wire-format/algorithm changes
+  explicitly.

@@ -83,8 +83,11 @@ When changing the wire format or an algorithm, keep `rust/`, `go/`, `ts/`, `java
 implementations are byte-for-byte cross-compatible and that property is tested. The
 Rust implementation is the reference and the baseline for vectors and fixtures.
 
-CI lives at the repo root in `.github/workflows/ci.yml`. The root `LICENSE` (MIT)
-covers the whole repository.
+CI lives at the repo root in `.github/workflows/ci.yml`. It is path-filtered: a
+`changes` job detects which component folders moved and each job runs only when
+relevant, but a change to the wire-format spec (`docs/spec.md`) or to the workflow
+re-runs every port's cross-compat suite. The root `LICENSE` (MIT) covers the whole
+repository.
 
 ## Conventions (whole repo)
 

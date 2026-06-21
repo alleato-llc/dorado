@@ -5,9 +5,56 @@ on:
   pull_request:
 
 jobs:
+  # Detect which components changed, so each job below runs only when relevant. A
+  # change to the wire-format spec (docs/spec.md) or to this workflow re-runs the
+  # cross-compat suites everywhere, preserving the byte-for-byte invariant across
+  # ports. Pure docs/changelog changes match nothing and run no build jobs.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+      go: ${{ steps.filter.outputs.go }}
+      java: ${{ steps.filter.outputs.java }}
+      python: ${{ steps.filter.outputs.python }}
+      c: ${{ steps.filter.outputs.c }}
+      zig: ${{ steps.filter.outputs.zig }}
+      web: ${{ steps.filter.outputs.web }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            spec: &spec
+              - 'docs/spec.md'
+              - '.github/workflows/ci.yml'
+            rust:
+              - *spec
+              - 'rust/**'
+            go:
+              - *spec
+              - 'go/**'
+            java:
+              - *spec
+              - 'java/**'
+            python:
+              - *spec
+              - 'python/**'
+            c:
+              - *spec
+              - 'c/**'
+            zig:
+              - *spec
+              - 'zig/**'
+            web:
+              - '.github/workflows/ci.yml'
+              - 'web/**'
+
   # Format, lint, and test the cipher and construction crates plus the CLIs.
   # These need no system libraries. The Rust workspace lives in rust/.
   core:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -28,6 +75,8 @@ jobs:
   # The GUIs pull in a graphics stack and need windowing system libraries to
   # build, so they get their own job with those installed (build/lint only).
   gui:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -49,6 +98,8 @@ jobs:
   # (--no-default-features). If anything leaks std, or alloc into the no-alloc
   # build, these fail to compile.
   nostd:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -63,6 +114,8 @@ jobs:
 
   # Check dependencies against the RustSec advisory database.
   audit:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -73,6 +126,8 @@ jobs:
 
   # Vet, build, and test the Go port (which must match the Rust on-disk format).
   go:
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -90,6 +145,8 @@ jobs:
   # Build and test the Java SDK (which must match the Rust on-disk format). Its
   # cross-compat tests decrypt fixtures made by the Rust CLI, committed in the repo.
   java:
+    needs: changes
+    if: needs.changes.outputs.java == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -105,6 +162,8 @@ jobs:
   # Test the Python port (SDK + CLIs). Cross-compat tests decrypt fixtures made by
   # the Rust CLI, committed in the repo.
   python:
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -121,6 +180,8 @@ jobs:
   # HMAC from OpenSSL, both via pkg-config. Cross-compat tests decrypt fixtures
   # made by the Rust CLI, committed in the repo.
   c:
+    needs: changes
+    if: needs.changes.outputs.c == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -137,6 +198,8 @@ jobs:
   # from Zig's standard library. Cross-compat tests decrypt fixtures made by the
   # Rust CLI, committed in the repo.
   zig:
+    needs: changes
+    if: needs.changes.outputs.zig == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -152,6 +215,8 @@ jobs:
 
   # Build the landing page in web/ so a broken site fails CI.
   web:
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:

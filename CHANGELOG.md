@@ -51,3 +51,8 @@ This changelog starts in 2026-06; for earlier history see the git log.
   zeroization, sanitizers, CI) are in each port's changelog.
 - CI: per-port hardening landed (see the Go and C port changelogs for `go test -race` +
   `govulncheck` and the C ASan/UBSan run). The container format is unchanged at `v4`.
+- CI is now path-filtered: a `changes` job (`dorny/paths-filter`) detects which
+  component folders changed, and each job runs only when relevant. To preserve the
+  cross-compat invariant, a change to the wire-format spec (`docs/spec.md`) or to the
+  workflow itself re-runs every port's suite; a pure docs/changelog change runs no
+  build jobs. Skipped jobs are reported as passing, so required checks are unaffected.

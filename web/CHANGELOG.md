@@ -7,4 +7,9 @@ Cross-cutting changes live in the [Core CHANGELOG](../CHANGELOG.md);
 
 ## [Unreleased]
 
-(No entries yet. Record site changes here.)
+## [0.1.0]
+
+### Added
+
+- Initial landing page: an Astro site advertising dorado, with an in-browser
+  encrypt/decrypt demo built on the `ts/` port and the browser WASM cipher build.

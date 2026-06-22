@@ -32,6 +32,20 @@ library
                       crypton
     default-language: GHC2021
 
+executable dorado
+    import:           warnings
+    hs-source-dirs:   app/dorado
+    main-is:          Main.hs
+    build-depends:    base, bytestring, dorado
+    default-language: GHC2021
+
+executable gyotaku
+    import:           warnings
+    hs-source-dirs:   app/gyotaku
+    main-is:          Main.hs
+    build-depends:    base, bytestring, dorado
+    default-language: GHC2021
+
 test-suite dorado-test
     import:           warnings
     type:             exitcode-stdio-1.0

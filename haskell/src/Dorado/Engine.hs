@@ -16,6 +16,11 @@ module Dorado.Engine
   , encryptPassword
   , encryptPasswordWith
   , decryptPassword
+  , decryptPasswordExpecting
+  , ContainerInfo (..)
+  , inspect
+  , rawCtr
+  , variantFromKeyLen
   ) where
 
 import Control.Monad (unless)
@@ -103,11 +108,11 @@ encryptPasswordWith opts salt tweak iv password plaintext =
           tg = Mac.tag (optMac opts) macKey (frameAad headerBytes (fromIntegral idx) isLast ct)
        in BS.singleton (if isLast then 1 else 0) <> be32 (fromIntegral (BS.length ct)) <> ct <> tg
 
--- | Encrypt, drawing a fresh random salt, tweak, and IV from the system CSPRNG.
-encryptPassword :: ByteString -> Options -> ByteString -> IO ByteString
-encryptPassword password opts plaintext = do
+-- | Encrypt with a caller-supplied tweak (the CLI defaults it to all zero),
+-- drawing a fresh random salt and IV from the system CSPRNG.
+encryptPassword :: ByteString -> Options -> ByteString -> ByteString -> IO ByteString
+encryptPassword password opts tweak plaintext = do
   salt <- getRandomBytes 16
-  tweak <- getRandomBytes 16
   iv <- getRandomBytes (TF.blockSize (optVariant opts))
   pure (encryptPasswordWith opts salt tweak iv password plaintext)
 
@@ -147,6 +152,61 @@ readFrames macv macKey headerBytes chunkSize = go 0 []
           unless (ctEq expected tg) (Left "authentication failed")
           let acc' = ct : acc
           if isLast then Right (reverse acc') else go (idx + 1) acc' r4
+
+-- | Decrypt, optionally requiring the stored label to equal @expected@. A
+-- mismatch (or no label) is rejected before any plaintext is produced.
+decryptPasswordExpecting :: ByteString -> Maybe ByteString -> ByteString -> Either String ByteString
+decryptPasswordExpecting password expected container = do
+  (header, _) <- parseHeader container
+  case expected of
+    Just lbl | hLabel header /= lbl -> Left "label mismatch"
+    _ -> decryptPassword password container
+
+-- | Non-secret container parameters, as reported by 'inspect' (no password).
+data ContainerInfo = ContainerInfo
+  { ciVersion   :: !Word8
+  , ciVariant   :: !TF.Variant
+  , ciKdf       :: !Kdf.Kdf
+  , ciMac       :: !Mac.Mac
+  , ciChunkSize :: !Word32
+  , ciSaltLen   :: !Int
+  , ciTweak     :: !ByteString
+  , ciLabel     :: !ByteString
+  }
+  deriving (Eq, Show)
+
+-- | Read a container's header and report its non-secret parameters.
+inspect :: ByteString -> Either String ContainerInfo
+inspect container = do
+  (h, _) <- parseHeader container
+  Right
+    ContainerInfo
+      { ciVersion = hVersion h
+      , ciVariant = hVariant h
+      , ciKdf = hKdf h
+      , ciMac = hMac h
+      , ciChunkSize = hChunkSize h
+      , ciSaltLen = BS.length (hSalt h)
+      , ciTweak = hTweak h
+      , ciLabel = hLabel h
+      }
+
+-- | The Threefish variant for a raw key length (32/64/128 bytes).
+variantFromKeyLen :: Int -> Either String TF.Variant
+variantFromKeyLen 32 = Right TF.TF256
+variantFromKeyLen 64 = Right TF.TF512
+variantFromKeyLen 128 = Right TF.TF1024
+variantFromKeyLen n = Left ("key length " ++ show n ++ " must be 32, 64, or 128 bytes")
+
+-- | Raw-key CTR: bare, unauthenticated, headerless. Encryption and decryption are
+-- the same operation. The variant is inferred from the key length; the IV must be
+-- the block size, and the tweak is 16 bytes (the CLI defaults it to all zero).
+rawCtr :: ByteString -> ByteString -> ByteString -> ByteString -> Either String ByteString
+rawCtr key tweak iv dat = do
+  variant <- variantFromKeyLen (BS.length key)
+  unless (BS.length iv == TF.blockSize variant) (Left "iv must be the same length as the key")
+  unless (BS.length tweak == 16) (Left "tweak must be 16 bytes")
+  Right (TF.ctrApply (TF.newThreefish variant key tweak) iv dat)
 
 takeE :: Int -> ByteString -> Either String (ByteString, ByteString)
 takeE n bs

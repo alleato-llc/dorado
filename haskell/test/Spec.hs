@@ -10,6 +10,7 @@ import Data.IORef (modifyIORef', newIORef, readIORef)
 import Data.List (nub)
 import Data.Word (Word8)
 import System.Exit (exitFailure)
+import System.IO (IOMode (ReadMode, WriteMode), withFile)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as C8
 import Data.ByteString (ByteString)
@@ -212,6 +213,24 @@ main = do
   roundTrip "variant-512" baseOpts { Engine.optVariant = TF512 } (BS.replicate 64 0x03) pt1
   roundTrip "multi-frame (64B chunks)" baseOpts { Engine.optChunkSize = 64 } iv32 (seqBytes 200)
   roundTrip "empty plaintext" baseOpts iv32 BS.empty
+
+  -- Streaming (Handle-based, constant memory) must produce identical bytes to the
+  -- in-memory form and round-trip, across multiple frames.
+  let sopts = baseOpts { Engine.optChunkSize = 64 }
+      sbig = seqBytes 500
+      bytesOut = Engine.encryptPasswordWith sopts salt rtweak iv32 pw sbig
+      ptF = "/tmp/dorado-hs-st-pt"
+      ctF = "/tmp/dorado-hs-st-ct"
+      outF = "/tmp/dorado-hs-st-out"
+  BS.writeFile ptF sbig
+  withFile ptF ReadMode $ \hin -> withFile ctF WriteMode $ \hout ->
+    Engine.encryptPasswordStream sopts salt rtweak iv32 pw hin hout
+  streamOut <- BS.readFile ctF
+  check "stream encrypt == in-memory encrypt" (streamOut == bytesOut)
+  res <- withFile ctF ReadMode $ \hin -> withFile outF WriteMode $ \hout ->
+    Engine.decryptPasswordStream pw Nothing hin hout
+  streamDec <- BS.readFile outF
+  check "stream decrypt round-trips (multi-frame)" (res == Right () && streamDec == sbig)
 
   n <- readIORef fails
   if n == 0

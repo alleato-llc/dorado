@@ -21,6 +21,10 @@ module Dorado.Engine
   , inspect
   , rawCtr
   , variantFromKeyLen
+  , encryptPasswordStream
+  , decryptPasswordStream
+  , rawCtrStream
+  , randomBytes
   ) where
 
 import Control.Monad (unless)
@@ -28,7 +32,10 @@ import Data.Bits (shiftL, xor, (.|.))
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as C8
+import Data.IORef (IORef, newIORef, readIORef, writeIORef)
+import Data.List (isInfixOf)
 import Data.Word (Word32, Word64, Word8)
+import System.IO (Handle)
 
 import Crypto.Random (getRandomBytes)
 
@@ -191,6 +198,10 @@ inspect container = do
       , ciLabel = hLabel h
       }
 
+-- | Fresh random bytes from the system CSPRNG (for salt and IV generation).
+randomBytes :: Int -> IO ByteString
+randomBytes = getRandomBytes
+
 -- | The Threefish variant for a raw key length (32/64/128 bytes).
 variantFromKeyLen :: Int -> Either String TF.Variant
 variantFromKeyLen 32 = Right TF.TF256
@@ -207,6 +218,171 @@ rawCtr key tweak iv dat = do
   unless (BS.length iv == TF.blockSize variant) (Left "iv must be the same length as the key")
   unless (BS.length tweak == 16) (Left "tweak must be 16 bytes")
   Right (TF.ctrApply (TF.newThreefish variant key tweak) iv dat)
+
+-- ---------------------------------------------------------------------------
+-- Streaming over Handles, in constant memory (the buffer holds at most one
+-- header or one chunk). The output bytes are identical to the in-memory forms,
+-- because the per-chunk CTR counter (advanced by chunk_size / block_size blocks
+-- per full chunk) reproduces the one continuous CTR stream.
+-- ---------------------------------------------------------------------------
+
+-- | Advance a big-endian counter by @n@ blocks, wrapping at the IV width.
+ivAdd :: ByteString -> Integer -> ByteString
+ivAdd iv n =
+  BS.pack [fromIntegral ((v' `div` (256 ^ (len - 1 - i))) `mod` 256) | i <- [0 .. len - 1]]
+  where
+    len = BS.length iv
+    v' = (BS.foldl' (\acc b -> acc * 256 + toInteger b) 0 iv + n) `mod` (256 ^ len)
+
+-- | Encrypt a password container, streaming plaintext from @hin@ to ciphertext on
+-- @hout@ in constant memory. Salt, tweak, and IV are caller-provided (the CLI
+-- draws random salt + IV and passes the tweak).
+encryptPasswordStream :: Options -> ByteString -> ByteString -> ByteString -> ByteString -> Handle -> Handle -> IO ()
+encryptPasswordStream opts salt tweak iv password hin hout = do
+  BS.hPut hout headerBytes
+  first <- BS.hGet hin cs
+  loop 0 iv first
+  where
+    variant = optVariant opts
+    keyLen = TF.keySize variant
+    kdfOut = Kdf.derive (optKdf opts) password salt (keyLen + 32)
+    encKey = BS.take keyLen kdfOut
+    macKey = BS.drop keyLen kdfOut
+    tf = TF.newThreefish variant encKey tweak
+    cs = fromIntegral (optChunkSize opts)
+    bpc = toInteger (cs `div` TF.blockSize variant)
+    headerBytes =
+      serializeHeader (Header 4 variant (optKdf opts) (optMac opts) (optChunkSize opts) salt tweak iv (optLabel opts))
+    loop idx counter cur = do
+      next <- BS.hGet hin cs
+      let isLast = BS.null next
+          ct = TF.ctrApply tf counter cur
+          tg = Mac.tag (optMac opts) macKey (frameAad headerBytes idx isLast ct)
+      BS.hPut hout (BS.concat [BS.singleton (if isLast then 1 else 0), be32 (fromIntegral (BS.length ct)), ct, tg])
+      if isLast then pure () else loop (idx + 1) (ivAdd counter bpc) next
+
+-- | Verify and decrypt a password container, streaming from @hin@ to @hout@ in
+-- constant memory. Returns 'Left' on a malformed header, label mismatch,
+-- authentication failure, or truncation; on failure, any plaintext already
+-- written is incomplete and untrusted.
+decryptPasswordStream :: ByteString -> Maybe ByteString -> Handle -> Handle -> IO (Either String ())
+decryptPasswordStream password expect hin hout = do
+  src <- newSrc hin
+  hr <- readHeaderSrc src
+  case hr of
+    Left e -> pure (Left e)
+    Right (header, headerBytes)
+      | maybe False (/= hLabel header) expect -> pure (Left "label mismatch")
+      | otherwise ->
+          frames src tf macKey (hMac header) headerBytes (hChunkSize header) bpc 0 (hIv header)
+      where
+        variant = hVariant header
+        keyLen = TF.keySize variant
+        kdfOut = Kdf.derive (hKdf header) password (hSalt header) (keyLen + 32)
+        encKey = BS.take keyLen kdfOut
+        macKey = BS.drop keyLen kdfOut
+        tf = TF.newThreefish variant encKey (hTweak header)
+        bpc = toInteger (fromIntegral (hChunkSize header) `div` TF.blockSize variant)
+  where
+    frames src tf macKey macv headerBytes chunkSize bpc idx counter = do
+      mIsLast <- srcReadExact src 1
+      case mIsLast of
+        Nothing -> pure (Left "truncated: no final frame before end of input")
+        Just isLastB -> do
+          mLen <- srcReadExact src 4
+          case mLen of
+            Nothing -> pure (Left "truncated frame")
+            Just lenB -> do
+              let ctLen = fromIntegral (decodeBE lenB) :: Int
+              if ctLen > fromIntegral chunkSize
+                then pure (Left "frame ct_len exceeds chunk size")
+                else do
+                  mCt <- srcReadExact src ctLen
+                  mTag <- srcReadExact src 32
+                  case (mCt, mTag) of
+                    (Just ct, Just tg) -> do
+                      let isLast = BS.head isLastB == 1
+                          expected = Mac.tag macv macKey (frameAad headerBytes idx isLast ct)
+                      if not (ctEq expected tg)
+                        then pure (Left "authentication failed")
+                        else if not isLast && fromIntegral (BS.length ct) /= chunkSize
+                          then pure (Left "non-final frame is not a full chunk")
+                          else do
+                            BS.hPut hout (TF.ctrApply tf counter ct)
+                            if isLast
+                              then pure (Right ())
+                              else frames src tf macKey macv headerBytes chunkSize bpc (idx + 1) (ivAdd counter bpc)
+                    _ -> pure (Left "truncated frame")
+
+-- | Raw-key CTR streaming (bare, unauthenticated). Encryption and decryption are
+-- the same operation.
+rawCtrStream :: ByteString -> ByteString -> ByteString -> Handle -> Handle -> IO (Either String ())
+rawCtrStream key tweak iv hin hout =
+  case variantFromKeyLen (BS.length key) of
+    Left e -> pure (Left e)
+    Right variant
+      | BS.length iv /= TF.blockSize variant -> pure (Left "iv must be the same length as the key")
+      | BS.length tweak /= 16 -> pure (Left "tweak must be 16 bytes")
+      | otherwise -> Right <$> loop iv
+      where
+        bsize = TF.blockSize variant
+        buf = 65536 - (65536 `mod` bsize)
+        bpb = toInteger (buf `div` bsize)
+        tf = TF.newThreefish variant key tweak
+        loop counter = do
+          chunk <- BS.hGet hin buf
+          if BS.null chunk
+            then pure ()
+            else do
+              BS.hPut hout (TF.ctrApply tf counter chunk)
+              if BS.length chunk == buf then loop (ivAdd counter bpb) else pure ()
+
+-- A buffered byte source over a Handle: holds leftover bytes so the header read
+-- and frame reads compose without losing data.
+data Src = Src !(IORef ByteString) !Handle
+
+newSrc :: Handle -> IO Src
+newSrc h = do
+  ref <- newIORef BS.empty
+  pure (Src ref h)
+
+-- Read up to n bytes (fewer only at end of input).
+srcRead :: Src -> Int -> IO ByteString
+srcRead s@(Src ref h) n = do
+  buf <- readIORef ref
+  if BS.length buf >= n
+    then do
+      writeIORef ref (BS.drop n buf)
+      pure (BS.take n buf)
+    else do
+      more <- BS.hGet h (max 65536 (n - BS.length buf))
+      if BS.null more
+        then do writeIORef ref BS.empty; pure buf
+        else do writeIORef ref (buf <> more); srcRead s n
+
+-- Read exactly n bytes, or Nothing if the input ends first.
+srcReadExact :: Src -> Int -> IO (Maybe ByteString)
+srcReadExact s n = do
+  b <- srcRead s n
+  pure (if BS.length b == n then Just b else Nothing)
+
+-- Accumulate bytes until the header parses, leaving the frame bytes buffered.
+readHeaderSrc :: Src -> IO (Either String (Header, ByteString))
+readHeaderSrc (Src ref h) = go
+  where
+    go = do
+      buf <- readIORef ref
+      case parseHeader buf of
+        Right (header, rest) -> do
+          writeIORef ref rest
+          pure (Right (header, BS.take (BS.length buf - BS.length rest) buf))
+        Left e
+          | "end of input" `isInfixOf` e -> do
+              more <- BS.hGet h 256
+              if BS.null more
+                then pure (Left "truncated header")
+                else do writeIORef ref (buf <> more); go
+          | otherwise -> pure (Left e)
 
 takeE :: Int -> ByteString -> Either String (ByteString, ByteString)
 takeE n bs

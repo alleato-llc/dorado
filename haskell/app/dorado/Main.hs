@@ -8,7 +8,10 @@ import Control.Monad (unless)
 import Data.Char (digitToInt, isHexDigit, isSpace)
 import System.Environment (getArgs)
 import System.Exit (exitFailure)
-import System.IO (hPutStrLn, stderr)
+import System.IO
+  ( Handle, IOMode (ReadMode, WriteMode), hClose, hFlush, hPutStrLn
+  , hSetBinaryMode, openFile, stderr, stdin, stdout
+  )
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as C8
 import Data.ByteString (ByteString)
@@ -98,32 +101,59 @@ isPasswordMode f = has f "--password-stdin" || has f "--password"
 runEncrypt :: Flags -> IO ()
 runEncrypt f = do
   tweak <- orDie (parseTweak (val f "--tweak"))
-  input <- readInput (val f "--in")
   if isPasswordMode f
     then do
+      inP <- requireIn f
       password <- readPassword
       opts <- orDie (buildOptions f)
-      container <- E.encryptPassword password opts tweak input
-      writeOutput (val f "--out") container
+      salt <- E.randomBytes 16
+      iv <- E.randomBytes (TF.blockSize (E.optVariant opts))
+      withIn (Just inP) $ \hin -> withOut (val f "--out") $ \hout ->
+        E.encryptPasswordStream opts salt tweak iv password hin hout
     else do
       (key, iv) <- rawKeyIv f
-      out <- orDie (E.rawCtr key tweak iv input)
-      writeOutput (val f "--out") out
+      withIn (val f "--in") $ \hin -> withOut (val f "--out") $ \hout ->
+        E.rawCtrStream key tweak iv hin hout >>= orDie_
 
 runDecrypt :: Flags -> IO ()
-runDecrypt f = do
-  input <- readInput (val f "--in")
+runDecrypt f =
   if isPasswordMode f
     then do
+      inP <- requireIn f
       password <- readPassword
       let expect = fmap C8.pack (val f "--expect-label")
-      pt <- orDie (E.decryptPasswordExpecting password expect input)
-      writeOutput (val f "--out") pt
+      withIn (Just inP) $ \hin -> withOut (val f "--out") $ \hout ->
+        E.decryptPasswordStream password expect hin hout >>= orDie_
     else do
       (key, iv) <- rawKeyIv f
       tweak <- orDie (parseTweak (val f "--tweak"))
-      out <- orDie (E.rawCtr key tweak iv input)
-      writeOutput (val f "--out") out
+      withIn (val f "--in") $ \hin -> withOut (val f "--out") $ \hout ->
+        E.rawCtrStream key tweak iv hin hout >>= orDie_
+
+-- In password mode, stdin carries the password, so the data must come from --in.
+requireIn :: Flags -> IO FilePath
+requireIn f = maybe (die "password mode needs --in (stdin carries the password)") pure (val f "--in")
+
+withIn :: Maybe FilePath -> (Handle -> IO a) -> IO a
+withIn Nothing k = hSetBinaryMode stdin True >> k stdin
+withIn (Just p) k = do
+  h <- openFile p ReadMode
+  hSetBinaryMode h True
+  r <- k h
+  hClose h
+  pure r
+
+withOut :: Maybe FilePath -> (Handle -> IO a) -> IO a
+withOut Nothing k = hSetBinaryMode stdout True >> k stdout <* hFlush stdout
+withOut (Just p) k = do
+  h <- openFile p WriteMode
+  hSetBinaryMode h True
+  r <- k h
+  hClose h
+  pure r
+
+orDie_ :: Either String () -> IO ()
+orDie_ = either die pure
 
 runInspect :: Flags -> IO ()
 runInspect f = do
@@ -208,10 +238,6 @@ readPassword = stripNL <$> BS.getContents
 readInput :: Maybe FilePath -> IO ByteString
 readInput Nothing = BS.getContents
 readInput (Just p) = BS.readFile p
-
-writeOutput :: Maybe FilePath -> ByteString -> IO ()
-writeOutput Nothing = BS.putStr
-writeOutput (Just p) = BS.writeFile p
 
 formatInfo :: E.ContainerInfo -> String
 formatInfo i =

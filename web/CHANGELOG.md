@@ -15,6 +15,10 @@ Cross-cutting changes live in the [Core CHANGELOG](../CHANGELOG.md);
 - Added the Haskell port: the comparison table gains a Haskell row and the page now
   says "nine implementations" (hero, meta description, and the implementations
   section).
+- Added the C++ port: the comparison table gains a C++ row (engine wipes keys; CLI
+  mlocks the password) and the page now says "ten implementations". Reordered the
+  comparison table and the prose enumerations to the native-first order shared with
+  the sibling foxtrot site (Rust, Go, C, C++, Zig, Java, Python, Haskell, TypeScript).
 
 ## [0.1.0]
 

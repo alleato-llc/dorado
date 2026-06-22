@@ -5,6 +5,7 @@ module Main (main) where
 
 import Data.Char (digitToInt, intToDigit, isHexDigit)
 import Data.IORef (modifyIORef', newIORef, readIORef)
+import Data.List (nub)
 import Data.Word (Word8)
 import System.Exit (exitFailure)
 import qualified Data.ByteString as BS
@@ -15,6 +16,8 @@ import Dorado.Threefish
 import qualified Dorado.Skein as Skein
 import qualified Dorado.Blake3 as Blake3
 import qualified Dorado.Sha256 as Sha256
+import qualified Dorado.Kdf as Kdf
+import qualified Dorado.Mac as Mac
 
 -- Official BLAKE3 test-vector input convention: byte i = i mod 251.
 seqBytes :: Int -> ByteString
@@ -149,6 +152,27 @@ main = do
     (toHex (Sha256.hmacSha256 (BS.replicate 131 0xaa)
               (C8.pack "Test Using Larger Than Block-Size Key - Hash Key First"))
        == "60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54")
+
+  -- KDF delegation (crypton). scrypt and PBKDF2-HMAC-SHA256 vectors from RFC 7914;
+  -- Argon2id is validated end-to-end via the container cross-compat tests.
+  check "scrypt RFC7914 (N=16,r=1,p=1, empty)"
+    (toHex (Kdf.derive (Kdf.Scrypt 4 1 1) BS.empty BS.empty 64)
+       == "77d6576238657b203b19ca42c18a0497f16b4844e3074ae8dfdffa3fede21442"
+       ++ "fcd0069ded0948f8326a753a0fc81f17e8d3e0fb2e0d3628cf35e20c38d18906")
+  check "pbkdf2-hmac-sha256 RFC7914 (passwd/salt, c=1)"
+    (toHex (Kdf.derive (Kdf.Pbkdf2 1) (C8.pack "passwd") (C8.pack "salt") 64)
+       == "55ac046e56e3089fec1691c22544b605f94185216dde0465e68b9d57c20dacbc"
+       ++ "49ca9cccf179b645991664b39d77ef317c71b845b1e30bd509112041d3a19783")
+
+  -- MAC dispatch: every option yields a 32-byte tag; the three differ for the
+  -- same key/message. (Each delegates to an already-verified primitive; the
+  -- container cross-compat tests pin the exact bytes end-to-end.)
+  let mkey = BS.replicate 32 0x5a
+      mmsg = C8.pack "frame contents"
+      tags = [ Mac.tag m mkey mmsg | m <- [Mac.HmacSha256, Mac.Skein512, Mac.Blake3Keyed] ]
+  check "mac tags are all 32 bytes" (all ((== 32) . BS.length) tags)
+  check "mac tags differ by algorithm" (length (nub tags) == 3)
+  check "mac skein512 == primitive keyed skein" (Mac.tag Mac.Skein512 mkey mmsg == Skein.mac mkey 32 mmsg)
 
   n <- readIORef fails
   if n == 0

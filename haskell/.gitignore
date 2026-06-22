@@ -1,0 +1,4 @@
+# cabal / GHC build output
+dist-newstyle/
+*.hi
+*.o

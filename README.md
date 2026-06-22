@@ -40,6 +40,10 @@ This repository is a modular monorepo:
   streaming over `Handle`s in constant memory, with an SDK and the `dorado`/`gyotaku`
   CLIs. Strict throughout (the primitive cores run in `ST` over unboxed arrays); KDFs
   via `crypton`; built and tested with Cabal. See [`haskell/README.md`](haskell/README.md).
+- **[`cpp/`](cpp/)** — a C++ port (C++23, CMake): the same primitives and format,
+  streaming over `std::istream`/`std::ostream` in constant memory, with an SDK and the
+  `dorado`/`gyotaku` CLIs. SHA-256/HMAC are from scratch alongside the cipher; only the
+  password KDFs are delegated, to OpenSSL's `EVP_KDF`. See [`cpp/README.md`](cpp/README.md).
 - **[`rust/wasm/`](rust/wasm/)** — the verified Rust cipher compiled to WebAssembly
   via `wasm-bindgen`. The same `.wasm` is the cipher backend for the `ts/` Node CLI
   and the browser demo, so the secret arithmetic runs in WASM linear memory rather
@@ -54,7 +58,7 @@ This repository is a modular monorepo:
   [Gota](https://github.com/alleato-llc/gota), a standalone micro-benchmark reference
   that `bench/` consumes. See [`bench/README.md`](bench/README.md).
 
-The nine implementations share one on-disk format and are byte-for-byte
+The ten implementations share one on-disk format and are byte-for-byte
 cross-compatible: each can decrypt the others' `.mahi` files, verified across every
 KDF, MAC, and cipher variant. They differ in what their runtime allows (frontends,
 streaming, `no_std`, secret-memory protection); [`docs/implementations.md`](docs/implementations.md)
@@ -87,8 +91,8 @@ The browser demo needs the WASM cipher built first; see [`web/README.md`](web/RE
 ## Continuous integration
 
 CI lives at the repository root in [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
-It is path-filtered: each port's job (Rust, Go, Java, Python, C, Zig, Haskell) and the
-`web/` build run only when that component changed, and a change to the wire-format spec
+It is path-filtered: each port's job (Rust, Go, Java, Python, C, Zig, Haskell, C++) and
+the `web/` build run only when that component changed, and a change to the wire-format spec
 ([`docs/spec.md`](docs/spec.md)) or to the workflow re-runs every port's suite to
 preserve cross-compatibility. The Rust jobs cover fmt, clippy, test, `cargo audit`, and
 a bare-metal `no_std` build; each other port runs its own build and test suite,

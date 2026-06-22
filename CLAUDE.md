@@ -66,6 +66,16 @@ This is the dorado monorepo. It has several parts:
   of a KDF library; HMAC/SHA-256/Skein/BLAKE3 are from scratch. `cabal test` runs
   the suite, including cross-compat fixtures made by the Rust CLI in
   `test/fixtures/`. Run cabal from inside `haskell/`.
+- `cpp/` — a C++ port (CMake, C++23) with an SDK (`libdorado.a`) and the
+  `dorado`/`gyotaku` CLIs: same from-scratch primitives, same on-disk format
+  (cross-compatible), streaming over `std::istream`/`std::ostream` in constant memory
+  like the Rust reference (the in-memory byte APIs wrap the streaming core via
+  `std::stringstream`). C++'s native `std::uint64_t` makes the 64-bit ARX direct;
+  engine results are `std::expected<T, std::string>`. SHA-256 + HMAC are from scratch
+  alongside the cipher/Skein/BLAKE3; only the three password KDFs (Argon2id, scrypt,
+  PBKDF2) are delegated, to OpenSSL's `EVP_KDF` (OpenSSL >= 3.2, the sole dependency).
+  `ctest` (or `./build/dorado_test`) runs the suite, including cross-compat fixtures
+  made by the Rust CLI in `tests/fixtures/`. Run cmake from inside `cpp/`.
 - `rust/wasm/` — the verified Rust cipher compiled to WebAssembly via
   `wasm-bindgen` (a separate crate, excluded from the `rust/` workspace). It exports
   only the cipher/hash primitives (CTR, Skein, BLAKE3), not the engine; the engine
@@ -89,8 +99,8 @@ This is the dorado monorepo. It has several parts:
   not from CI. Benchmarks the implementations only; never put fabricated numbers here.
 
 When changing the wire format or an algorithm, keep `rust/`, `go/`, `ts/`, `java/`,
-`python/`, `c/`, `zig/`, and `haskell/` in sync or cross-compatibility breaks. The
-nine implementations are byte-for-byte cross-compatible and that property is tested.
+`python/`, `c/`, `zig/`, `haskell/`, and `cpp/` in sync or cross-compatibility breaks.
+The ten implementations are byte-for-byte cross-compatible and that property is tested.
 The Rust implementation is the reference and the baseline for vectors and fixtures.
 
 CI lives at the repo root in `.github/workflows/ci.yml`. It is path-filtered: a

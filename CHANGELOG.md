@@ -28,7 +28,9 @@ This changelog starts in 2026-06; for earlier history see the git log.
   decrypting the Rust CLI's `.mahi` fixtures and by Rust decrypting its output). It is
   the first port to implement SHA-256/HMAC-SHA256 from scratch as well; KDFs are
   delegated to `crypton`. The docs now say "nine implementations" (`README.md`, root
-  `CLAUDE.md`, `docs/implementations.md`, `VERSIONS.md`). Per-port details are in
+  `CLAUDE.md`, `docs/implementations.md`, `VERSIONS.md`). CI gains a path-filtered
+  `haskell` job (GHC 9.14 + cabal, `cabal test`), wired into the `changes` filter and
+  re-run on `docs/spec.md` changes like the other ports. Per-port details are in
   [`haskell/CHANGELOG.md`](haskell/CHANGELOG.md).
 - CLI feature parity across every CLI port (`go`, `python`, `c`, `zig`, `ts`; Rust is
   the reference). Both binaries (`dorado` and `gyotaku`) in every port now accept

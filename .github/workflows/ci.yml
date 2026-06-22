@@ -18,6 +18,7 @@ jobs:
       python: ${{ steps.filter.outputs.python }}
       c: ${{ steps.filter.outputs.c }}
       zig: ${{ steps.filter.outputs.zig }}
+      haskell: ${{ steps.filter.outputs.haskell }}
       web: ${{ steps.filter.outputs.web }}
     steps:
       - uses: actions/checkout@v4
@@ -46,6 +47,9 @@ jobs:
             zig:
               - *spec
               - 'zig/**'
+            haskell:
+              - *spec
+              - 'haskell/**'
             web:
               - '.github/workflows/ci.yml'
               - 'web/**'
@@ -212,6 +216,25 @@ jobs:
       - run: zig build
       - run: zig build test
       - run: zig build freestanding   # the primitives cross-compile to bare-metal ARM
+
+  # Build and test the Haskell port (SDK + CLIs). KDFs via crypton (fetched by
+  # cabal); the suite's cross-compat tests decrypt fixtures made by the Rust CLI,
+  # committed in the repo. GHC 9.14 matches the toolchain the port is developed on.
+  haskell:
+    needs: changes
+    if: needs.changes.outputs.haskell == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: haskell
+    steps:
+      - uses: actions/checkout@v4
+      - uses: haskell-actions/setup@v2
+        with:
+          ghc-version: "9.14.1"
+          cabal-version: "latest"
+      - run: cabal build all
+      - run: cabal test
 
   # Build the landing page in web/ so a broken site fails CI.
   web:

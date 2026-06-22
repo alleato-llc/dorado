@@ -87,8 +87,12 @@ The browser demo needs the WASM cipher built first; see [`web/README.md`](web/RE
 ## Continuous integration
 
 CI lives at the repository root in [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
-It runs the Rust jobs (fmt, clippy, test, and `cargo audit`) from `rust/` and builds
-the `web/` site.
+It is path-filtered: each port's job (Rust, Go, Java, Python, C, Zig, Haskell) and the
+`web/` build run only when that component changed, and a change to the wire-format spec
+([`docs/spec.md`](docs/spec.md)) or to the workflow re-runs every port's suite to
+preserve cross-compatibility. The Rust jobs cover fmt, clippy, test, `cargo audit`, and
+a bare-metal `no_std` build; each other port runs its own build and test suite,
+including the cross-compat fixtures.
 
 ## Changelog and versions
 

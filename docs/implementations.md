@@ -27,7 +27,7 @@ both run the verified Rust cipher compiled to WASM and work in memory.
 | **C** | Port; CLIs | native | system `libargon2` + OpenSSL | Yes | engine wipes keys; CLI mlocks password |
 | **Zig** | Port; CLIs | native | Zig stdlib (no external deps) | Yes | engine wipes keys; CLI mlocks password |
 | **Haskell** | Port; CLIs | native | `crypton` (argon2/scrypt/pbkdf2) | Yes | caller-managed (GC; no wipe) |
-| **C++** | Port; CLIs | native | OpenSSL `EVP_KDF` (argon2/scrypt/pbkdf2) | Yes | caller-managed (no wipe) |
+| **C++** | Port; CLIs | native | OpenSSL `EVP_KDF` (argon2/scrypt/pbkdf2) | Yes | engine wipes keys; CLI mlocks password |
 | **TypeScript · Node** | Port; CLIs | WASM (Rust cipher) | `hash-wasm` (WASM) | No (in-memory) | `sodium-native` locked buffers |
 | **TypeScript · Browser** | In-page demo | WASM (Rust cipher) | `hash-wasm` (WASM) | No (in-memory) | none (demo, not secure) |
 
@@ -97,9 +97,14 @@ under ASan/UBSan).
     even be wiped in place).
   - *Haskell* is caller-managed like Java and Python: secrets live in GC-managed
     `ByteString`s that are not wiped, and the CLI does not `mlock` the password.
-  - *C++* is also caller-managed: secrets live in `std::vector<std::uint8_t>` that are
-    not wiped, and the CLI does not `mlock` the password. (Nothing prevents adding
-    `OPENSSL_cleanse` on a guard object the way C does; it is just not wired yet.)
+  - *C++* wipes the derived keys and the cipher's expanded key schedule, and its CLI
+    holds the password in a page-aligned, `mlock`'d buffer kept out of swap. The wipe
+    runs automatically on every exit path: the `Threefish` schedule in its destructor,
+    the derived keys via a scope guard, the C++ analogs of C's `cleanup` attribute. The
+    clear is a non-elidable volatile-write wipe (the standard forbids optimizing volatile
+    stores away), the portable analog of C/Zig's `OPENSSL_cleanse`/`secureZero`. C++ is
+    not memory-safe (like C), and unlike the C port has no sanitizer/fuzz harness wired
+    yet, so a bug elsewhere could still expose a secret.
   - *TypeScript on Node* holds CLI-held secrets in `sodium-native` locked, off-heap,
     guard-paged buffers and wipes them after use; the WASM backend keeps the
     cipher's transient values off the JavaScript heap.

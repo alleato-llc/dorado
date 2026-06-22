@@ -1,24 +1,96 @@
 // dorado: password/raw-key encryption CLI. Password mode derives a key and writes
 // an authenticated container; raw-key mode is bare CTR. `inspect` prints the
 // non-secret header. Streams over file/std handles in constant memory.
+#include <sys/mman.h>
+#include <unistd.h>
+
 #include <cctype>
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <iostream>
 #include <iterator>
 #include <map>
+#include <new>
 #include <optional>
 #include <set>
+#include <span>
 #include <string>
 #include <variant>
 #include <vector>
 
 #include "dorado/engine.hpp"
+#include "internal.hpp"
 
 namespace {
 
 using Bytes = std::vector<std::uint8_t>;
 using dorado::engine::Options;
+
+std::size_t page_size() {
+  long pg = sysconf(_SC_PAGESIZE);
+  return pg < 1 ? 4096 : std::size_t(pg);
+}
+
+// A page-aligned, mlock'd buffer for the password: kept out of swap, and wiped +
+// unlocked on destruction. mlock failure (e.g. RLIMIT_MEMLOCK on a locked-down host)
+// is non-fatal; the buffer is still wiped. Mirrors the C port's secure_alloc.
+class SecureBuffer {
+ public:
+  SecureBuffer() { allocate(page_size()); }
+  ~SecureBuffer() { destroy(); }
+  SecureBuffer(const SecureBuffer&) = delete;
+  SecureBuffer& operator=(const SecureBuffer&) = delete;
+
+  // Read all of `in` directly into locked memory, growing as needed.
+  void read_all_from(std::istream& in) {
+    for (;;) {
+      if (len_ == cap_) grow();
+      in.read(reinterpret_cast<char*>(p_ + len_), std::streamsize(cap_ - len_));
+      len_ += std::size_t(in.gcount());
+      if (!in.good()) break;
+    }
+  }
+  void pop_trailing_newline() {
+    if (len_ > 0 && p_[len_ - 1] == '\n') --len_;
+  }
+  std::span<const std::uint8_t> span() const { return {p_, len_}; }
+
+ private:
+  std::uint8_t* p_ = nullptr;
+  std::size_t cap_ = 0;
+  std::size_t len_ = 0;
+
+  void allocate(std::size_t want) {
+    std::size_t pg = page_size();
+    std::size_t c = ((want + pg - 1) / pg) * pg;
+    void* np = nullptr;
+    if (posix_memalign(&np, pg, c) != 0) throw std::bad_alloc();
+    mlock(np, c);  // best-effort
+    p_ = static_cast<std::uint8_t*>(np);
+    cap_ = c;
+    len_ = 0;
+  }
+  void destroy() {
+    if (p_ == nullptr) return;
+    dorado::detail::secure_wipe(p_, cap_);
+    munlock(p_, cap_);
+    std::free(p_);
+    p_ = nullptr;
+    cap_ = len_ = 0;
+  }
+  void grow() {
+    std::uint8_t* old = p_;
+    std::size_t old_cap = cap_, old_len = len_;
+    allocate(cap_ * 2);
+    std::memcpy(p_, old, old_len);
+    len_ = old_len;
+    dorado::detail::secure_wipe(old, old_cap);
+    munlock(old, old_cap);
+    std::free(old);
+  }
+};
 
 const char* kUsage =
     "dorado - Threefish encryption with a password container or a raw key.\n\n"
@@ -171,15 +243,16 @@ int run_encrypt(const Flags& f) {
     if (!in) return die("cannot open " + *in_path);
     auto opts = build_options(f);
     if (!opts) return 1;
-    std::string pw = read_all(std::cin);
-    if (!pw.empty() && pw.back() == '\n') pw.pop_back();
+    SecureBuffer pw;
+    pw.read_all_from(std::cin);
+    pw.pop_trailing_newline();
     Bytes salt(16), iv(block_size(opts->variant));
     dorado::engine::random_bytes(salt);
     dorado::engine::random_bytes(iv);
     std::ofstream fout;
     std::ostream* out = &std::cout;
     if (auto p = f.get("--out")) { fout.open(*p, std::ios::binary); if (!fout) return die("cannot open " + *p); out = &fout; }
-    dorado::engine::encrypt_password_stream(*opts, salt, *tweak, iv, to_bytes(pw), in, *out);
+    dorado::engine::encrypt_password_stream(*opts, salt, *tweak, iv, pw.span(), in, *out);
     return 0;
   }
   auto key = resolve_key(f);
@@ -205,16 +278,16 @@ int run_decrypt(const Flags& f) {
     if (!in_path) return die("password mode needs --in (stdin carries the password)");
     std::ifstream in(*in_path, std::ios::binary);
     if (!in) return die("cannot open " + *in_path);
-    std::string pw = read_all(std::cin);
-    if (!pw.empty() && pw.back() == '\n') pw.pop_back();
-    Bytes pwb = to_bytes(pw);
+    SecureBuffer pw;
+    pw.read_all_from(std::cin);
+    pw.pop_trailing_newline();
     std::ofstream fout;
     std::ostream* out = &std::cout;
     if (auto p = f.get("--out")) { fout.open(*p, std::ios::binary); if (!fout) return die("cannot open " + *p); out = &fout; }
     std::optional<Bytes> label;
     std::optional<dorado::engine::Span> expect;
     if (auto l = f.get("--expect-label")) { label = to_bytes(*l); expect = *label; }
-    auto r = dorado::engine::decrypt_password_stream(pwb, expect, in, *out);
+    auto r = dorado::engine::decrypt_password_stream(pw.span(), expect, in, *out);
     if (!r) return die(r.error());
     return 0;
   }

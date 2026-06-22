@@ -56,6 +56,11 @@ This changelog starts in 2026-06; for earlier history see the git log.
   cross-compat invariant, a change to the wire-format spec (`docs/spec.md`) or to the
   workflow itself re-runs every port's suite; a pure docs/changelog change runs no
   build jobs. Skipped jobs are reported as passing, so required checks are unaffected.
+- Docs: standardized the per-language port READMEs (`go`, `ts`, `java`, `python`, `c`,
+  `zig`) to one template (intro, Layout, Build, Use with SDK + CLI, Testing,
+  Cross-compatibility, then port-specific notes); the Rust README stays the fuller
+  reference. Corrected stale "all four implementations" wording to "all the ports" in
+  `docs/spec.md`, `rust/docs/overview.md`, `rust/CLAUDE.md`, and `rust/README.md`.
 
 ### Removed
 

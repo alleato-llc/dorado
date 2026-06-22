@@ -1,56 +1,15 @@
 # dorado (C)
 
-A C port of dorado (C17), matching the Rust reference (`../rust`) and the Go, Java,
-Python, and TypeScript ports. Same from-scratch primitives against the same official
-vectors, the same on-disk container format (byte-for-byte cross-compatible), the
-same CLIs, and the same streaming construction. An SDK (`libdorado.a`) plus the two
-command-line tools.
+A C port of dorado (C17), matching the Rust reference (`../rust`) and the other
+ports. Same from-scratch primitives against the same official vectors, the same
+on-disk container format (byte-for-byte cross-compatible), the same CLIs, and the
+same streaming construction. An SDK (`libdorado.a`) plus the two command-line tools.
 
 Like the Rust reference, it **streams** over `FILE *` in constant memory (files
 larger than RAM are fine); in-memory wrappers (`fmemopen`/`open_memstream`) are
 provided. The cipher and the Skein/BLAKE3 hashes are from scratch; the KDFs are
 delegated to system libraries: **Argon2id from `libargon2`**, scrypt/PBKDF2/HMAC
 from **OpenSSL**, both found via `pkg-config`. Educational and unaudited.
-
-## Build
-
-Install the two system libraries first, then `make`:
-
-```
-# macOS
-brew install argon2 openssl@3
-# Debian/Ubuntu
-sudo apt-get install -y libargon2-dev libssl-dev pkg-config
-
-make            # builds libdorado.a, dorado, gyotaku
-make test       # builds and runs the test suite
-make freestanding   # compiles the primitives with no OS / allocator
-```
-
-On macOS the Makefile adds the Homebrew `pkg-config` paths automatically.
-
-## Secret handling and bare-metal
-
-The engine wipes the derived keys and the cipher's expanded key schedule with
-`OPENSSL_cleanse` (which the compiler cannot optimize away). The wipe runs
-automatically on every exit path via `__attribute__((cleanup(...)))` (a GCC/Clang
-extension, the C analog of Rust's `Drop` and Zig's `defer`), so a future early return
-cannot forget it. The `dorado` CLI holds the password in a page-aligned, `mlock`'d
-buffer kept out of swap and wiped on free. This is a reduction in exposure, not a
-guarantee: the password still transits `argv`/stdin first, and `mlock` is best-effort
-(skipped without error if `RLIMIT_MEMLOCK` forbids it). C is not memory-safe, so a
-bug elsewhere could still expose a secret. To catch that class, CI reruns the test
-suite under AddressSanitizer and UndefinedBehaviorSanitizer via `make test SAN=1`
-(plain `make test` stays unsanitized); the suite includes a deterministic randomized
-"smash" pass that feeds thousands of random, truncated, and mutated inputs to the
-decrypt entrypoint, so the sanitizers exercise the untrusted parse path. A libFuzzer
-harness for the same path is in `fuzz/` (`make fuzz`, needs a clang with libFuzzer).
-
-The from-scratch primitives (Threefish/CTR, Skein, BLAKE3) depend on no allocator
-and no OS, so `make freestanding` compiles them with `-ffreestanding` for a
-bare-metal target, mirroring the Rust port's `no_std` cipher crate. The construction
-(KDFs, container, CLIs) needs `malloc`/`FILE`/`libargon2`/OpenSSL and is not
-bare-metal.
 
 ## Layout
 
@@ -67,7 +26,24 @@ bare-metal.
 - `src/cli_dorado.c`, `src/cli_gyotaku.c` — the two CLIs.
 - `fuzz/fuzz_decrypt.c` — a libFuzzer harness for the decrypt path (`make fuzz`).
 
+## Build
+
+Install the two system libraries first, then `make`:
+
+```
+# macOS
+brew install argon2 openssl@3
+# Debian/Ubuntu
+sudo apt-get install -y libargon2-dev libssl-dev pkg-config
+
+make            # builds libdorado.a, dorado, gyotaku
+```
+
+On macOS the Makefile adds the Homebrew `pkg-config` paths automatically.
+
 ## Use
+
+SDK:
 
 ```c
 #include <dorado/engine.h>
@@ -81,16 +57,47 @@ const char *err = dorado_encrypt_password(pw, pw_len, &opts, pt, pt_len, &ct, &c
 dorado_encrypt_password_stream(pw, pw_len, &opts, stdin, stdout);
 ```
 
+CLI:
+
 ```
 dorado encrypt --password-stdin --in notes.txt --out notes.txt.mahi
 gyotaku --bits 256 notes.txt
 ```
+
+## Testing
+
+```
+make test           # KATs, every KDF/MAC/variant, the security properties, and
+                    # cross-compat fixtures from the Rust CLI, plus a randomized
+                    # "smash" pass over the decrypt path
+make test SAN=1     # the same suite under AddressSanitizer + UndefinedBehaviorSanitizer
+make fuzz           # build the libFuzzer decrypt harness (needs clang + libFuzzer)
+```
+
+CI runs `make test` and the sanitized `make test SAN=1`.
 
 ## Cross-compatibility
 
 The container bytes are identical to the other ports: each can decrypt the others'
 `.mahi` files. `make test` decrypts fixtures produced by the Rust reference (in
 `tests/fixtures/`) covering every KDF, MAC, and variant plus a labeled and a
-multi-frame file; the reverse direction is verified during development. CI also
-reruns the suite under AddressSanitizer and UndefinedBehaviorSanitizer (`make test
-SAN=1`).
+multi-frame file; the reverse direction is verified during development.
+
+## Secret handling and bare-metal
+
+The engine wipes the derived keys and the cipher's expanded key schedule with
+`OPENSSL_cleanse` (which the compiler cannot optimize away). The wipe runs
+automatically on every exit path via `__attribute__((cleanup(...)))` (a GCC/Clang
+extension, the C analog of Rust's `Drop` and Zig's `defer`), so a future early return
+cannot forget it. The `dorado` CLI holds the password in a page-aligned, `mlock`'d
+buffer kept out of swap and wiped on free. This is a reduction in exposure, not a
+guarantee: the password still transits `argv`/stdin first, and `mlock` is best-effort
+(skipped without error if `RLIMIT_MEMLOCK` forbids it). C is not memory-safe, so a
+bug elsewhere could still expose a secret; the sanitized CI run and the libFuzzer
+harness (above) exist to catch that class on the untrusted parse path.
+
+The from-scratch primitives (Threefish/CTR, Skein, BLAKE3) depend on no allocator
+and no OS, so `make freestanding` compiles them with `-ffreestanding` for a
+bare-metal target, mirroring the Rust port's `no_std` cipher crate. The construction
+(KDFs, container, CLIs) needs `malloc`/`FILE`/`libargon2`/OpenSSL and is not
+bare-metal.

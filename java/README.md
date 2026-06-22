@@ -1,16 +1,15 @@
 # dorado (Java)
 
-A Java port of dorado, matching the Rust reference (`../rust`) and the Go and
-TypeScript ports. Same from-scratch primitives against the same official vectors,
-the same on-disk container format (byte-for-byte cross-compatible with the other
-ports), and the same streaming construction. It is an **SDK only** (a library, no
-CLI and no GUI).
+A Java port of dorado, matching the Rust reference (`../rust`) and the other ports.
+Same from-scratch primitives against the same official vectors, the same on-disk
+container format (byte-for-byte cross-compatible), and the same streaming
+construction. It is an **SDK only** (a library, no CLI and no GUI).
 
-Like the Rust reference and the Go port, it **streams** over
-`InputStream`/`OutputStream` in constant memory, so inputs larger than RAM are
-fine; `byte[]` convenience wrappers are provided. Java's `long` is a native 64-bit
-two's-complement integer, so the Threefish ARX needs no big-integer workaround.
-Educational and unaudited; for real data prefer a vetted library.
+Like the Rust reference, it **streams** over `InputStream`/`OutputStream` in
+constant memory, so inputs larger than RAM are fine; `byte[]` convenience wrappers
+are provided. Java's `long` is a native 64-bit two's-complement integer, so the
+Threefish ARX needs no big-integer workaround. Educational and unaudited; for real
+data prefer a vetted library.
 
 ## Layout
 
@@ -26,13 +25,15 @@ Educational and unaudited; for real data prefer a vetted library.
 The cipher and hashes are from-scratch; only the KDFs are a dependency
 (`org.bouncycastle:bcprov-jdk18on`), matching the other ports' use of a KDF library.
 
-## Use
+## Build
 
 ```
-./gradlew test     # the full JUnit suite (KATs, every KDF/MAC/variant, security
-                   # properties, and cross-compat fixtures made by the Rust CLI)
 ./gradlew build    # compile + test + jar
 ```
+
+## Use
+
+This port is an SDK (no CLI):
 
 ```java
 import com.alleato.dorado.engine.Engine;
@@ -48,10 +49,19 @@ Engine.encryptPasswordStream(password, opts, inputStream, outputStream);
 Engine.decryptPasswordStream(password, inputStream, outputStream);
 ```
 
+## Testing
+
+```
+./gradlew test     # the full JUnit suite: KATs, every KDF/MAC/variant, the
+                   # security properties, and cross-compat fixtures made by the
+                   # Rust CLI
+```
+
 ## Cross-compatibility
 
-The container bytes are identical to the Rust/Go/TypeScript ports: each can decrypt
-the others' `.mahi` files. `CrossCompatTest` decrypts fixtures produced by the Rust
-reference (in `src/test/resources/crosscompat/`) covering every KDF, MAC, and
-variant plus a labeled and a multi-frame file; the reverse direction (the Rust and
-Go CLIs decrypting Java's output) is verified during development.
+The container bytes are identical to the Rust/Go/TypeScript/Python/C/Zig ports:
+each can decrypt the others' `.mahi` files. `CrossCompatTest` decrypts fixtures
+produced by the Rust reference (in `src/test/resources/crosscompat/`) covering
+every KDF, MAC, and variant plus a labeled and a multi-frame file; the reverse
+direction (the Rust and Go CLIs decrypting Java's output) is verified during
+development.

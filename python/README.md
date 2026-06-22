@@ -1,9 +1,9 @@
 # dorado (Python)
 
-A Python port of dorado, matching the Rust reference (`../rust`) and the Go, Java,
-and TypeScript ports. Same from-scratch primitives against the same official
-vectors, the same on-disk container format (byte-for-byte cross-compatible), the
-same CLIs, and the same streaming construction. An SDK plus two command-line tools.
+A Python port of dorado, matching the Rust reference (`../rust`) and the other
+ports. Same from-scratch primitives against the same official vectors, the same
+on-disk container format (byte-for-byte cross-compatible), the same CLIs, and the
+same streaming construction. An SDK plus the two command-line tools.
 
 Like the Rust reference, it **streams** over binary file-like objects in constant
 memory, so inputs larger than RAM are fine; in-memory `bytes` wrappers are provided.
@@ -24,16 +24,16 @@ explicit mask. Educational and unaudited; for real data prefer a vetted library.
 The cipher and hashes are from-scratch; only Argon2id is a dependency
 (`argon2-cffi`), matching the other ports' use of a KDF library.
 
-## Use
+## Build
 
 ```
 python -m venv .venv && . .venv/bin/activate
 pip install -e ".[dev]"
-pytest                      # KATs, every KDF/MAC/variant, security properties,
-                            # and cross-compat fixtures made by the Rust CLI
-dorado encrypt --password-stdin --in notes.txt --out notes.txt.mahi
-gyotaku --bits 256 notes.txt
 ```
+
+## Use
+
+SDK:
 
 ```python
 from dorado import encrypt_password, decrypt_password, default_options
@@ -45,10 +45,24 @@ recovered = decrypt_password(b"correct horse", container)
 #   decrypt_password_stream(password, reader, writer)
 ```
 
+CLI:
+
+```
+dorado encrypt --password-stdin --in notes.txt --out notes.txt.mahi
+gyotaku --bits 256 notes.txt
+```
+
+## Testing
+
+```
+pytest        # KATs, every KDF/MAC/variant, the security properties, and
+              # cross-compat fixtures made by the Rust CLI
+```
+
 ## Cross-compatibility
 
-The container bytes are identical to the Rust/Go/Java/TypeScript ports: each can
-decrypt the others' `.mahi` files. `tests/test_crosscompat.py` decrypts fixtures
+The container bytes are identical to the Rust/Go/Java/TypeScript/C/Zig ports: each
+can decrypt the others' `.mahi` files. `tests/test_crosscompat.py` decrypts fixtures
 produced by the Rust reference (in `tests/fixtures/`) covering every KDF, MAC, and
 variant plus a labeled and a multi-frame file; the reverse direction is verified
 during development.

@@ -7,6 +7,12 @@ Cross-cutting changes live in the [Core CHANGELOG](../CHANGELOG.md);
 
 ## [Unreleased]
 
+### Changed
+
+- The hero lead and the page meta description now reflect all eight implementations
+  (Rust, Go, Java, Python, C, Zig, TypeScript). They previously named only "Rust, Go,
+  and TypeScript", inconsistent with the "eight implementations" section.
+
 ## [0.1.0]
 
 ### Added

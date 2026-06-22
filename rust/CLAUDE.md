@@ -43,7 +43,7 @@ or rearchitect for it without an explicit request.
 
 Three docs back this up. `docs/overview.md` (Rust-local) is the accessible,
 conceptual tour with diagrams (layers, flows, threat model). The other two are
-project-wide, since all four implementations share the format, so they live at the
+project-wide, since all the ports share the format, so they live at the
 repo root: `../docs/spec.md` is the precise byte-level wire format and cipher
 constants and the only place the on-disk format is documented (keep it in sync when
 the format changes, and bump `format::VERSION`), and `../docs/glossary.md` defines

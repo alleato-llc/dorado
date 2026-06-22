@@ -154,7 +154,7 @@ Dorado is not described as secure, production-ready, or guaranteed constant-time
 ## Documentation
 
 Three documents, by depth. The conceptual tour is Rust-local; the wire format and
-glossary are shared across all four implementations, so they live at the repo root:
+glossary are shared across all the ports, so they live at the repo root:
 
 - `docs/overview.md`: the conceptual tour for a general technologist, with diagrams of the layers and the encrypt and decrypt flows, and the threat model.
 - [`../docs/spec.md`](../docs/spec.md): the precise, byte-level wire format and cipher constants, the single source of truth for the on-disk container.

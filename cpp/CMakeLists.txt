@@ -24,6 +24,8 @@ add_library(dorado STATIC
   src/sha256.cpp
   src/mac.cpp
   src/kdf.cpp
+  src/format.cpp
+  src/engine.cpp
 )
 target_include_directories(dorado PUBLIC include)
 target_link_libraries(dorado PUBLIC OpenSSL::Crypto)
@@ -31,4 +33,5 @@ target_link_libraries(dorado PUBLIC OpenSSL::Crypto)
 enable_testing()
 add_executable(dorado_test tests/test.cpp)
 target_link_libraries(dorado_test PRIVATE dorado)
-add_test(NAME dorado_test COMMAND dorado_test)
+# Run from the source dir so the committed cross-compat fixtures resolve.
+add_test(NAME dorado_test COMMAND dorado_test WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})

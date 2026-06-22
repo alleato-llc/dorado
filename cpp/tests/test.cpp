@@ -6,11 +6,14 @@
 #include <cctype>
 #include <cstdint>
 #include <cstdio>
+#include <fstream>
+#include <iterator>
 #include <span>
 #include <string>
 #include <vector>
 
 #include "dorado/blake3.hpp"
+#include "dorado/engine.hpp"
 #include "dorado/kdf.hpp"
 #include "dorado/mac.hpp"
 #include "dorado/sha256.hpp"
@@ -60,6 +63,11 @@ Bytes seq(std::size_t n) {
 }
 
 Bytes ascii(const std::string& s) { return Bytes(s.begin(), s.end()); }
+
+Bytes read_file(const std::string& path) {
+  std::ifstream f(path, std::ios::binary);
+  return Bytes(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
+}
 
 const char* kTweak = "000102030405060708090A0B0C0D0E0F";
 
@@ -219,6 +227,53 @@ int main() {
     auto m3 = dorado::mac::tag(dorado::mac::Mac::Blake3Keyed, mk, ascii("frame"));
     check("mac tags are 32 bytes and differ",
           m1.size() == 32 && m2.size() == 32 && m3.size() == 32 && m1 != m2 && m2 != m3 && m1 != m3);
+  }
+
+  // Container cross-compatibility: decrypt .mahi files produced by the Rust CLI.
+  {
+    using namespace dorado;
+    Bytes pw = ascii("correct horse battery staple");
+    Bytes pt1 = ascii("Attack at dawn. Meet by the old oak.");
+    auto dec_fix = [&](const std::string& name, const Bytes& expected) {
+      auto r = engine::decrypt_password(pw, read_file("tests/fixtures/" + name));
+      check("decrypt rust fixture " + name, r.has_value() && *r == expected);
+    };
+    dec_fix("pbkdf2-skein-256.mahi", pt1);
+    dec_fix("scrypt-hmac-256.mahi", pt1);
+    dec_fix("argon2-blake3-256.mahi", pt1);
+    dec_fix("pbkdf2-skein-512.mahi", pt1);
+    dec_fix("labeled.mahi", pt1);
+    dec_fix("multichunk.mahi", seq(3000));
+
+    Bytes fix = read_file("tests/fixtures/pbkdf2-skein-256.mahi");
+    check("wrong password rejected", !engine::decrypt_password(ascii("wrong"), fix).has_value());
+    Bytes bad = fix;
+    bad.back() ^= 1;
+    check("tampered tag rejected", !engine::decrypt_password(pw, bad).has_value());
+
+    // Round-trips (fast KDF) across variants, MACs, chunk sizes, and empty input.
+    engine::Options o;
+    o.kdf = kdf::Pbkdf2{1000};
+    Bytes salt(16, 1), tweak(16, 2), iv32(32, 3);
+    auto rt = [&](const std::string& nm, engine::Options opts, const Bytes& iv, const Bytes& msg) {
+      auto c = engine::encrypt_password_with(opts, salt, tweak, iv, pw, msg);
+      auto d = engine::decrypt_password(pw, c);
+      check("round-trip " + nm, d.has_value() && *d == msg);
+    };
+    rt("pbkdf2/skein/256", o, iv32, pt1);
+    {
+      auto h = o; h.mac = mac::Mac::HmacSha256; rt("hmac-sha256", h, iv32, pt1);
+    }
+    {
+      auto b = o; b.mac = mac::Mac::Blake3Keyed; rt("blake3-keyed", b, iv32, pt1);
+    }
+    {
+      auto v = o; v.variant = Variant::TF512; rt("variant-512", v, Bytes(64, 3), pt1);
+    }
+    {
+      auto m = o; m.chunk_size = 64; rt("multi-frame", m, iv32, seq(200));
+    }
+    rt("empty plaintext", o, iv32, Bytes{});
   }
 
   if (failures == 0) {

@@ -11,7 +11,7 @@ from-scratch primitives (Threefish 256/512/1024 + CTR, Skein-512, BLAKE3), the
 DRDO v4 on-disk format, cross-compatibility, and encrypt-then-MAC authentication
 with a constant-time tag compare.
 
-The eight native ports (Rust, Go, Java, Python, C, Zig, Haskell, C++) run their own
+The eight native ports (Rust, Go, C, C++, Zig, Java, Python, Haskell) run their own
 compiled cipher and stream in constant memory. The TypeScript port is one codebase run two ways:
 **Node** (a CLI, with locked secret memory) and **Browser** (the in-page demo);
 both run the verified Rust cipher compiled to WASM and work in memory.
@@ -22,12 +22,12 @@ both run the verified Rust cipher compiled to WASM and work in memory.
 | --- | --- | --- | --- | --- | --- |
 | **Rust** | Reference; CLIs + 2 GUIs | native | `argon2`/`scrypt`/`pbkdf2` crates | Yes | `zeroize` (wiped on drop) + mlock'd password |
 | **Go** | Port; CLIs | native | `golang.org/x/crypto` + stdlib | Yes | engine wipes keys; CLI mlocks password (off-heap) |
+| **C** | Port; CLIs | native | system `libargon2` + OpenSSL | Yes | engine wipes keys; CLI mlocks password |
+| **C++** | Port; CLIs | native | OpenSSL `EVP_KDF` (argon2/scrypt/pbkdf2) | Yes | engine wipes keys; CLI mlocks password |
+| **Zig** | Port; CLIs | native | Zig stdlib (no external deps) | Yes | engine wipes keys; CLI mlocks password |
 | **Java** | Port; SDK only | native | Bouncy Castle | Yes | caller-managed |
 | **Python** | Port; CLIs | native | `argon2-cffi` + `hashlib` | Yes | caller-managed (`bytes` immutable) |
-| **C** | Port; CLIs | native | system `libargon2` + OpenSSL | Yes | engine wipes keys; CLI mlocks password |
-| **Zig** | Port; CLIs | native | Zig stdlib (no external deps) | Yes | engine wipes keys; CLI mlocks password |
 | **Haskell** | Port; CLIs | native | `crypton` (argon2/scrypt/pbkdf2) | Yes | caller-managed (GC; no wipe) |
-| **C++** | Port; CLIs | native | OpenSSL `EVP_KDF` (argon2/scrypt/pbkdf2) | Yes | engine wipes keys; CLI mlocks password |
 | **TypeScript · Node** | Port; CLIs | WASM (Rust cipher) | `hash-wasm` (WASM) | No (in-memory) | `sodium-native` locked buffers |
 | **TypeScript · Browser** | In-page demo | WASM (Rust cipher) | `hash-wasm` (WASM) | No (in-memory) | none (demo, not secure) |
 
@@ -59,7 +59,7 @@ under ASan/UBSan).
 
 ## Where they differ, and why it matters
 
-- **Cipher engine.** Rust, Go, Java, Python, C, Zig, Haskell, and C++ run their own
+- **Cipher engine.** Rust, Go, C, C++, Zig, Java, Python, and Haskell run their own
   compiled cipher. The TypeScript package has a swappable backend: a readable pure-TypeScript
   cipher (used by its test suite) and the verified Rust cipher compiled to WASM. The
   Node CLI and the browser demo both run the WASM backend, so the secret arithmetic

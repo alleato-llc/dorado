@@ -2,9 +2,21 @@
 // Not part of the public API.
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 namespace dorado::detail {
+
+// Overwrite `n` bytes at `p` with zero so the compiler cannot elide the store.
+// Writes through a volatile lvalue are observable behavior the standard forbids
+// optimizing away, so this is the portable analog of OPENSSL_cleanse / secureZero.
+// (Like all such wipes it cannot scrub copies the compiler may have spilled to
+// registers earlier; it clears the buffer itself.)
+inline void secure_wipe(void* p, std::size_t n) noexcept {
+  if (p == nullptr) return;
+  volatile std::uint8_t* v = static_cast<volatile std::uint8_t*>(p);
+  for (std::size_t i = 0; i < n; ++i) v[i] = 0;
+}
 
 inline std::uint32_t load_le32(const std::uint8_t* p) {
   return std::uint32_t(p[0]) | std::uint32_t(p[1]) << 8 | std::uint32_t(p[2]) << 16 |

@@ -25,3 +25,8 @@ is the master table.
 - Test suite (`dorado_test`, run via `ctest`): primitive KATs, every MAC/variant, the
   incremental hashers, and cross-compat fixtures from the Rust CLI with wrong-password
   and tamper rejection plus round-trips.
+- Secret hygiene, matching the C/Zig tier: the engine wipes the derived keys (a scope
+  guard) and the `Threefish` expanded key schedule (its destructor) on every exit path,
+  using a non-elidable volatile-write `secure_wipe`; the `dorado` CLI holds the password
+  in a page-aligned, `mlock`'d buffer wiped on free (best-effort `mlock`). Reflected in
+  `docs/implementations.md`.

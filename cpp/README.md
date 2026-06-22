@@ -83,3 +83,15 @@ The container bytes are identical to the other ports: each can decrypt the other
 `.mahi` files. The test decrypts fixtures produced by the Rust reference (in
 `tests/fixtures/`); the reverse direction (the Rust CLI decrypting this port's
 container, and matching `gyotaku` digests) is verified during development.
+
+## Secret handling
+
+The engine wipes the derived keys and the cipher's expanded key schedule on every
+exit path: the `Threefish` schedule in its destructor and the derived keys via a
+scope guard (the C++ analogs of C's `cleanup` attribute). The clear is a
+non-elidable volatile-write `secure_wipe`, the portable analog of `OPENSSL_cleanse`.
+The CLI holds the password in a page-aligned, `mlock`'d buffer kept out of swap and
+wiped on free (`mlock` is best-effort: skipped without error if `RLIMIT_MEMLOCK`
+forbids it). This reduces exposure but is not a guarantee: the password still transits
+stdin first, C++ is not memory-safe, and (unlike the C port) no sanitizer or fuzz
+harness is wired yet. Educational and unaudited.

@@ -6,13 +6,24 @@
 #include <array>
 #include <sstream>
 #include <stdexcept>
+#include <utility>
 
 #include "dorado/format.hpp"
+#include "internal.hpp"
 
 namespace dorado::engine {
 namespace {
 
 constexpr std::array<std::uint8_t, 8> kDomain = {'D', 'R', 'D', 'O', 'c', 'h', 'n', 'k'};
+
+// Run a cleanup action on scope exit (the C++ analog of C's cleanup attribute).
+template <class F>
+struct ScopeExit {
+  F f;
+  ~ScopeExit() { f(); }
+};
+template <class F>
+ScopeExit(F) -> ScopeExit<F>;
 
 void put_u32be(std::vector<std::uint8_t>& o, std::uint32_t w) {
   for (int i = 3; i >= 0; --i) o.push_back(std::uint8_t(w >> (8 * i)));
@@ -54,7 +65,15 @@ struct Keys {
 };
 Keys derive_keys(const kdf::Kdf& k, Span password, Span salt, int key_len) {
   auto out = kdf::derive(k, password, salt, std::size_t(key_len) + 32);
-  return Keys{Bytes(out.begin(), out.begin() + key_len), Bytes(out.begin() + key_len, out.end())};
+  Keys keys{Bytes(out.begin(), out.begin() + key_len), Bytes(out.begin() + key_len, out.end())};
+  detail::secure_wipe(out.data(), out.size());  // the combined keymat copy
+  return keys;
+}
+
+// Wipe a Keys' enc and mac buffers (their backing storage holds secret material).
+void wipe_keys(Keys& k) {
+  detail::secure_wipe(k.enc.data(), k.enc.size());
+  detail::secure_wipe(k.mac.data(), k.mac.size());
 }
 
 // Read up to n bytes from `in`, appending to `out`. Returns true iff it got n.
@@ -81,6 +100,7 @@ void encrypt_password_stream(const Options& opts, Span salt, Span tweak, Span iv
                              std::istream& in, std::ostream& out) {
   int key_len = key_size(opts.variant);
   Keys keys = derive_keys(opts.kdf, password, salt, key_len);
+  ScopeExit wipe{[&] { wipe_keys(keys); }};  // scrub keys on every exit path
   Threefish tf(opts.variant, keys.enc, tweak);
   std::size_t cs = opts.chunk_size;
   std::uint64_t bpc = cs / block_size(opts.variant);
@@ -149,6 +169,7 @@ Result<void> decrypt_password_stream(Span password, std::optional<Span> expect, 
 
   int key_len = key_size(header.variant);
   Keys keys = derive_keys(header.kdf, password, header.salt, key_len);
+  ScopeExit wipe{[&] { wipe_keys(keys); }};  // scrub keys on every exit path
   Threefish tf(header.variant, keys.enc, header.tweak);
   std::uint64_t bpc = header.chunk_size / block_size(header.variant);
   std::vector<std::uint8_t> counter(header.iv.begin(), header.iv.end());

@@ -30,6 +30,13 @@ constexpr int key_size(Variant v) { return block_size(v); }
 class Threefish {
  public:
   Threefish(Variant v, std::span<const std::uint8_t> key, std::span<const std::uint8_t> tweak);
+  // Wipes the expanded key schedule and tweak on destruction (secret material).
+  ~Threefish();
+  // Holds secret key material, and is only ever used as a local; do not copy/move it.
+  Threefish(const Threefish&) = delete;
+  Threefish& operator=(const Threefish&) = delete;
+  Threefish(Threefish&&) = delete;
+  Threefish& operator=(Threefish&&) = delete;
 
   void encrypt_block(std::span<std::uint8_t> block) const;
   void decrypt_block(std::span<std::uint8_t> block) const;

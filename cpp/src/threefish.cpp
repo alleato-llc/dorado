@@ -4,6 +4,8 @@
 #include <bit>
 #include <vector>
 
+#include "internal.hpp"
+
 namespace dorado {
 namespace {
 
@@ -69,6 +71,11 @@ Threefish::Threefish(Variant v, std::span<const std::uint8_t> key,
   et_[0] = t0;
   et_[1] = t1;
   et_[2] = t0 ^ t1;
+}
+
+Threefish::~Threefish() {
+  detail::secure_wipe(ek_.data(), ek_.size() * sizeof(std::uint64_t));
+  detail::secure_wipe(et_.data(), et_.size() * sizeof(std::uint64_t));
 }
 
 // The i-th word of subkey s: a key word, with the two tweak words and the round

@@ -14,6 +14,7 @@ import Data.ByteString (ByteString)
 import Dorado.Threefish
 import qualified Dorado.Skein as Skein
 import qualified Dorado.Blake3 as Blake3
+import qualified Dorado.Sha256 as Sha256
 
 -- Official BLAKE3 test-vector input convention: byte i = i mod 251.
 seqBytes :: Int -> ByteString
@@ -127,6 +128,27 @@ main = do
   check "blake3 keyed mac (key = 0..31, msg abc)"
     (toHex (Blake3.keyedMac (BS.pack [0 .. 31]) 32 (C8.pack "abc"))
        == "6da54495d8152f2bcba87bd7282df70901cdb66b4448ed5f4c7bd2852b8b5532")
+
+  -- SHA-256 (FIPS 180-4) and HMAC-SHA256 (RFC 4231) standard vectors.
+  check "sha256 empty"
+    (toHex (Sha256.sha256 BS.empty)
+       == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+  check "sha256 abc"
+    (toHex (Sha256.sha256 (C8.pack "abc"))
+       == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+  check "sha256 56-byte (two blocks)"
+    (toHex (Sha256.sha256 (C8.pack "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"))
+       == "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1")
+  check "hmac-sha256 RFC4231 TC1"
+    (toHex (Sha256.hmacSha256 (BS.replicate 20 0x0b) (C8.pack "Hi There"))
+       == "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7")
+  check "hmac-sha256 RFC4231 TC2"
+    (toHex (Sha256.hmacSha256 (C8.pack "Jefe") (C8.pack "what do ya want for nothing?"))
+       == "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843")
+  check "hmac-sha256 RFC4231 TC6 (key > 64 bytes)"
+    (toHex (Sha256.hmacSha256 (BS.replicate 131 0xaa)
+              (C8.pack "Test Using Larger Than Block-Size Key - Hash Key First"))
+       == "60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54")
 
   n <- readIORef fails
   if n == 0

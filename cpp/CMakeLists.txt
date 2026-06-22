@@ -16,6 +16,10 @@ add_compile_options(-Wall -Wextra)
 # delegated to OpenSSL; SHA-256/HMAC and the rest are from scratch.
 add_library(dorado STATIC
   src/threefish.cpp
+  src/skein.cpp
+  src/blake3.cpp
+  src/sha256.cpp
+  src/mac.cpp
 )
 target_include_directories(dorado PUBLIC include)
 

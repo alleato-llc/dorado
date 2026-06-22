@@ -10,7 +10,8 @@ import Data.IORef (modifyIORef', newIORef, readIORef)
 import Data.List (isPrefixOf, stripPrefix)
 import System.Environment (getArgs)
 import System.Exit (exitFailure)
-import System.IO (hPutStrLn, stderr)
+import System.IO
+  (Handle, IOMode (ReadMode), hClose, hPutStrLn, hSetBinaryMode, openFile, stderr, stdin)
 import qualified Data.ByteString as BS
 import Data.ByteString (ByteString)
 
@@ -70,15 +71,31 @@ main = do
           | oCheck o -> runCheck o
           | otherwise -> runHash o
 
--- Hash each file (or stdin if none) and print the digest.
+-- Stream-hash a handle in constant memory with the incremental Skein hasher.
+hashHandle :: Int -> Handle -> IO ByteString
+hashHandle outBytes h = go (Skein.newHasher outBytes)
+  where
+    go st = do
+      chunk <- BS.hGet h 65536
+      if BS.null chunk then pure (Skein.finalize st) else go (Skein.update st chunk)
+
+hashFile :: Int -> FilePath -> IO ByteString
+hashFile outBytes f = do
+  h <- openFile f ReadMode
+  hSetBinaryMode h True
+  d <- hashHandle outBytes h
+  hClose h
+  pure d
+
+-- Hash each file (or stdin if none) and print the digest, streaming the input.
 runHash :: Opts -> IO ()
 runHash o
   | null (oFiles o) = do
-      input <- BS.getContents
-      putStrLn (toHex (Skein.hash (oBits o `div` 8) input))
+      hSetBinaryMode stdin True
+      d <- hashHandle (oBits o `div` 8) stdin
+      putStrLn (toHex d)
   | otherwise = forM_ (oFiles o) $ \f -> do
-      input <- BS.readFile f
-      let d = toHex (Skein.hash (oBits o `div` 8) input)
+      d <- toHex <$> hashFile (oBits o `div` 8) f
       putStrLn $
         if oTag o
           then "SKEIN-512 (" ++ f ++ ") = " ++ d
@@ -94,8 +111,7 @@ runCheck o = do
       case parseCheckLine line of
         Nothing -> pure ()
         Just (expected, file) -> do
-          input <- BS.readFile file
-          let actual = toHex (Skein.hash (length expected `div` 2) input)
+          actual <- toHex <$> hashFile (length expected `div` 2) file
           if actual == expected
             then putStrLn (file ++ ": OK")
             else putStrLn (file ++ ": FAILED") >> modifyIORef' bad (+ 1)

@@ -25,11 +25,12 @@ is the master table.
   output byte-identical to whole-file CTR; in-memory `ByteString` forms too. Verified
   by decrypting Rust-produced `.mahi` fixtures (every KDF/MAC/variant, multi-frame,
   labeled) and by the Rust CLI decrypting this port's output.
+- An incremental Skein-512 hasher (`Dorado.Skein.newHasher`/`update`/`finalize`),
+  producing the same digest as the one-shot `hash` at any chunking, so `gyotaku`
+  streams files in constant memory (matching the other ports) rather than reading
+  them whole.
 
 ### Notes
 
 - Secret handling is caller-managed (GC-managed `ByteString`s, no wipe, no `mlock`),
   like the Java and Python ports; weaker than the Rust/C/Zig/Go ports.
-- `gyotaku` currently reads each file fully before hashing (the Skein hasher here is
-  one-shot, not incremental), so it does not hash inputs larger than memory the way
-  the streaming CLIs do for the container.

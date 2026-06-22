@@ -108,6 +108,15 @@ main = do
        == "8f5dd9ec798152668e35129496b029a960c9a9b88662f7f9482f110b31f9f938"
        ++ "93ecfb25c009baad9e46737197d5630379816a886aa05526d3a70df272d96e75")
 
+  -- Incremental Skein (used by gyotaku streaming) matches the one-shot hash at
+  -- any chunking, including block-boundary splits.
+  let incrMsg = seqBytes 700
+      oneShot = Skein.hash 32 incrMsg
+      chunked step b = [BS.take step (BS.drop i b) | i <- [0, step .. BS.length b - 1]]
+  check "incremental skein == one-shot (various chunkings)"
+    (all (\step -> Skein.finalize (foldl' Skein.update (Skein.newHasher 32) (chunked step incrMsg)) == oneShot)
+         [1, 7, 63, 64, 65, 200, 700])
+
   -- MAC: an empty key is identical to the unkeyed hash; a real key differs.
   check "skein-mac empty key == hash"
     (Skein.mac BS.empty 32 (C8.pack "abc") == Skein.hash 32 (C8.pack "abc"))

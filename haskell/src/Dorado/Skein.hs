@@ -17,6 +17,10 @@
 module Dorado.Skein
   ( hash
   , mac
+  , Hasher
+  , newHasher
+  , update
+  , finalize
   ) where
 
 import Data.Bits (shiftL, shiftR, xor, (.&.), (.|.))
@@ -100,3 +104,50 @@ mac key outLen msg = output g1 outLen
          | otherwise   = ubi (BS.replicate block 0) key tKey
     g0 = ubi gKey (configBlock (fromIntegral outLen * 8)) tCfg
     g1 = ubi g0 msg tMsg
+
+-- ---------------------------------------------------------------------------
+-- Incremental hasher, for streaming inputs larger than memory (gyotaku). It
+-- feeds message blocks through the MSG UBI as they arrive, holding back the
+-- final block (which carries the `last` flag) until 'finalize'. Produces the
+-- same digest as the one-shot 'hash'.
+-- ---------------------------------------------------------------------------
+
+-- | Incremental Skein-512 hash state (unkeyed).
+data Hasher = Hasher
+  { hG      :: !ByteString  -- ^ 64-byte chaining value
+  , hBuf    :: !ByteString  -- ^ pending bytes held back, 0..64
+  , hPos    :: !Word64      -- ^ message bytes committed so far
+  , hFirst  :: !Bool        -- ^ True until the first MSG block is committed
+  , hOutLen :: !Int
+  }
+
+-- | Start an unkeyed incremental hash producing @outLen@ bytes.
+newHasher :: Int -> Hasher
+newHasher outLen = Hasher g0 BS.empty 0 True outLen
+  where g0 = ubi (BS.replicate block 0) (configBlock (fromIntegral outLen * 8)) tCfg
+
+-- | Feed message bytes (any chunking). Full blocks are committed once more data
+-- is known to follow; the last 0..64 bytes are held for 'finalize'.
+update :: Hasher -> ByteString -> Hasher
+update st bs = drain st {hBuf = hBuf st <> bs}
+  where
+    drain s
+      | BS.length (hBuf s) > block =
+          let (blk, rest) = BS.splitAt block (hBuf s)
+              s' = commit s blk False
+           in drain s' {hBuf = rest}
+      | otherwise = s
+
+-- | Finish: process the held-back final block and squeeze the digest.
+finalize :: Hasher -> ByteString
+finalize st = output (hG (commit st (hBuf st) True)) (hOutLen st)
+
+-- Commit one MSG block (64 bytes when not final, 0..64 when final).
+commit :: Hasher -> ByteString -> Bool -> Hasher
+commit s blk isLast = s {hG = g', hPos = pos', hFirst = False}
+  where
+    n = BS.length blk
+    pos' = hPos s + fromIntegral n
+    padded = blk <> BS.replicate (block - n) 0
+    enc = encryptBlock (newThreefish TF512 (hG s) (tweak pos' tMsg (hFirst s) isLast)) padded
+    g' = BS.pack (BS.zipWith xor enc padded)

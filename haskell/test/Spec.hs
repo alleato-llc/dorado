@@ -13,6 +13,11 @@ import Data.ByteString (ByteString)
 
 import Dorado.Threefish
 import qualified Dorado.Skein as Skein
+import qualified Dorado.Blake3 as Blake3
+
+-- Official BLAKE3 test-vector input convention: byte i = i mod 251.
+seqBytes :: Int -> ByteString
+seqBytes n = BS.pack [ fromIntegral (i `mod` 251) | i <- [0 .. n - 1] ]
 
 toHex :: ByteString -> String
 toHex = concatMap byte . BS.unpack
@@ -100,6 +105,28 @@ main = do
     (Skein.mac BS.empty 32 (C8.pack "abc") == Skein.hash 32 (C8.pack "abc"))
   check "skein-mac with key differs"
     (Skein.mac (C8.pack "key") 32 (C8.pack "abc") /= Skein.hash 32 (C8.pack "abc"))
+
+  -- BLAKE3 known-answer vectors, captured from the Rust reference (and matching
+  -- the official BLAKE3 vectors). Inputs use byte i = i mod 251.
+  check "blake3 empty"
+    (toHex (Blake3.hash 32 BS.empty)
+       == "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262")
+  check "blake3 abc"
+    (toHex (Blake3.hash 32 (C8.pack "abc"))
+       == "6437b3ac38465133ffb63b75273a8db548c558465d79db03fd359c6cd5bd9d85")
+  check "blake3 1024 bytes (one full chunk)"
+    (toHex (Blake3.hash 32 (seqBytes 1024))
+       == "42214739f095a406f3fc83deb889744ac00df831c10daa55189b5d121c855af7")
+  check "blake3 1025 bytes (two chunks, parent node)"
+    (toHex (Blake3.hash 32 (seqBytes 1025))
+       == "d00278ae47eb27b34faecf67b4fe263f82d5412916c1ffd97c8cb7fb814b8444")
+  check "blake3 abc XOF 64 bytes"
+    (toHex (Blake3.hash 64 (C8.pack "abc"))
+       == "6437b3ac38465133ffb63b75273a8db548c558465d79db03fd359c6cd5bd9d85"
+       ++ "1fb250ae7393f5d02813b65d521a0d492d9ba09cf7ce7f4cffd900f23374bf0b")
+  check "blake3 keyed mac (key = 0..31, msg abc)"
+    (toHex (Blake3.keyedMac (BS.pack [0 .. 31]) 32 (C8.pack "abc"))
+       == "6da54495d8152f2bcba87bd7282df70901cdb66b4448ed5f4c7bd2852b8b5532")
 
   n <- readIORef fails
   if n == 0

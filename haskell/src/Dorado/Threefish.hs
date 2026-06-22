@@ -29,7 +29,6 @@ import Control.Monad.ST (ST, runST)
 import Data.Array.ST (STUArray, newArray, newListArray, readArray, writeArray, getElems)
 import Data.Array.Unboxed (UArray, listArray, (!))
 import Data.Bits (rotateL, rotateR, shiftL, shiftR, xor, (.|.), (.&.))
-import Data.List (foldl')
 import Data.Word (Word64, Word8)
 import qualified Data.ByteString as BS
 import Data.ByteString (ByteString)

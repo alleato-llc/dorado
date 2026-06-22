@@ -4,6 +4,8 @@
 module Main (main) where
 
 import Data.Char (digitToInt, intToDigit, isHexDigit)
+import Data.Bits (xor)
+import Data.Either (isLeft)
 import Data.IORef (modifyIORef', newIORef, readIORef)
 import Data.List (nub)
 import Data.Word (Word8)
@@ -18,6 +20,7 @@ import qualified Dorado.Blake3 as Blake3
 import qualified Dorado.Sha256 as Sha256
 import qualified Dorado.Kdf as Kdf
 import qualified Dorado.Mac as Mac
+import qualified Dorado.Engine as Engine
 
 -- Official BLAKE3 test-vector input convention: byte i = i mod 251.
 seqBytes :: Int -> ByteString
@@ -173,6 +176,42 @@ main = do
   check "mac tags are all 32 bytes" (all ((== 32) . BS.length) tags)
   check "mac tags differ by algorithm" (length (nub tags) == 3)
   check "mac skein512 == primitive keyed skein" (Mac.tag Mac.Skein512 mkey mmsg == Skein.mac mkey 32 mmsg)
+
+  -- Container cross-compatibility: decrypt .mahi files produced by the Rust CLI,
+  -- covering every KDF, MAC, both variants, a multi-frame file, and a labeled one.
+  let pw = C8.pack "correct horse battery staple"
+      pt1 = C8.pack "Attack at dawn. Meet by the old oak."
+      decFix name expected = do
+        bytes <- BS.readFile ("test/fixtures/" ++ name)
+        check ("decrypt rust fixture " ++ name) (Engine.decryptPassword pw bytes == Right expected)
+  decFix "pbkdf2-skein-256.mahi" pt1
+  decFix "scrypt-hmac-256.mahi" pt1
+  decFix "argon2-blake3-256.mahi" pt1
+  decFix "pbkdf2-skein-512.mahi" pt1
+  decFix "labeled.mahi" pt1
+  decFix "multichunk.mahi" (seqBytes 3000)
+
+  -- Wrong password and tampering are rejected.
+  fix <- BS.readFile "test/fixtures/pbkdf2-skein-256.mahi"
+  check "wrong password rejected" (isLeft (Engine.decryptPassword (C8.pack "wrong") fix))
+  let tampered = BS.concat [BS.init fix, BS.singleton (BS.last fix `xor` 1)]
+  check "tampered tag rejected" (isLeft (Engine.decryptPassword pw tampered))
+
+  -- Haskell encrypt -> Haskell decrypt round-trips (fast KDF), across variants,
+  -- MACs, and a multi-frame file.
+  let baseOpts = Engine.defaultOptions { Engine.optKdf = Kdf.Pbkdf2 1000 }
+      salt = BS.replicate 16 0x01
+      rtweak = BS.replicate 16 0x02
+      iv32 = BS.replicate 32 0x03
+      roundTrip rname opts riv rmsg =
+        check ("round-trip " ++ rname)
+          (Engine.decryptPassword pw (Engine.encryptPasswordWith opts salt rtweak riv pw rmsg) == Right rmsg)
+  roundTrip "pbkdf2/skein/256" baseOpts iv32 pt1
+  roundTrip "hmac-sha256" baseOpts { Engine.optMac = Mac.HmacSha256 } iv32 pt1
+  roundTrip "blake3-keyed" baseOpts { Engine.optMac = Mac.Blake3Keyed } iv32 pt1
+  roundTrip "variant-512" baseOpts { Engine.optVariant = TF512 } (BS.replicate 64 0x03) pt1
+  roundTrip "multi-frame (64B chunks)" baseOpts { Engine.optChunkSize = 64 } iv32 (seqBytes 200)
+  roundTrip "empty plaintext" baseOpts iv32 BS.empty
 
   n <- readIORef fails
   if n == 0

@@ -3,14 +3,20 @@
 -- assertion harness, exiting non-zero on any failure (no test-framework dep).
 module Main (main) where
 
-import Data.Char (digitToInt, isHexDigit)
+import Data.Char (digitToInt, intToDigit, isHexDigit)
 import Data.IORef (modifyIORef', newIORef, readIORef)
 import Data.Word (Word8)
 import System.Exit (exitFailure)
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as C8
 import Data.ByteString (ByteString)
 
 import Dorado.Threefish
+import qualified Dorado.Skein as Skein
+
+toHex :: ByteString -> String
+toHex = concatMap byte . BS.unpack
+  where byte b = [ intToDigit (fromIntegral b `div` 16), intToDigit (fromIntegral b `mod` 16) ]
 
 unhex :: String -> ByteString
 unhex = BS.pack . go . filter isHexDigit
@@ -73,6 +79,27 @@ main = do
       ks0 = BS.take 32 (ctrApply c iv (BS.replicate 32 0))
   check "ctr keystream block 0 == encrypt(iv)" (ks0 == encryptBlock c iv)
   check "ctr round-trips at 200 bytes" (ctrApply c iv (ctrApply c iv msg) == msg)
+
+  -- Skein-512 known-answer vectors, captured from the Rust reference (gyotaku).
+  check "skein512-256 empty"
+    (toHex (Skein.hash 32 BS.empty)
+       == "39ccc4554a8b31853b9de7a1fe638a24cce6b35a55f2431009e18780335d2621")
+  check "skein512-256 abc"
+    (toHex (Skein.hash 32 (C8.pack "abc"))
+       == "0977b339c3c85927071805584d5460d8f20da8389bbe97c59b1cfac291fe9527")
+  check "skein512-256 'a'*100 (multi-block)"
+    (toHex (Skein.hash 32 (BS.replicate 100 0x61))
+       == "933bd28877ef7215ae7d4fd99da95a995cd5555077526c3bc395ad1f1d6bb0fa")
+  check "skein512-512 abc"
+    (toHex (Skein.hash 64 (C8.pack "abc"))
+       == "8f5dd9ec798152668e35129496b029a960c9a9b88662f7f9482f110b31f9f938"
+       ++ "93ecfb25c009baad9e46737197d5630379816a886aa05526d3a70df272d96e75")
+
+  -- MAC: an empty key is identical to the unkeyed hash; a real key differs.
+  check "skein-mac empty key == hash"
+    (Skein.mac BS.empty 32 (C8.pack "abc") == Skein.hash 32 (C8.pack "abc"))
+  check "skein-mac with key differs"
+    (Skein.mac (C8.pack "key") 32 (C8.pack "abc") /= Skein.hash 32 (C8.pack "abc"))
 
   n <- readIORef fails
   if n == 0

@@ -19,6 +19,7 @@ library
     import:           warnings
     hs-source-dirs:   src
     exposed-modules:  Dorado.Threefish
+                      Dorado.Skein
     build-depends:    base >=4 && <5,
                       bytestring,
                       array

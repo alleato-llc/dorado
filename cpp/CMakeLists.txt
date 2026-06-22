@@ -30,6 +30,14 @@ add_library(dorado STATIC
 target_include_directories(dorado PUBLIC include)
 target_link_libraries(dorado PUBLIC OpenSSL::Crypto)
 
+add_executable(dorado_cli src/cli_dorado.cpp)
+set_target_properties(dorado_cli PROPERTIES OUTPUT_NAME dorado)
+target_link_libraries(dorado_cli PRIVATE dorado)
+
+add_executable(gyotaku_cli src/cli_gyotaku.cpp)
+set_target_properties(gyotaku_cli PROPERTIES OUTPUT_NAME gyotaku)
+target_link_libraries(gyotaku_cli PRIVATE dorado)
+
 enable_testing()
 add_executable(dorado_test tests/test.cpp)
 target_link_libraries(dorado_test PRIVATE dorado)

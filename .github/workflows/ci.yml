@@ -19,6 +19,7 @@ jobs:
       c: ${{ steps.filter.outputs.c }}
       zig: ${{ steps.filter.outputs.zig }}
       haskell: ${{ steps.filter.outputs.haskell }}
+      cpp: ${{ steps.filter.outputs.cpp }}
       web: ${{ steps.filter.outputs.web }}
     steps:
       - uses: actions/checkout@v4
@@ -50,6 +51,9 @@ jobs:
             haskell:
               - *spec
               - 'haskell/**'
+            cpp:
+              - *spec
+              - 'cpp/**'
             web:
               - '.github/workflows/ci.yml'
               - 'web/**'
@@ -235,6 +239,27 @@ jobs:
           cabal-version: "latest"
       - run: cabal build all
       - run: cabal test
+
+  # Build and test the C++ port (SDK + CLIs). The KDFs (Argon2id/scrypt/PBKDF2) are
+  # delegated to OpenSSL's EVP_KDF; Argon2 needs OpenSSL >= 3.2, which Ubuntu's system
+  # OpenSSL (3.0) lacks, so this runs in a Fedora container that ships OpenSSL 3.2+ and
+  # a C++23 compiler. Cross-compat tests decrypt fixtures made by the Rust CLI.
+  cpp:
+    needs: changes
+    if: needs.changes.outputs.cpp == 'true'
+    runs-on: ubuntu-latest
+    container: fedora:41
+    defaults:
+      run:
+        working-directory: cpp
+    steps:
+      # Runs before checkout (so cpp/ does not exist yet) and installs git for it.
+      - run: dnf install -y gcc-c++ cmake openssl-devel git
+        working-directory: ${{ github.workspace }}
+      - uses: actions/checkout@v4
+      - run: cmake -S . -B build
+      - run: cmake --build build
+      - run: ctest --test-dir build --output-on-failure
 
   # Build the landing page in web/ so a broken site fails CI.
   web:

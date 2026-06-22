@@ -1,17 +1,17 @@
 # Implementations
 
-Dorado is implemented nine ways. They share one cipher design and one on-disk
+Dorado is implemented ten ways. They share one cipher design and one on-disk
 format, and are byte-for-byte cross-compatible: each can decrypt the others'
 `.mahi` files, verified across every KDF, MAC, and cipher variant. What differs is
 what each runtime can do around that shared core. Rust is the reference
 implementation and the baseline for test vectors and cross-compat fixtures.
 
-What is identical in all nine (so it is left out of the table below): the
+What is identical in all ten (so it is left out of the table below): the
 from-scratch primitives (Threefish 256/512/1024 + CTR, Skein-512, BLAKE3), the
 DRDO v4 on-disk format, cross-compatibility, and encrypt-then-MAC authentication
 with a constant-time tag compare.
 
-The seven native ports (Rust, Go, Java, Python, C, Zig, Haskell) run their own
+The eight native ports (Rust, Go, Java, Python, C, Zig, Haskell, C++) run their own
 compiled cipher and stream in constant memory. The TypeScript port is one codebase run two ways:
 **Node** (a CLI, with locked secret memory) and **Browser** (the in-page demo);
 both run the verified Rust cipher compiled to WASM and work in memory.
@@ -27,6 +27,7 @@ both run the verified Rust cipher compiled to WASM and work in memory.
 | **C** | Port; CLIs | native | system `libargon2` + OpenSSL | Yes | engine wipes keys; CLI mlocks password |
 | **Zig** | Port; CLIs | native | Zig stdlib (no external deps) | Yes | engine wipes keys; CLI mlocks password |
 | **Haskell** | Port; CLIs | native | `crypton` (argon2/scrypt/pbkdf2) | Yes | caller-managed (GC; no wipe) |
+| **C++** | Port; CLIs | native | OpenSSL `EVP_KDF` (argon2/scrypt/pbkdf2) | Yes | caller-managed (no wipe) |
 | **TypeScript · Node** | Port; CLIs | WASM (Rust cipher) | `hash-wasm` (WASM) | No (in-memory) | `sodium-native` locked buffers |
 | **TypeScript · Browser** | In-page demo | WASM (Rust cipher) | `hash-wasm` (WASM) | No (in-memory) | none (demo, not secure) |
 
@@ -34,7 +35,8 @@ Three more axes are not columns above. **`no_std` / bare-metal:** the from-scrat
 cipher primitives (Threefish/CTR, Skein, BLAKE3) build with no OS and no allocator
 in **Rust, C, and Zig** (CI cross-compiles them to a bare-metal ARM target); the
 construction (whose KDFs need an allocator) is not bare-metal, and Go, Java, Python,
-Haskell, and TypeScript require a managed runtime. **Constant time:** only Rust documents and
+Haskell, and TypeScript require a managed runtime. C++ is natively compiled like those
+three but has no wired bare-metal build here. **Constant time:** only Rust documents and
 preserves a full no-secret-dependent-branching discipline; every other port at least
 uses a constant-time tag compare, and the cipher is ARX (no secret-dependent table
 lookups) everywhere, but JIT/interpreted runtimes cannot promise constant time.
@@ -49,21 +51,21 @@ Go and the managed runtimes are memory-safe but pay for it elsewhere (the GC is 
 makes Go's wipe a convention rather than a guarantee).
 
 HMAC-SHA256 uses each ecosystem's standard library (RustCrypto, Go stdlib, the JDK,
-Python `hmac`, OpenSSL, Zig stdlib, Web Crypto), except the Haskell port, which
-implements SHA-256 and HMAC-SHA256 from scratch; Skein-512 and keyed BLAKE3 are
+Python `hmac`, OpenSSL, Zig stdlib, Web Crypto), except the Haskell and C++ ports, which
+implement SHA-256 and HMAC-SHA256 from scratch; Skein-512 and keyed BLAKE3 are
 from-scratch everywhere. Each port is verified with KATs and cross-compat fixtures
 produced by the Rust CLI (Rust adds differential tests and fuzzing; C also runs
 under ASan/UBSan).
 
 ## Where they differ, and why it matters
 
-- **Cipher engine.** Rust, Go, Java, Python, C, Zig, and Haskell run their own compiled
-  cipher. The TypeScript package has a swappable backend: a readable pure-TypeScript
+- **Cipher engine.** Rust, Go, Java, Python, C, Zig, Haskell, and C++ run their own
+  compiled cipher. The TypeScript package has a swappable backend: a readable pure-TypeScript
   cipher (used by its test suite) and the verified Rust cipher compiled to WASM. The
   Node CLI and the browser demo both run the WASM backend, so the secret arithmetic
   happens in WASM linear memory rather than scattered across short-lived JavaScript
   numbers.
-- **Streaming.** The seven native ports process files chunk by chunk over
+- **Streaming.** The eight native ports process files chunk by chunk over
   reader/writer interfaces (constant memory). The TypeScript engine works in-memory
   over byte arrays, so its working set is the size of the file.
 - **`no_std` / bare-metal.** The from-scratch cipher primitives build with no OS and
@@ -71,7 +73,8 @@ under ASan/UBSan).
   build, C's primitives compile with `-ffreestanding` (`make freestanding`), and
   Zig cross-compiles them to a bare-metal ARM object (`zig build freestanding`). In
   all three the construction (the KDFs need an allocator) is excluded. Go, Java,
-  Python, Haskell, and TypeScript require a managed runtime.
+  Python, Haskell, and TypeScript require a managed runtime; C++ is natively compiled
+  but has no wired bare-metal build here.
 - **Secret handling.** This is the sharpest difference, and the reason the browser
   is the weakest tier:
   - *Rust* wipes secret buffers and the cipher's key schedule on drop (`zeroize`,
@@ -94,6 +97,9 @@ under ASan/UBSan).
     even be wiped in place).
   - *Haskell* is caller-managed like Java and Python: secrets live in GC-managed
     `ByteString`s that are not wiped, and the CLI does not `mlock` the password.
+  - *C++* is also caller-managed: secrets live in `std::vector<std::uint8_t>` that are
+    not wiped, and the CLI does not `mlock` the password. (Nothing prevents adding
+    `OPENSSL_cleanse` on a guard object the way C does; it is just not wired yet.)
   - *TypeScript on Node* holds CLI-held secrets in `sodium-native` locked, off-heap,
     guard-paged buffers and wipes them after use; the WASM backend keeps the
     cipher's transient values off the JavaScript heap.

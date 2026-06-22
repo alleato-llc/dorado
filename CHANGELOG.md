@@ -23,6 +23,16 @@ This changelog starts in 2026-06; for earlier history see the git log.
 
 ### Added
 
+- **C++ port** (`cpp/`), the tenth implementation: an SDK (`libdorado.a`) plus the
+  `dorado`/`gyotaku` CLIs, byte-for-byte cross-compatible with the others (verified by
+  decrypting the Rust CLI's `.mahi` fixtures and by Rust decrypting its output, with
+  matching `gyotaku` digests). C++23 with CMake; like Haskell it implements
+  SHA-256/HMAC-SHA256 from scratch, and its sole dependency is OpenSSL (the three
+  password KDFs go through `EVP_KDF`; everything else is from scratch). The docs now say
+  "ten implementations" (`README.md`, root `CLAUDE.md`, `docs/implementations.md`,
+  `VERSIONS.md`). CI gains a path-filtered `cpp` job, wired into the `changes` filter and
+  re-run on `docs/spec.md` changes like the other ports. Per-port details are in
+  [`cpp/CHANGELOG.md`](cpp/CHANGELOG.md).
 - **Haskell port** (`haskell/`), the ninth implementation: an SDK plus the
   `dorado`/`gyotaku` CLIs, byte-for-byte cross-compatible with the others (verified by
   decrypting the Rust CLI's `.mahi` fixtures and by Rust decrypting its output). It is

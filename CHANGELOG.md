@@ -23,6 +23,13 @@ This changelog starts in 2026-06; for earlier history see the git log.
 
 ### Added
 
+- **Haskell port** (`haskell/`), the ninth implementation: an SDK plus the
+  `dorado`/`gyotaku` CLIs, byte-for-byte cross-compatible with the others (verified by
+  decrypting the Rust CLI's `.mahi` fixtures and by Rust decrypting its output). It is
+  the first port to implement SHA-256/HMAC-SHA256 from scratch as well; KDFs are
+  delegated to `crypton`. The docs now say "nine implementations" (`README.md`, root
+  `CLAUDE.md`, `docs/implementations.md`, `VERSIONS.md`). Per-port details are in
+  [`haskell/CHANGELOG.md`](haskell/CHANGELOG.md).
 - CLI feature parity across every CLI port (`go`, `python`, `c`, `zig`, `ts`; Rust is
   the reference). Both binaries (`dorado` and `gyotaku`) in every port now accept
   `--help`/`-h` (usage to stdout, exit 0) and `--version` (`<name> 0.1.0`), and

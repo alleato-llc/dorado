@@ -56,6 +56,16 @@ This is the dorado monorepo. It has several parts:
   error set. `zig build test` runs the suite, including cross-compat fixtures made
   by the Rust CLI in `tests/fixtures/` (embedded via `@embedFile`). Run `zig build`
   from inside `zig/`.
+- `haskell/` — a Haskell port (Cabal, package `dorado`) with an SDK and the
+  `dorado`/`gyotaku` CLIs: same from-scratch primitives, same on-disk format
+  (cross-compatible), streaming over `Handle`s in constant memory like the Rust
+  reference. Strict throughout (no laziness in the hot path): the primitive cores
+  run in `ST` over unboxed mutable arrays, with `IO` only at the streaming
+  boundary; Haskell's native `Word64` makes the 64-bit ARX direct. The KDFs are
+  delegated to `crypton` (Argon2id, scrypt, PBKDF2), matching the other ports' use
+  of a KDF library; HMAC/SHA-256/Skein/BLAKE3 are from scratch. `cabal test` runs
+  the suite, including cross-compat fixtures made by the Rust CLI in
+  `test/fixtures/`. Run cabal from inside `haskell/`.
 - `rust/wasm/` — the verified Rust cipher compiled to WebAssembly via
   `wasm-bindgen` (a separate crate, excluded from the `rust/` workspace). It exports
   only the cipher/hash primitives (CTR, Skein, BLAKE3), not the engine; the engine
@@ -79,9 +89,9 @@ This is the dorado monorepo. It has several parts:
   not from CI. Benchmarks the implementations only; never put fabricated numbers here.
 
 When changing the wire format or an algorithm, keep `rust/`, `go/`, `ts/`, `java/`,
-`python/`, `c/`, and `zig/` in sync or cross-compatibility breaks. The eight
-implementations are byte-for-byte cross-compatible and that property is tested. The
-Rust implementation is the reference and the baseline for vectors and fixtures.
+`python/`, `c/`, `zig/`, and `haskell/` in sync or cross-compatibility breaks. The
+nine implementations are byte-for-byte cross-compatible and that property is tested.
+The Rust implementation is the reference and the baseline for vectors and fixtures.
 
 CI lives at the repo root in `.github/workflows/ci.yml`. It is path-filtered: a
 `changes` job detects which component folders moved and each job runs only when

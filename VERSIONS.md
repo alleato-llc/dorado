@@ -23,6 +23,7 @@ port and a bump of that integer.
 | Python port | 0.1.0 | [python/CHANGELOG.md](python/CHANGELOG.md) | `python/` |
 | C port | 0.1.0 | [c/CHANGELOG.md](c/CHANGELOG.md) | `c/` |
 | Zig port | 0.1.0 | [zig/CHANGELOG.md](zig/CHANGELOG.md) | `zig/` |
+| Haskell port | 0.1.0 | [haskell/CHANGELOG.md](haskell/CHANGELOG.md) | `haskell/` |
 | TypeScript port | 0.1.0 | [ts/CHANGELOG.md](ts/CHANGELOG.md) | `ts/` |
 | bench | 0.1.0 | [bench/CHANGELOG.md](bench/CHANGELOG.md) | `bench/` (the Gota consumer) |
 | web | 0.1.0 | [web/CHANGELOG.md](web/CHANGELOG.md) | `web/` (the landing page) |

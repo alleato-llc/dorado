@@ -12,6 +12,9 @@ Cross-cutting changes live in the [Core CHANGELOG](../CHANGELOG.md);
 - The hero lead and the page meta description now reflect all eight implementations
   (Rust, Go, Java, Python, C, Zig, TypeScript). They previously named only "Rust, Go,
   and TypeScript", inconsistent with the "eight implementations" section.
+- Added the Haskell port: the comparison table gains a Haskell row and the page now
+  says "nine implementations" (hero, meta description, and the implementations
+  section).
 
 ## [0.1.0]
 

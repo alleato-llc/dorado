@@ -39,6 +39,7 @@ const cmpRows = [
   { name: "Python", cells: ["Port; CLIs", "native", "argon2-cffi + hashlib", "Yes", "caller-managed"] },
   { name: "C", cells: ["Port; CLIs", "native", "libargon2 + OpenSSL", "Yes", "wipes keys; mlocks password"] },
   { name: "Zig", cells: ["Port; CLIs", "native", "Zig stdlib (no deps)", "Yes", "wipes keys; mlocks password"] },
+  { name: "Haskell", cells: ["Port; CLIs", "native", "crypton", "Yes", "caller-managed"] },
   { name: "TypeScript · Node", cells: ["Port; CLIs", "WASM (Rust core)", "hash-wasm", "No (in-memory)", "locked off-heap buffers"] },
   { name: "TypeScript · Browser", cells: ["In-page demo", "WASM (Rust core)", "hash-wasm", "No (in-memory)", "none (demo)"] },
 ];
@@ -67,7 +68,7 @@ const primitives = [
 
 <Layout
   title="dorado — Threefish, from scratch"
-  description="An educational, from-scratch implementation of Threefish (the cipher behind Skein), with a small honest tool stack: CTR, an authenticated password container, and a Skein hash tool, implemented eight ways in Rust, Go, Java, Python, C, Zig, and TypeScript."
+  description="An educational, from-scratch implementation of Threefish (the cipher behind Skein), with a small honest tool stack: CTR, an authenticated password container, and a Skein hash tool, implemented nine ways in Rust, Go, Java, Python, C, Zig, Haskell, and TypeScript."
 >
   <section class="hero">
     <div class="wrap">
@@ -78,8 +79,8 @@ const primitives = [
         The tweakable block cipher at the heart of the Skein hash function, all
         three sizes, with a small and honest tool stack on top: counter mode, an
         authenticated streaming password container, and a Skein hashing tool. One
-        cipher and one file format, implemented from scratch eight ways: Rust, Go,
-        Java, Python, C, Zig, and TypeScript (which also runs in your browser).
+        cipher and one file format, implemented from scratch nine ways: Rust, Go,
+        Java, Python, C, Zig, Haskell, and TypeScript (which also runs in your browser).
       </p>
       <div class="cta">
         <a class="btn primary" href={REPO}>View the source</a>
@@ -226,11 +227,11 @@ const primitives = [
 
   <section id="implementations">
     <div class="wrap">
-      <h2>One cipher, eight implementations</h2>
+      <h2>One cipher, nine implementations</h2>
       <p class="sub">
-        Dorado is written eight ways: Rust (the reference), Go, Java (a library
-        only), Python, C, Zig, and a TypeScript port that runs both in Node and in
-        your browser. All reimplement the same primitives from scratch, share the
+        Dorado is written nine ways: Rust (the reference), Go, Java (a library
+        only), Python, C, Zig, Haskell, and a TypeScript port that runs both in Node
+        and in your browser. All reimplement the same primitives from scratch, share the
         same on-disk format, and are byte-for-byte cross-compatible, so a file made
         by one opens in the others. What differs is what each runtime allows; the
         two TypeScript rows are the same code, only the runtime changes.

@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "dorado/blake3.hpp"
+#include "dorado/kdf.hpp"
 #include "dorado/mac.hpp"
 #include "dorado/sha256.hpp"
 #include "dorado/skein.hpp"
@@ -199,6 +200,16 @@ int main() {
             Bytes(131, 0xaa),
             ascii("Test Using Larger Than Block-Size Key - Hash Key First"))) ==
             "60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54");
+
+  // KDF delegation (OpenSSL EVP_KDF). scrypt + PBKDF2 vectors from RFC 7914.
+  check("scrypt RFC7914 (N=16,r=1,p=1, empty)",
+        to_hex(dorado::kdf::derive(dorado::kdf::Scrypt{4, 1, 1}, Bytes{}, Bytes{}, 64)) ==
+            "77d6576238657b203b19ca42c18a0497f16b4844e3074ae8dfdffa3fede21442"
+            "fcd0069ded0948f8326a753a0fc81f17e8d3e0fb2e0d3628cf35e20c38d18906");
+  check("pbkdf2-hmac-sha256 RFC7914 (passwd/salt, c=1)",
+        to_hex(dorado::kdf::derive(dorado::kdf::Pbkdf2{1}, ascii("passwd"), ascii("salt"), 64)) ==
+            "55ac046e56e3089fec1691c22544b605f94185216dde0465e68b9d57c20dacbc"
+            "49ca9cccf179b645991664b39d77ef317c71b845b1e30bd509112041d3a19783");
 
   // MAC dispatch: each option yields a 32-byte tag; the three differ.
   {

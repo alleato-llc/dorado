@@ -1,0 +1,10 @@
+# Site deploy config for salpa (github.com/alleato-llc/salpa), run from the
+# repo root by deploy-site.yml. The Rust CLI release lifecycle lives in
+# rust/salpa.yaml and runs with cwd=rust/ — each ecosystem's release config
+# lives with its tree; the site is repo-level.
+product: Dorado
+
+deploy:
+  source: web # npm build; sync web/dist
+  bucket: dorado.alleato.dev # the site host
+  invalidate: true # bust the CDN cache after deploy

@@ -2,7 +2,10 @@ name: Deploy site
 
 # The landing page in web/ deploys to the static host (dorado.alleato.dev) on
 # every push to main that TOUCHES web/. If nothing under web/ changed, the path
-# filter means this workflow never starts: no build, no deploy, nothing.
+# filter means this workflow never starts: no build, no deploy, nothing. A new
+# release on the rust-v* track also redeploys the site, so the build-time
+# download-link resolution (web/src/lib/releases.ts) picks up the freshly
+# published binaries.
 #
 # salpa (github.com/alleato-llc/salpa, a private house release tool pulled
 # from ghcr) owns the deploy: `salpa deploy` builds web/ (npm) and syncs
@@ -29,6 +32,10 @@ on:
       - "web/**"
       - "salpa.yaml"
       - ".github/workflows/deploy-site.yml"
+  # A new rust-v* release redeploys the site so web/src/lib/releases.ts picks up
+  # the freshly published download links.
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -74,4 +81,11 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Deploy
+        # GITHUB_TOKEN authenticates web/src/lib/releases.ts's build-time call to
+        # the Releases API — required (not just rate-limit relief), since this
+        # repo is private and an unauthenticated request 404s regardless of rate
+        # limit. The resolver never fails the build even without it; links just
+        # degrade to the Releases page.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: salpa deploy # npm build web/ -> sync web/dist -> invalidate CloudFront

@@ -2,9 +2,15 @@
 import Layout from "../layouts/Layout.astro";
 import Demo from "../components/Demo.tsx";
 import HashDemo from "../components/HashDemo.tsx";
+import Download from "../components/Download.tsx";
+import { resolveDownloads } from "../lib/releases";
 
-// Update this to the real repository URL once it is published.
-const REPO = "https://github.com/nycjv321/dorado";
+const REPO = "https://github.com/alleato-llc/dorado";
+
+// Resolve the Rust CLI track's newest release -> per-platform binary URLs, at
+// build time. Passed into the <Download> island, which picks the right button
+// per OS/arch. See src/lib/releases.ts.
+const downloads = await resolveDownloads();
 
 const tools = [
   {
@@ -84,11 +90,12 @@ const primitives = [
         C, C++, Zig, Java, Python, Haskell, and TypeScript (which also runs in your browser).
       </p>
       <div class="cta">
-        <a class="btn primary" href={REPO}>View the source</a>
-        <a class="btn ghost" href={`${REPO}/blob/main/rust/docs/overview.md`}>
-          Read the docs
-        </a>
+        <Download client:load {...downloads} />
+        <a class="btn ghost" href={REPO}>View the source</a>
       </div>
+      <p class="demo-note">
+        <a href={`${REPO}/blob/main/rust/docs/overview.md`}>Read the docs</a>
+      </p>
     </div>
   </section>
 

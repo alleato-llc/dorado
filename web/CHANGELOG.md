@@ -7,6 +7,21 @@ Cross-cutting changes live in the [Core CHANGELOG](../CHANGELOG.md);
 
 ## [Unreleased]
 
+### Added
+
+- **Download the CLIs** section: `src/lib/releases.ts` resolves the Rust CLI
+  track's newest `rust-v*` release into its four platform archive URLs at build
+  time; `src/components/Download.tsx` (a `client:load` Preact island) picks the
+  right button by the visitor's detected OS/arch, falling back to a full
+  all-platforms list pre-hydration or with JS off. Mirrors soroban's
+  `site/src/lib/releases.ts`. `deploy-site.yml` gains a `release: published`
+  trigger so a new release redeploys the site with fresh links.
+
+### Fixed
+
+- `REPO` in `src/pages/index.astro` pointed at `nycjv321/dorado`; corrected to
+  the actual `alleato-llc/dorado`. Fixes every source/docs link on the page.
+
 ### Changed
 
 - The hero lead and the page meta description now reflect all eight implementations

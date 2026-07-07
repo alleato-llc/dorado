@@ -2,9 +2,15 @@
 import Layout from "../layouts/Layout.astro";
 import Demo from "../components/Demo.tsx";
 import HashDemo from "../components/HashDemo.tsx";
+import Download from "../components/Download.tsx";
+import { resolveDownloads } from "../lib/releases";
 
-// Update this to the real repository URL once it is published.
-const REPO = "https://github.com/nycjv321/dorado";
+const REPO = "https://github.com/alleato-llc/dorado";
+
+// Resolve the Rust CLI track's newest release -> per-platform archive URLs, at
+// build time. Passed into the <Download> island, which picks the right button
+// per OS/arch. See src/lib/releases.ts.
+const downloads = await resolveDownloads();
 
 const tools = [
   {
@@ -113,6 +119,21 @@ const primitives = [
             </div>
           ))
         }
+      </div>
+    </div>
+  </section>
+
+  <section id="download">
+    <div class="wrap">
+      <h2>Download the CLIs</h2>
+      <p class="sub">
+        Prebuilt <code>dorado</code> and <code>gyotaku</code> binaries for Linux,
+        macOS (Apple Silicon and Intel), and Windows — built and published
+        automatically by CI on every Rust change. The other nine ports build from
+        source (see the comparison table below).
+      </p>
+      <div class="cta" style="justify-content: flex-start;">
+        <Download client:load {...downloads} />
       </div>
     </div>
   </section>

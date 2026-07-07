@@ -6,10 +6,9 @@ name: Deploy site
 #
 # salpa (github.com/alleato-llc/salpa, a private house release tool pulled
 # from ghcr) owns the deploy: `salpa deploy` builds web/ (npm) and syncs
-# web/dist to the site host (S3 + CloudFront, provisioned in the
-# nycjv321-infrastructure repo, projects/dorado), then busts the CDN cache —
-# see salpa.yaml at the repo root. No raw aws-cli in this file; salpa shells
-# it internally, parameterized by salpa.yaml.
+# web/dist to the site host (S3 + CloudFront, provisioned separately as IaC),
+# then busts the CDN cache — see salpa.yaml at the repo root. No raw aws-cli
+# in this file; salpa shells it internally, parameterized by salpa.yaml.
 #
 # Auth is short-lived OIDC credentials (the dorado-github-deploy-role), no
 # stored keys. The CloudFront distribution is found at runtime by its alias

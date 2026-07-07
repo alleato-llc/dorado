@@ -36,7 +36,7 @@ export default function Download(urls: DownloadUrls) {
 
   useEffect(() => {
     setOS(detectOS());
-    // Arch only matters on macOS (separate arm64/x86_64 archives, no universal
+    // Arch only matters on macOS (separate arm64/x86_64 binaries, no universal
     // binary). Prefer the high-entropy UA hint; fall back to the UA string;
     // default x64.
     const uaData = (navigator as unknown as { userAgentData?: NavigatorUAData }).userAgentData;

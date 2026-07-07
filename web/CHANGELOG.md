@@ -10,8 +10,9 @@ Cross-cutting changes live in the [Core CHANGELOG](../CHANGELOG.md);
 ### Added
 
 - **Download the CLIs** section: `src/lib/releases.ts` resolves the Rust CLI
-  track's newest `rust-v*` release into its four platform archive URLs at build
-  time; `src/components/Download.tsx` (a `client:load` Preact island) picks the
+  track's newest `rust-v*` release into its four platform `dorado` binary URLs at
+  build time (bare binaries, no archive — see [`rust/CHANGELOG.md`](../rust/CHANGELOG.md));
+  `src/components/Download.tsx` (a `client:load` Preact island) picks the
   right button by the visitor's detected OS/arch, falling back to a full
   all-platforms list pre-hydration or with JS off. Mirrors soroban's
   `site/src/lib/releases.ts`. `deploy-site.yml` gains a `release: published`

@@ -31,8 +31,8 @@ site setup (same stack, same theme-toggle pattern) so the two stay consistent.
   engine logic here; it lives in `../rust` and `../ts`. When the wire format or
   cipher changes, rebuild `src/wasm/` or the demo drifts from the CLIs.
 - `src/lib/releases.ts` resolves the Rust CLI track's (`rust-v*`) newest release
-  into its four platform archive URLs at BUILD time (Astro frontmatter, runs in
-  Node), mirroring soroban's `site/src/lib/releases.ts`. Never fails the build:
+  into its four platform `dorado` binary URLs at BUILD time (Astro frontmatter, runs
+  in Node), mirroring soroban's `site/src/lib/releases.ts`. Never fails the build:
   any error (offline, rate limit, no release yet) falls back to the Releases
   page. `src/components/Download.tsx` (a `client:load` island) takes those URLs
   as props and picks which button to show based on the visitor's OS/arch

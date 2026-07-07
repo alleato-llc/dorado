@@ -1,0 +1,17 @@
+# Build/publish config for the `gyotaku` CLI binary only — see rust/salpa.yaml
+# for the shared test/version config and why this is split from dorado.
+#
+# No `package:` key -> salpa ships a bare per-platform binary
+# (gyotaku-<os>-<arch>[.exe]), unsigned like every CLI in this repo. Same
+# rust-v* release as salpa-dorado.yaml; release.yml runs both configs against
+# every platform leg and publishes into the one release the `version` job
+# already created.
+ecosystem: rust
+product: gyotaku
+tag_prefix: rust-v
+
+build:
+  bin: gyotaku
+
+publish:
+  github: true

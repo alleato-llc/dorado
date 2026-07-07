@@ -8,6 +8,12 @@ the Rust-specific details. Format: [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-07-07
+
+The first cut of the salpa-driven auto-release track (bootstrapped from the
+`rust-v0.1.0` tag). Everything below had already landed on `main`; this heading just
+dates it for the release, per [VERSIONS.md](../VERSIONS.md)'s policy.
+
 ### Added
 
 - `rust/salpa.yaml`: parameterizes the Rust CLI release for

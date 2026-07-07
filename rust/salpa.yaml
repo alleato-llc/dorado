@@ -1,0 +1,17 @@
+# Release config for salpa (github.com/alleato-llc/salpa), run from rust/ by
+# .github/workflows/release.yml. Own tag namespace (rust-v*) — this is
+# dorado's only release track (the other 8 ports have no prebuilt binaries).
+#
+# This file drives the `test` and `version` stages only (shared across both
+# CLIs, one release). The `build`/`publish` stages instead run against
+# salpa-dorado.yaml and salpa-gyotaku.yaml, one config per binary, via
+# `salpa --config <file>`: salpa's `bins:` (bundling several binaries
+# together) requires `package: archive`, and each CLI now ships as its own
+# bare per-platform binary — no archive (see CHANGELOG.md for the switch).
+ecosystem: rust
+product: dorado
+tag_prefix: rust-v
+
+test:
+  - "cargo test --workspace --exclude dorado-gui --exclude dorado-gyotaku-gui"
+  - "cargo test -p dorado --all-features"

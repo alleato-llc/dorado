@@ -23,16 +23,30 @@ This changelog starts in 2026-06; for earlier history see the git log.
 
 ### Added
 
-- **Site deploy workflow** (`.github/workflows/deploy-site.yml`): pushes to `main` that
-  touch `web/**` build the Astro landing page and deploy it to `dorado.alleato.dev`
-  (S3 + CloudFront, provisioned in `nycjv321-infrastructure/projects/dorado`) over
-  short-lived OIDC credentials, then invalidate the CDN. Path-filtered, so a commit that
-  does not touch `web/` never deploys.
-- **Release workflow** (`.github/workflows/release.yml`): pushing a `rust-v*` tag cuts a
-  GitHub Release and attaches prebuilt Rust `dorado`/`gyotaku` CLI binaries for Linux,
-  macOS (Intel + Apple Silicon), and Windows. Tag-driven to fit the per-component
-  versioning in [`VERSIONS.md`](VERSIONS.md); other ports can add their own `<port>-v*`
-  triggers later.
+- **Site deploy workflow** (`.github/workflows/deploy-site.yml`) and **release workflow**
+  (`.github/workflows/release.yml`), both driven end-to-end by
+  [salpa](https://github.com/alleato-llc/salpa) (a private house release tool, pulled from
+  ghcr) instead of raw `aws`/packaging commands in the workflow YAML — the house
+  convention also used by the sibling `soroban` project. `salpa.yaml` (repo root) and
+  `rust/salpa.yaml` parameterize the two stages: `salpa deploy` and `salpa
+  build`/`test`/`publish`/`version`.
+  - **Deploy**: pushes to `main` that touch `web/**` build the Astro landing page and
+    deploy it to `dorado.alleato.dev` (S3 + CloudFront, provisioned separately as IaC)
+    over short-lived OIDC credentials, then invalidate the CDN (the distribution is
+    resolved at runtime by its alias, no id wired into the workflow). Path-filtered, so
+    a commit that does not touch `web/` never deploys. Also redeploys on a new
+    `rust-v*` release (`release: published`), so the landing page's download links
+    (see [`web/CHANGELOG.md`](web/CHANGELOG.md)) pick up the freshly published
+    binaries.
+  - **Release**: the Rust CLI track now **auto-releases on every push to `main` that
+    touches `rust/**`** (no manual `git tag` step) — `salpa version` computes the next
+    semver from `rust-v*` tags plus `#minor`/`#major` in the commit message (patch by
+    default), and `salpa build`/`publish` (run once per CLI, via `--config
+    salpa-dorado.yaml`/`salpa-gyotaku.yaml`) produce one bare binary per platform per CLI
+    (Linux, macOS Intel + Apple Silicon, Windows) — no archive, so each CLI downloads as
+    a single file. `LICENSE` is attached to the release once rather than duplicated per
+    platform. See [`rust/CHANGELOG.md`](rust/CHANGELOG.md) for the release-policy and
+    packaging details. Other ports can add their own `<port>-v*` tracks later.
 - **C++ port** (`cpp/`), the tenth implementation: an SDK (`libdorado.a`) plus the
   `dorado`/`gyotaku` CLIs, byte-for-byte cross-compatible with the others (verified by
   decrypting the Rust CLI's `.mahi` fixtures and by Rust decrypting its output, with

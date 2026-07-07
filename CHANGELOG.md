@@ -31,11 +31,10 @@ This changelog starts in 2026-06; for earlier history see the git log.
   `rust/salpa.yaml` parameterize the two stages: `salpa deploy` and `salpa
   build`/`test`/`publish`/`version`.
   - **Deploy**: pushes to `main` that touch `web/**` build the Astro landing page and
-    deploy it to `dorado.alleato.dev` (S3 + CloudFront, provisioned in
-    `nycjv321-infrastructure/projects/dorado`) over short-lived OIDC credentials, then
-    invalidate the CDN (the distribution is resolved at runtime by its alias, no id
-    wired into the workflow). Path-filtered, so a commit that does not touch `web/` never
-    deploys.
+    deploy it to `dorado.alleato.dev` (S3 + CloudFront, provisioned separately as IaC)
+    over short-lived OIDC credentials, then invalidate the CDN (the distribution is
+    resolved at runtime by its alias, no id wired into the workflow). Path-filtered, so
+    a commit that does not touch `web/` never deploys.
   - **Release**: the Rust CLI track now **auto-releases on every push to `main` that
     touches `rust/**`** (no manual `git tag` step) — `salpa version` computes the next
     semver from `rust-v*` tags plus `#minor`/`#major` in the commit message (patch by

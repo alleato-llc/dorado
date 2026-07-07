@@ -86,6 +86,12 @@ jobs:
 
   # No signing here (unlike soroban's macOS track), so all 4 legs are plain,
   # unsigned archive builds — one job, no per-secret job split needed.
+  #
+  # macos-x86_64 uses macos-15-intel, not bare macos-13: GitHub retired macos-13
+  # as a hosted runner label (macos-latest/macos-14/macos-15 are arm64-only now),
+  # so an Intel Mac leg needs the explicit -intel suffix. Same standard per-minute
+  # billing rate as the arm64 runners, no org-level "larger runner" opt-in needed
+  # (that's the separate -large/-xlarge SKU).
   build:
     name: ${{ matrix.name }}
     needs: [version]
@@ -96,7 +102,7 @@ jobs:
         include:
           - { name: linux-x86_64, os: ubuntu-latest, salpa: salpa-linux-amd64 }
           - { name: macos-arm64, os: macos-latest, salpa: salpa-darwin-arm64 }
-          - { name: macos-x86_64, os: macos-13, salpa: salpa-darwin-amd64 }
+          - { name: macos-x86_64, os: macos-15-intel, salpa: salpa-darwin-amd64 }
           - { name: windows-x86_64, os: windows-latest, salpa: salpa-windows-amd64.exe }
     env:
       GH_TOKEN: ${{ github.token }}

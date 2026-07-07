@@ -1,0 +1,138 @@
+name: Release
+
+# The Rust CLI release track — for now the only port shipping prebuilt
+# binaries (dorado is versioned per component; see VERSIONS.md). salpa
+# (github.com/alleato-llc/salpa, a private house release tool pulled from
+# ghcr) owns version -> test -> build -> publish. rust/salpa.yaml drives
+# `test`/`version` (shared); `build`/`publish` instead run TWICE per platform
+# leg, once against rust/salpa-dorado.yaml and once against
+# rust/salpa-gyotaku.yaml (`salpa --config <file>`), each producing one bare
+# per-platform binary (dorado-<os>-<arch>[.exe], gyotaku-<os>-<arch>[.exe]) —
+# no archive, so each CLI downloads as a single file. `salpa version`
+# computes the next semver from rust-v* tags + commit keywords (patch by
+# default; #minor/#major in the head commit bumps bigger); every artifact
+# (both binaries per platform, plus LICENSE, attached once in the `version`
+# job below) lands on the same rust-v<version> GitHub release, the point of
+# truth for downloads.
+#
+# Auto-releases on every push to main touching rust/** — no manual tag push.
+# Other ports can grow their own `<port>-v*` track here later.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "rust/**"
+      - ".github/workflows/release.yml"
+
+permissions:
+  contents: write # create the release + upload the binaries
+  packages: read # pull salpa from ghcr
+
+concurrency:
+  group: dorado-release-rust
+  cancel-in-progress: false
+
+env:
+  SALPA_VERSION: "0.1.12" # pinned salpa release on ghcr (bump deliberately)
+
+jobs:
+  # Correctness gate before anything is versioned/released.
+  test:
+    name: Rust tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - uses: oras-project/setup-oras@v1
+      - name: salpa test
+        run: |
+          echo "${{ github.token }}" | oras login ghcr.io -u "${{ github.actor }}" --password-stdin
+          oras pull "ghcr.io/${{ github.repository_owner }}/salpa:${SALPA_VERSION}"
+          chmod +x salpa-linux-amd64
+          cd rust && "$GITHUB_WORKSPACE/salpa-linux-amd64" test
+
+  # Compute the next rust-v* version and create the empty GitHub release once,
+  # so the parallel build legs deterministically upload into it (no create race).
+  version:
+    name: Version + create release
+    needs: [test]
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # rust-v* tags drive the version
+      - uses: oras-project/setup-oras@v1
+      - name: Compute version + init release
+        id: v
+        run: |
+          set -euo pipefail
+          echo "${{ github.token }}" | oras login ghcr.io -u "${{ github.actor }}" --password-stdin
+          oras pull "ghcr.io/${{ github.repository_owner }}/salpa:${SALPA_VERSION}"
+          chmod +x salpa-linux-amd64
+          VERSION=$(cd rust && "$GITHUB_WORKSPACE/salpa-linux-amd64" version)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Rust release: rust-v$VERSION"
+          # Idempotent empty release (already exists on a re-run -> skip).
+          if ! gh release view "rust-v$VERSION" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release create "rust-v$VERSION" \
+              --repo "${{ github.repository }}" \
+              --target "$GITHUB_SHA" \
+              --title "dorado (Rust) $VERSION" \
+              --generate-notes
+          fi
+          # LICENSE is platform-independent (unlike the per-leg binaries below), so
+          # it's attached once here rather than duplicated across the 4 build legs.
+          # --clobber makes this idempotent on a re-run.
+          gh release upload "rust-v$VERSION" LICENSE --repo "${{ github.repository }}" --clobber
+
+  # No signing here (unlike soroban's macOS track), so all 4 legs are plain,
+  # unsigned bare-binary builds — one job, no per-secret job split needed. Each
+  # leg runs salpa twice (once per --config) to produce both CLIs' binaries.
+  #
+  # macos-x86_64 uses macos-15-intel, not bare macos-13: GitHub retired macos-13
+  # as a hosted runner label (macos-latest/macos-14/macos-15 are arm64-only now),
+  # so an Intel Mac leg needs the explicit -intel suffix. Same standard per-minute
+  # billing rate as the arm64 runners, no org-level "larger runner" opt-in needed
+  # (that's the separate -large/-xlarge SKU).
+  build:
+    name: ${{ matrix.name }}
+    needs: [version]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux-x86_64, os: ubuntu-latest, salpa: salpa-linux-amd64 }
+          - { name: macos-arm64, os: macos-latest, salpa: salpa-darwin-arm64 }
+          - { name: macos-x86_64, os: macos-15-intel, salpa: salpa-darwin-amd64 }
+          - { name: windows-x86_64, os: windows-latest, salpa: salpa-windows-amd64.exe }
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+          key: release-${{ matrix.name }}
+      - uses: oras-project/setup-oras@v1
+      - name: salpa build + publish (dorado, gyotaku)
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "${{ github.token }}" | oras login ghcr.io -u "${{ github.actor }}" --password-stdin
+          oras pull "ghcr.io/${{ github.repository_owner }}/salpa:${SALPA_VERSION}"
+          SALPA="$PWD/${{ matrix.salpa }}"; chmod +x "$SALPA" || true
+          cd rust
+          for cfg in salpa-dorado.yaml salpa-gyotaku.yaml; do
+            "$SALPA" --config "$cfg" --version "${{ needs.version.outputs.version }}" build
+            "$SALPA" --config "$cfg" --version "${{ needs.version.outputs.version }}" publish
+          done

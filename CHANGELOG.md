@@ -23,6 +23,16 @@ This changelog starts in 2026-06; for earlier history see the git log.
 
 ### Added
 
+- **Site deploy workflow** (`.github/workflows/deploy-site.yml`): pushes to `main` that
+  touch `web/**` build the Astro landing page and deploy it to `dorado.alleato.dev`
+  (S3 + CloudFront, provisioned in `nycjv321-infrastructure/projects/dorado`) over
+  short-lived OIDC credentials, then invalidate the CDN. Path-filtered, so a commit that
+  does not touch `web/` never deploys.
+- **Release workflow** (`.github/workflows/release.yml`): pushing a `rust-v*` tag cuts a
+  GitHub Release and attaches prebuilt Rust `dorado`/`gyotaku` CLI binaries for Linux,
+  macOS (Intel + Apple Silicon), and Windows. Tag-driven to fit the per-component
+  versioning in [`VERSIONS.md`](VERSIONS.md); other ports can add their own `<port>-v*`
+  triggers later.
 - **C++ port** (`cpp/`), the tenth implementation: an SDK (`libdorado.a`) plus the
   `dorado`/`gyotaku` CLIs, byte-for-byte cross-compatible with the others (verified by
   decrypting the Rust CLI's `.mahi` fixtures and by Rust decrypting its output, with
@@ -32,6 +42,17 @@ This changelog starts in 2026-06; for earlier history see the git log.
   "ten implementations" (`README.md`, root `CLAUDE.md`, `docs/implementations.md`,
   `VERSIONS.md`). CI gains a path-filtered `cpp` job, wired into the `changes` filter and
   re-run on `docs/spec.md` changes like the other ports. Per-port details are in
+  [`cpp/CHANGELOG.md`](cpp/CHANGELOG.md).
+
+### Changed
+
+- CI (`.github/workflows/ci.yml`) gains soroban-style hardening: a least-privilege
+  top-level `permissions: contents: read` (the RustSec audit job widens its own token to
+  `issues: write`), workflow-level `concurrency` so a new push supersedes the in-flight
+  run for the same ref, and a human-readable `name:` on every job. The path-filtered
+  per-component structure is unchanged.
+- CI: the `cpp` job gains a sanitized rerun (a second CMake build with `-DSANITIZE=ON`,
+  ASan + UBSan), matching the C/Zig tier of per-port hardening. Details in
   [`cpp/CHANGELOG.md`](cpp/CHANGELOG.md).
 - **Haskell port** (`haskell/`), the ninth implementation: an SDK plus the
   `dorado`/`gyotaku` CLIs, byte-for-byte cross-compatible with the others (verified by

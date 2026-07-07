@@ -75,7 +75,9 @@ This is the dorado monorepo. It has several parts:
   alongside the cipher/Skein/BLAKE3; only the three password KDFs (Argon2id, scrypt,
   PBKDF2) are delegated, to OpenSSL's `EVP_KDF` (OpenSSL >= 3.2, the sole dependency).
   `ctest` (or `./build/dorado_test`) runs the suite, including cross-compat fixtures
-  made by the Rust CLI in `tests/fixtures/`. Run cmake from inside `cpp/`.
+  made by the Rust CLI in `tests/fixtures/`; CI reruns it under ASan/UBSan via a second
+  `-DSANITIZE=ON` build, and `-DFUZZ=ON` (Clang only) builds a libFuzzer harness for the
+  decrypt path. Run cmake from inside `cpp/`.
 - `rust/wasm/` — the verified Rust cipher compiled to WebAssembly via
   `wasm-bindgen` (a separate crate, excluded from the `rust/` workspace). It exports
   only the cipher/hash primitives (CTR, Skein, BLAKE3), not the engine; the engine

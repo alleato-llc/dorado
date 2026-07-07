@@ -15,9 +15,14 @@ name: Deploy site
 # stored keys. The CloudFront distribution is found at runtime by its alias
 # (== the bucket/domain), so no distribution id needs wiring here.
 #
-# Required repository variables (Settings -> Secrets and variables -> Actions):
-#   AWS_REGION          region of the deploy role (us-east-1)
-#   AWS_SITE_ROLE_ARN   arn of dorado-github-deploy-role (OIDC)
+# Required repository config (Settings -> Secrets and variables -> Actions):
+#   AWS_REGION (variable)          region of the deploy role (us-east-1)
+#   AWS_SITE_ROLE_ARN (secret)     arn of dorado-github-deploy-role (OIDC) — a
+#     SECRET, not a variable: GitHub auto-redacts secrets everywhere in logs,
+#     which a variable + a manual ::add-mask:: step does NOT do (the step's own
+#     `env:` block still gets echoed in its log preamble before the mask takes
+#     effect — that's a leak, not defense in depth; don't revert this to a
+#     variable no matter how it's masked downstream).
 on:
   push:
     branches: [main]
@@ -63,19 +68,10 @@ jobs:
           chmod +x salpa-linux-amd64
           sudo mv salpa-linux-amd64 /usr/local/bin/salpa
 
-      # The Actions logs are public; mask the account id (embedded in the role
-      # arn) before any AWS-touching command can echo it. Read via env so the
-      # literal isn't written into this file.
-      - name: Mask account id
-        env:
-          ROLE_ARN: ${{ vars.AWS_SITE_ROLE_ARN }}
-        run: |
-          echo "::add-mask::$(printf '%s' "$ROLE_ARN" | cut -d: -f5)"
-
       - name: Configure deploy credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.AWS_SITE_ROLE_ARN }}
+          role-to-assume: ${{ secrets.AWS_SITE_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Deploy

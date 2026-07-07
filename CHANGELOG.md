@@ -57,6 +57,17 @@ This changelog starts in 2026-06; for earlier history see the git log.
   `VERSIONS.md`). CI gains a path-filtered `cpp` job, wired into the `changes` filter and
   re-run on `docs/spec.md` changes like the other ports. Per-port details are in
   [`cpp/CHANGELOG.md`](cpp/CHANGELOG.md).
+
+### Changed
+
+- CI (`.github/workflows/ci.yml`) gains soroban-style hardening: a least-privilege
+  top-level `permissions: contents: read` (the RustSec audit job widens its own token to
+  `issues: write`), workflow-level `concurrency` so a new push supersedes the in-flight
+  run for the same ref, and a human-readable `name:` on every job. The path-filtered
+  per-component structure is unchanged.
+- CI: the `cpp` job gains a sanitized rerun (a second CMake build with `-DSANITIZE=ON`,
+  ASan + UBSan), matching the C/Zig tier of per-port hardening. Details in
+  [`cpp/CHANGELOG.md`](cpp/CHANGELOG.md).
 - **Haskell port** (`haskell/`), the ninth implementation: an SDK plus the
   `dorado`/`gyotaku` CLIs, byte-for-byte cross-compatible with the others (verified by
   decrypting the Rust CLI's `.mahi` fixtures and by Rust decrypting its output). It is

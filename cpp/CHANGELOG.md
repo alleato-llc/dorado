@@ -30,3 +30,8 @@ is the master table.
   using a non-elidable volatile-write `secure_wipe`; the `dorado` CLI holds the password
   in a page-aligned, `mlock`'d buffer wiped on free (best-effort `mlock`). Reflected in
   `docs/implementations.md`.
+- A sanitized test build: `-DSANITIZE=ON` builds the library + `dorado_test` under
+  AddressSanitizer + UndefinedBehaviorSanitizer; CI reruns the suite this way in a second
+  build directory, matching the C port's `make test SAN=1`. `-DFUZZ=ON` (needs Clang)
+  builds a libFuzzer harness for the decrypt path (`cpp/fuzz/fuzz_decrypt.cpp`), local-only
+  for now like the C port's `make fuzz` (not run in CI).

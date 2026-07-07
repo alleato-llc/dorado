@@ -4,12 +4,22 @@ on:
   push:
   pull_request:
 
+# Least privilege by default; the audit job widens its own token below.
+permissions:
+  contents: read
+
+# Supersede in-flight runs for the same ref (a new push cancels the old run).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # Detect which components changed, so each job below runs only when relevant. A
   # change to the wire-format spec (docs/spec.md) or to this workflow re-runs the
   # cross-compat suites everywhere, preserving the byte-for-byte invariant across
   # ports. Pure docs/changelog changes match nothing and run no build jobs.
   changes:
+    name: Detect changed components
     runs-on: ubuntu-latest
     outputs:
       rust: ${{ steps.filter.outputs.rust }}
@@ -61,6 +71,7 @@ jobs:
   # Format, lint, and test the cipher and construction crates plus the CLIs.
   # These need no system libraries. The Rust workspace lives in rust/.
   core:
+    name: Rust core (fmt, clippy, test)
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
@@ -83,6 +94,7 @@ jobs:
   # The GUIs pull in a graphics stack and need windowing system libraries to
   # build, so they get their own job with those installed (build/lint only).
   gui:
+    name: Rust GUIs (build + clippy)
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
@@ -106,6 +118,7 @@ jobs:
   # (--no-default-features). If anything leaks std, or alloc into the no-alloc
   # build, these fail to compile.
   nostd:
+    name: Rust no_std / no-alloc
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
@@ -122,9 +135,14 @@ jobs:
 
   # Check dependencies against the RustSec advisory database.
   audit:
+    name: Rust security audit (RustSec)
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
+    # audit-check opens an issue when an advisory lands on the default branch.
+    permissions:
+      contents: read
+      issues: write
     steps:
       - uses: actions/checkout@v4
       - uses: rustsec/audit-check@v2.0.0
@@ -134,6 +152,7 @@ jobs:
 
   # Vet, build, and test the Go port (which must match the Rust on-disk format).
   go:
+    name: Go port
     needs: changes
     if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
@@ -153,6 +172,7 @@ jobs:
   # Build and test the Java SDK (which must match the Rust on-disk format). Its
   # cross-compat tests decrypt fixtures made by the Rust CLI, committed in the repo.
   java:
+    name: Java port
     needs: changes
     if: needs.changes.outputs.java == 'true'
     runs-on: ubuntu-latest
@@ -170,6 +190,7 @@ jobs:
   # Test the Python port (SDK + CLIs). Cross-compat tests decrypt fixtures made by
   # the Rust CLI, committed in the repo.
   python:
+    name: Python port
     needs: changes
     if: needs.changes.outputs.python == 'true'
     runs-on: ubuntu-latest
@@ -188,6 +209,7 @@ jobs:
   # HMAC from OpenSSL, both via pkg-config. Cross-compat tests decrypt fixtures
   # made by the Rust CLI, committed in the repo.
   c:
+    name: C port
     needs: changes
     if: needs.changes.outputs.c == 'true'
     runs-on: ubuntu-latest
@@ -206,6 +228,7 @@ jobs:
   # from Zig's standard library. Cross-compat tests decrypt fixtures made by the
   # Rust CLI, committed in the repo.
   zig:
+    name: Zig port
     needs: changes
     if: needs.changes.outputs.zig == 'true'
     runs-on: ubuntu-latest
@@ -225,6 +248,7 @@ jobs:
   # cabal); the suite's cross-compat tests decrypt fixtures made by the Rust CLI,
   # committed in the repo. GHC 9.14 matches the toolchain the port is developed on.
   haskell:
+    name: Haskell port
     needs: changes
     if: needs.changes.outputs.haskell == 'true'
     runs-on: ubuntu-latest
@@ -245,6 +269,7 @@ jobs:
   # OpenSSL (3.0) lacks, so this runs in a Fedora container that ships OpenSSL 3.2+ and
   # a C++23 compiler. Cross-compat tests decrypt fixtures made by the Rust CLI.
   cpp:
+    name: C++ port
     needs: changes
     if: needs.changes.outputs.cpp == 'true'
     runs-on: ubuntu-latest
@@ -260,9 +285,13 @@ jobs:
       - run: cmake -S . -B build
       - run: cmake --build build
       - run: ctest --test-dir build --output-on-failure
+      - run: cmake -S . -B build-san -DSANITIZE=ON
+      - run: cmake --build build-san
+      - run: ctest --test-dir build-san --output-on-failure   # rerun the suite under AddressSanitizer + UndefinedBehaviorSanitizer
 
   # Build the landing page in web/ so a broken site fails CI.
   web:
+    name: Web landing page (build)
     needs: changes
     if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest

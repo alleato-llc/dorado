@@ -5,7 +5,7 @@ name: Deploy site
 # filter means this workflow never starts: no build, no deploy, nothing. A new
 # release on the rust-v* track also redeploys the site, so the build-time
 # download-link resolution (web/src/lib/releases.ts) picks up the freshly
-# published archives.
+# published binaries.
 #
 # salpa (github.com/alleato-llc/salpa, a private house release tool pulled
 # from ghcr) owns the deploy: `salpa deploy` builds web/ (npm) and syncs

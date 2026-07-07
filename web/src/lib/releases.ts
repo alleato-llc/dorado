@@ -3,12 +3,15 @@
 // Mirrors soroban's site/src/lib/releases.ts. Runs in Astro frontmatter, i.e. at
 // BUILD time (Node). It makes a single HTTP request to the Releases API for the
 // newest `rust-v*` tag (the only release track dorado has — see
-// ../.github/workflows/release.yml) and reads the four platform archive names
-// off it (`dorado-<version>-<os>-<arch>.<ext>`, salpa's naming convention — see
-// ../../rust/salpa.yaml). A `release: published` trigger on deploy-site.yml
-// re-runs the build so the resolved URLs stay fresh. On ANY failure (offline
-// local build, rate limit, no release yet, missing asset) it falls back to a
-// GitHub URL that always exists, so the site build can never break on this.
+// ../.github/workflows/release.yml) and reads the four `dorado` platform binary
+// names off it (`dorado-<os>-<arch>[.exe]`, salpa's bare-binary naming
+// convention — see ../../rust/salpa-dorado.yaml). `gyotaku` ships the same way
+// but isn't wired into the download button; it's reachable from the Releases
+// page link every button falls back to. A `release: published` trigger on
+// deploy-site.yml re-runs the build so the resolved URLs stay fresh. On ANY
+// failure (offline local build, rate limit, no release yet, missing asset) it
+// falls back to a GitHub URL that always exists, so the site build can never
+// break on this.
 //
 // The repo is currently private: even the fallback Releases-page link 404s for
 // a visitor without repo access, same as every other github.com/alleato-llc/dorado
@@ -73,10 +76,10 @@ export async function resolveDownloads(): Promise<DownloadUrls> {
     const releases = await fetchReleases();
     const rust = newest(releases, (t) => /^rust-v\d/.test(t));
     return {
-      linuxX64: pick(rust, /^dorado-[\d.]+-linux-x86_64\.tar\.gz$/i),
-      macosArm64: pick(rust, /^dorado-[\d.]+-macos-arm64\.tar\.gz$/i),
-      macosX64: pick(rust, /^dorado-[\d.]+-macos-x86_64\.tar\.gz$/i),
-      windowsX64: pick(rust, /^dorado-[\d.]+-windows-x86_64\.zip$/i),
+      linuxX64: pick(rust, /^dorado-linux-x86_64$/i),
+      macosArm64: pick(rust, /^dorado-macos-arm64$/i),
+      macosX64: pick(rust, /^dorado-macos-x86_64$/i),
+      windowsX64: pick(rust, /^dorado-windows-x86_64\.exe$/i),
       releasesPage: RELEASES_PAGE,
     };
   } catch (err) {

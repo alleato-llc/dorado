@@ -8,6 +8,18 @@ the Rust-specific details. Format: [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Changed
+
+- **Release packaging: no more archives.** `rust/salpa.yaml` now drives only the shared
+  `test`/`version` stages; `build`/`publish` instead run against two new configs,
+  `rust/salpa-dorado.yaml` and `rust/salpa-gyotaku.yaml` (one `bin:` each, no
+  `package:`), so each CLI ships as its own bare per-platform binary
+  (`dorado-<os>-<arch>[.exe]`, `gyotaku-<os>-<arch>[.exe]`) instead of both being
+  bundled with `LICENSE` into one `tar.gz`/`zip`. `LICENSE` is now attached to the
+  release once (workflow-level) instead of duplicated inside every platform archive.
+  Matches soroban's convention for its portable (non-macOS) binaries. See the Core
+  changelog for the workflow-level change.
+
 ## [0.1.1] - 2026-07-07
 
 The first cut of the salpa-driven auto-release track (bootstrapped from the

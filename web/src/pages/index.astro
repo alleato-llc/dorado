@@ -7,7 +7,7 @@ import { resolveDownloads } from "../lib/releases";
 
 const REPO = "https://github.com/alleato-llc/dorado";
 
-// Resolve the Rust CLI track's newest release -> per-platform archive URLs, at
+// Resolve the Rust CLI track's newest release -> per-platform binary URLs, at
 // build time. Passed into the <Download> island, which picks the right button
 // per OS/arch. See src/lib/releases.ts.
 const downloads = await resolveDownloads();
@@ -90,11 +90,12 @@ const primitives = [
         C, C++, Zig, Java, Python, Haskell, and TypeScript (which also runs in your browser).
       </p>
       <div class="cta">
-        <a class="btn primary" href={REPO}>View the source</a>
-        <a class="btn ghost" href={`${REPO}/blob/main/rust/docs/overview.md`}>
-          Read the docs
-        </a>
+        <Download client:load {...downloads} />
+        <a class="btn ghost" href={REPO}>View the source</a>
       </div>
+      <p class="demo-note">
+        <a href={`${REPO}/blob/main/rust/docs/overview.md`}>Read the docs</a>
+      </p>
     </div>
   </section>
 
@@ -119,21 +120,6 @@ const primitives = [
             </div>
           ))
         }
-      </div>
-    </div>
-  </section>
-
-  <section id="download">
-    <div class="wrap">
-      <h2>Download the CLIs</h2>
-      <p class="sub">
-        Prebuilt <code>dorado</code> and <code>gyotaku</code> binaries for Linux,
-        macOS (Apple Silicon and Intel), and Windows — built and published
-        automatically by CI on every Rust change. The other nine ports build from
-        source (see the comparison table below).
-      </p>
-      <div class="cta" style="justify-content: flex-start;">
-        <Download client:load {...downloads} />
       </div>
     </div>
   </section>

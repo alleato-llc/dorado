@@ -37,15 +37,16 @@ This changelog starts in 2026-06; for earlier history see the git log.
     a commit that does not touch `web/` never deploys. Also redeploys on a new
     `rust-v*` release (`release: published`), so the landing page's download links
     (see [`web/CHANGELOG.md`](web/CHANGELOG.md)) pick up the freshly published
-    archives.
+    binaries.
   - **Release**: the Rust CLI track now **auto-releases on every push to `main` that
     touches `rust/**`** (no manual `git tag` step) — `salpa version` computes the next
     semver from `rust-v*` tags plus `#minor`/`#major` in the commit message (patch by
-    default), and `salpa build`/`publish` produce one archive per platform (Linux, macOS
-    Intel + Apple Silicon, Windows), each bundling the `dorado` + `gyotaku` CLI binaries
-    and `LICENSE`. See [`rust/CHANGELOG.md`](rust/CHANGELOG.md) for the release-policy
-    and archive-naming-convention details. Other ports can add their own `<port>-v*`
-    tracks later.
+    default), and `salpa build`/`publish` (run once per CLI, via `--config
+    salpa-dorado.yaml`/`salpa-gyotaku.yaml`) produce one bare binary per platform per CLI
+    (Linux, macOS Intel + Apple Silicon, Windows) — no archive, so each CLI downloads as
+    a single file. `LICENSE` is attached to the release once rather than duplicated per
+    platform. See [`rust/CHANGELOG.md`](rust/CHANGELOG.md) for the release-policy and
+    packaging details. Other ports can add their own `<port>-v*` tracks later.
 - **C++ port** (`cpp/`), the tenth implementation: an SDK (`libdorado.a`) plus the
   `dorado`/`gyotaku` CLIs, byte-for-byte cross-compatible with the others (verified by
   decrypting the Rust CLI's `.mahi` fixtures and by Rust decrypting its output, with

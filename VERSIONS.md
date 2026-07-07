@@ -17,7 +17,7 @@ port and a bump of that integer.
 | --- | --- | --- | --- |
 | Core | 0.1.0 | [CHANGELOG.md](CHANGELOG.md) | `docs/`, `SECURITY.md`, CI, cross-port decisions |
 | Container format | v4 | [docs/spec.md](docs/spec.md) | the on-disk `.mahi` wire format (all ports) |
-| Rust port | 0.1.0 | [rust/CHANGELOG.md](rust/CHANGELOG.md) | `rust/` (the reference implementation) |
+| Rust port | 0.1.1 | [rust/CHANGELOG.md](rust/CHANGELOG.md) | `rust/` (the reference implementation) |
 | Go port | 0.1.0 | [go/CHANGELOG.md](go/CHANGELOG.md) | `go/` |
 | Java port | 0.1.0 | [java/CHANGELOG.md](java/CHANGELOG.md) | `java/` |
 | Python port | 0.1.0 | [python/CHANGELOG.md](python/CHANGELOG.md) | `python/` |
@@ -29,10 +29,12 @@ port and a bump of that integer.
 | bench | 0.1.0 | [bench/CHANGELOG.md](bench/CHANGELOG.md) | `bench/` (the Gota consumer) |
 | web | 0.1.0 | [web/CHANGELOG.md](web/CHANGELOG.md) | `web/` (the landing page) |
 
-All components are at `0.1.0` and unreleased (no dated release has been cut yet); their
-current work sits in each changelog's `Unreleased` section. When the first release is
-cut, the `Unreleased` entries get a dated `0.1.0` heading and this table tracks each
-component from there. The container format is at `v4` (version 3 is still read).
+Every component but the Rust port is still at `0.1.0` and unreleased; their current work
+sits in each changelog's `Unreleased` section. When a component's first release is cut,
+the `Unreleased` entries get a dated version heading (see
+[rust/CHANGELOG.md](rust/CHANGELOG.md) for the Rust port's `0.1.1`, its first, cut via
+the salpa-driven auto-release track) and this table tracks it from there. The container
+format is at `v4` (version 3 is still read).
 
 ## Versioning rules
 

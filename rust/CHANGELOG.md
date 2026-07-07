@@ -10,6 +10,24 @@ the Rust-specific details. Format: [Keep a Changelog](https://keepachangelog.com
 
 ### Added
 
+- `rust/salpa.yaml`: parameterizes the Rust CLI release for
+  [salpa](https://github.com/alleato-llc/salpa) (see the Core changelog for the
+  workflow-level change). `bins: [dorado, gyotaku]` + `package: archive` bundles both
+  CLI binaries and `LICENSE` into one archive per platform.
+
+### Changed
+
+- **Release policy**: the Rust CLI track now auto-releases on every push to `main`
+  touching `rust/**`, computing the next `rust-v*` semver from tags + commit
+  `#minor`/`#major` annotations (patch by default), instead of requiring a manually
+  pushed `rust-v` tag. A one-time `rust-v0.1.0` bootstrap tag keeps the sequence
+  consistent with this changelog's existing `0.1.0` version.
+- **Release archive naming**: platform archives are now named with salpa's friendly
+  os/arch tokens instead of Rust target triples, e.g.
+  `dorado-0.1.0-aarch64-apple-darwin.tar.gz` -> `dorado-0.1.0-macos-arm64.tar.gz`,
+  `dorado-0.1.0-x86_64-pc-windows-msvc.zip` -> `dorado-0.1.0-windows-x86_64.zip`. The
+  archive contents (the `dorado`/`gyotaku` binaries plus `LICENSE`) are unchanged.
+
 - `dorado-engine`: a typed `Error` enum (`AuthFailed`, `MalformedHeader`,
   `UnsupportedVersion`, `InvalidParams`, `Io`) and a `Result<T>` alias, replacing the
   stringly-typed `Result<_, String>`, so callers can match on the failure kind. Wrong

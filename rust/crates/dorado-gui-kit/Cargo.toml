@@ -1,0 +1,13 @@
+[package]
+name = "dorado-gui-kit"
+description = "Composite rime-based widgets shared by dorado's iced GUI frontends (internal, not published)."
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+# The house component kit + theming. A sibling repo; path dep for local dev.
+rime = { path = "../../../../rime/rime" }
+# iced is re-exported as rime::iced, but composites here also name iced types
+# directly (Element, Length, ...); cargo unifies to one 0.14.x across the graph.
+iced = { version = "0.14", features = ["canvas", "advanced"] }

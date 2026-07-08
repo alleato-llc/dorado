@@ -4,36 +4,54 @@
 //! work (the same authenticated container the CLI writes) lives in `engine` and
 //! runs on a background thread so the window stays responsive.
 //!
+//! The look is built on `rime`, the house iced component kit (a sibling repo),
+//! plus `dorado-gui-kit`'s composites over it; see `rust/CLAUDE.md`.
+//!
 //! Educational and unaudited. The cryptographic work lives in the
 //! `dorado-engine` crate.
 
 #![forbid(unsafe_code)]
 
-mod style;
-
 use std::time::Duration;
 
 use iced::alignment::Horizontal;
 use iced::futures::channel::oneshot;
-use iced::widget::{
-    button, column, container, pick_list, progress_bar, row, scrollable, slider, text, text_input,
-    Column, Space,
-};
-use iced::{
-    executor, Alignment, Application, Command, Element, Length, Settings, Subscription, Theme,
-};
+use iced::widget::{column, container, scrollable, text, Column};
+use iced::{Element, Length, Subscription, Task, Theme};
 
 use dorado_engine as engine;
 use dorado_engine::{KdfParams, MacId, PrfId, Variant};
 
+use dorado_gui_kit::{
+    file_path_field, output_panel, password_field, picker, progress_status_row, segmented,
+    theme_picker,
+};
+use rime::theme;
+use rime::widgets::{button, card, labeled, slider, text_field};
+
+mod shot;
+
+/// The default theme, by name (see [`rime::theme::builtin_themes`]).
+const DEFAULT_THEME: &str = "Dracula";
+
 fn main() -> iced::Result {
-    App::run(Settings {
-        window: iced::window::Settings {
-            size: iced::Size::new(480.0, 640.0),
+    // A review screenshot (src/shot.rs) needs the whole scrollable content
+    // visible with nothing scrolled out of frame, so it gets a taller window;
+    // the normal app keeps its compact default.
+    let height = if std::env::var_os("DORADO_SHOT").is_some() {
+        780.0
+    } else {
+        640.0
+    };
+    iced::application(App::launch, App::update, App::view)
+        .title(App::title)
+        .theme(App::theme)
+        .subscription(App::subscription)
+        .window(iced::window::Settings {
+            size: iced::Size::new(480.0, height),
             ..Default::default()
-        },
-        ..Default::default()
-    })
+        })
+        .run()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -137,6 +155,8 @@ enum Message {
     TextChanged(String),
     InPathChanged(String),
     OutPathChanged(String),
+    BrowseInPath,
+    BrowseOutPath,
     ToggleOptions,
     VariantSelected(VariantChoice),
     KdfSelected(KdfChoice),
@@ -147,10 +167,14 @@ enum Message {
     Pbkdf2RoundsChanged(u32),
     ChunkChanged(u32),
     TweakChanged(String),
+    ThemeSelected(String),
     Run,
     Tick,
     Copy,
     Completed(Result<String, String>),
+    /// A screenshot-harness lifecycle event; see [`shot`]. No-op unless
+    /// `DORADO_SHOT` is set.
+    Shot(shot::Event),
 }
 
 struct App {
@@ -171,11 +195,16 @@ struct App {
     pbkdf2_rounds: u32,
     chunk_kib: u32,
     tweak_hex: String,
+    // Appearance.
+    theme_name: String,
     // Result.
     output: String,
     status: String,
     busy: bool,
     progress: f32,
+    /// The review-screenshot harness, present only when `DORADO_SHOT` is set —
+    /// otherwise `None` and the whole thing is inert. See [`shot`].
+    shot: Option<shot::Shot>,
 }
 
 impl Default for App {
@@ -197,10 +226,12 @@ impl Default for App {
             pbkdf2_rounds: 600_000,
             chunk_kib: 64,
             tweak_hex: String::new(),
+            theme_name: DEFAULT_THEME.to_string(),
             output: String::new(),
             status: String::new(),
             busy: false,
             progress: 0.0,
+            shot: None,
         }
     }
 }
@@ -239,6 +270,16 @@ impl App {
             // The GUI does not expose labels yet; encrypt without one.
             label: Vec::new(),
         })
+    }
+
+    /// The active palette: the named theme, falling back to the default for an
+    /// unknown (e.g. stale) name.
+    fn palette(&self) -> theme::Palette {
+        theme::builtin_themes()
+            .iter()
+            .find(|(name, _, _)| *name == self.theme_name)
+            .map(|(_, palette, _)| *palette)
+            .unwrap_or(theme::DRACULA)
     }
 }
 
@@ -301,14 +342,13 @@ async fn run_job(job: Job) -> Result<String, String> {
         .unwrap_or_else(|_| Err("worker thread stopped unexpectedly".into()))
 }
 
-impl Application for App {
-    type Executor = executor::Default;
-    type Message = Message;
-    type Theme = Theme;
-    type Flags = ();
-
-    fn new(_flags: ()) -> (Self, Command<Message>) {
-        (App::default(), Command::none())
+impl App {
+    /// The initial state: `App::default`, then the screenshot harness gets a
+    /// chance to seed it (a no-op unless `DORADO_SHOT` is set — see [`shot`]).
+    fn launch() -> Self {
+        let mut app = App::default();
+        shot::configure(&mut app);
+        app
     }
 
     fn title(&self) -> String {
@@ -316,18 +356,22 @@ impl Application for App {
     }
 
     fn theme(&self) -> Theme {
-        Theme::custom("darcula".to_string(), style::PALETTE)
+        self.palette().iced_theme(self.theme_name.clone())
     }
 
     fn subscription(&self) -> Subscription<Message> {
-        if self.busy {
+        let busy = if self.busy {
             iced::time::every(Duration::from_millis(40)).map(|_| Message::Tick)
         } else {
             Subscription::none()
+        };
+        match shot::subscription(self) {
+            Some(shot) => Subscription::batch([busy, shot]),
+            None => busy,
         }
     }
 
-    fn update(&mut self, message: Message) -> Command<Message> {
+    fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::DirectionSelected(d) => self.direction = d,
             Message::SourceSelected(s) => self.source = s,
@@ -335,6 +379,16 @@ impl Application for App {
             Message::TextChanged(v) => self.text = v,
             Message::InPathChanged(v) => self.in_path = v,
             Message::OutPathChanged(v) => self.out_path = v,
+            Message::BrowseInPath => {
+                if let Some(path) = rfd::FileDialog::new().pick_file() {
+                    self.in_path = path.display().to_string();
+                }
+            }
+            Message::BrowseOutPath => {
+                if let Some(path) = rfd::FileDialog::new().save_file() {
+                    self.out_path = path.display().to_string();
+                }
+            }
             Message::ToggleOptions => self.show_options = !self.show_options,
             Message::VariantSelected(v) => self.variant = v,
             Message::KdfSelected(k) => self.kdf = k,
@@ -345,18 +399,19 @@ impl Application for App {
             Message::Pbkdf2RoundsChanged(v) => self.pbkdf2_rounds = v,
             Message::ChunkChanged(v) => self.chunk_kib = v,
             Message::TweakChanged(v) => self.tweak_hex = v,
+            Message::ThemeSelected(name) => self.theme_name = name,
             Message::Tick => self.progress = (self.progress + 0.04) % 1.0,
             Message::Copy => return iced::clipboard::write(self.output.clone()),
             Message::Run => {
                 if self.busy {
-                    return Command::none();
+                    return Task::none();
                 }
                 let opts = match self.options() {
                     Ok(o) => o,
                     Err(e) => {
                         self.status = format!("Error: {e}");
                         self.output.clear();
-                        return Command::none();
+                        return Task::none();
                     }
                 };
                 let job = Job {
@@ -372,7 +427,7 @@ impl Application for App {
                 self.progress = 0.0;
                 self.status = "Working…".to_string();
                 self.output.clear();
-                return Command::perform(run_job(job), Message::Completed);
+                return Task::perform(run_job(job), Message::Completed);
             }
             Message::Completed(result) => {
                 self.busy = false;
@@ -387,16 +442,20 @@ impl Application for App {
                     }
                 }
             }
+            Message::Shot(e) => return shot::handle(self, e),
         }
-        Command::none()
+        Task::none()
     }
 
     fn view(&self) -> Element<'_, Message> {
+        let _scope = theme::enter(self.palette());
+        let p = theme::tokens();
+
         let header = column![
-            text("dorado").size(32).style(style::text_strong()),
+            text("dorado").size(32).color(p.ink),
             text("Threefish password encryption")
                 .size(13)
-                .style(style::text_muted()),
+                .color(p.muted),
         ]
         .spacing(3);
 
@@ -424,12 +483,10 @@ impl Application for App {
             .spacing(16)
             .max_width(420)
             .push(header)
+            .push(theme_picker(&self.theme_name, Message::ThemeSelected))
             .push(direction)
             .push(source)
-            .push(field(
-                "Password",
-                input("password", &self.password, Message::PasswordChanged).secure(true),
-            ));
+            .push(password_field(&self.password, Message::PasswordChanged));
 
         match self.source {
             Source::Text => {
@@ -437,85 +494,63 @@ impl Application for App {
                     Direction::Encrypt => ("Message", "text to encrypt"),
                     Direction::Decrypt => ("Ciphertext (hex)", "hex to decrypt"),
                 };
-                content = content.push(field(
+                content = content.push(labeled(
                     label,
-                    input(placeholder, &self.text, Message::TextChanged),
+                    text_field(placeholder, &self.text, Message::TextChanged),
                 ));
             }
             Source::File => {
                 content = content
-                    .push(field(
+                    .push(file_path_field(
                         "Input file",
-                        input("path to read", &self.in_path, Message::InPathChanged),
+                        "path to read",
+                        &self.in_path,
+                        Message::InPathChanged,
+                        Message::BrowseInPath,
                     ))
-                    .push(field(
+                    .push(file_path_field(
                         "Output file",
-                        input("path to write", &self.out_path, Message::OutPathChanged),
+                        "path to write",
+                        &self.out_path,
+                        Message::OutPathChanged,
+                        Message::BrowseOutPath,
                     ));
             }
         }
 
-        let toggle = button(
-            text(if self.show_options {
-                "Options ▴"
-            } else {
-                "Options ▾"
-            })
-            .size(13),
-        )
-        .padding([6, 12])
-        .style(style::segment(false))
-        .on_press(Message::ToggleOptions);
-        content = content.push(toggle);
+        let toggle_label = if self.show_options {
+            "Options ▴"
+        } else {
+            "Options ▾"
+        };
+        content = content.push(button::ghost(toggle_label, Message::ToggleOptions));
 
         if self.show_options {
             content = content.push(self.options_view());
         }
 
-        let mut go = button(
-            text(if self.busy { "Working…" } else { "Go" })
+        let go_label = if self.busy { "Working…" } else { "Go" };
+        let mut go = iced::widget::button(
+            text(go_label)
                 .size(16)
-                .horizontal_alignment(Horizontal::Center),
+                .width(Length::Fill)
+                .align_x(Horizontal::Center),
         )
         .padding(13)
         .width(Length::Fill)
-        .style(style::primary());
+        .style(theme::rounded(iced::widget::button::primary));
         if !self.busy {
             go = go.on_press(Message::Run);
         }
         content = content.push(go);
 
-        if self.busy {
-            content =
-                content.push(progress_bar(0.0..=1.0, self.progress).height(Length::Fixed(5.0)));
-        }
-        if !self.status.is_empty() {
-            content = content.push(
-                text(self.status.as_str())
-                    .size(13)
-                    .style(style::text_muted()),
-            );
-        }
+        content = content.push(progress_status_row(self.busy, self.progress, &self.status));
+
         if !self.output.is_empty() {
-            let head = row![
-                text("Output").size(12).style(style::text_muted()),
-                Space::with_width(Length::Fill),
-                button(text("Copy").size(12))
-                    .padding([5, 12])
-                    .style(style::segment(false))
-                    .on_press(Message::Copy),
-            ]
-            .align_items(Alignment::Center);
-            content = content.push(head).push(
-                container(scrollable(text(self.output.as_str()).size(13)))
-                    .padding(12)
-                    .width(Length::Fill)
-                    .height(Length::Fixed(120.0))
-                    .style(style::panel()),
-            );
+            content = content.push(output_panel("Output", &self.output, Message::Copy));
         }
 
-        let centered = container(content).width(Length::Fill).center_x();
+        let centered = container(content).center_x(Length::Fill);
         container(scrollable(centered))
             .padding(16)
             .width(Length::Fill)
@@ -529,113 +564,75 @@ impl App {
     fn options_view(&self) -> Element<'_, Message> {
         let cost: Element<'_, Message> = match self.kdf {
             KdfChoice::Argon2id => column![
-                slider_field(
-                    format!("Memory: {} MiB", self.argon2_mem_mib),
-                    slider(4..=256u32, self.argon2_mem_mib, Message::Argon2MemChanged),
+                slider(
+                    "Memory",
+                    4.0..=256.0,
+                    self.argon2_mem_mib as f32,
+                    format!("{} MiB", self.argon2_mem_mib),
+                    |v: f32| Message::Argon2MemChanged(v.round() as u32),
                 ),
-                slider_field(
-                    format!("Iterations: {}", self.argon2_time),
-                    slider(1..=8u32, self.argon2_time, Message::Argon2TimeChanged),
+                slider(
+                    "Iterations",
+                    1.0..=8.0,
+                    self.argon2_time as f32,
+                    format!("{}", self.argon2_time),
+                    |v: f32| Message::Argon2TimeChanged(v.round() as u32),
                 ),
             ]
             .spacing(12)
             .into(),
-            KdfChoice::Scrypt => slider_field(
-                format!("Cost log2(N): {}", self.scrypt_logn),
-                slider(8..=20u8, self.scrypt_logn, Message::ScryptLognChanged),
+            KdfChoice::Scrypt => slider(
+                "Cost log2(N)",
+                8.0..=20.0,
+                self.scrypt_logn as f32,
+                format!("{}", self.scrypt_logn),
+                |v: f32| Message::ScryptLognChanged(v.round() as u8),
             ),
-            KdfChoice::Pbkdf2 => slider_field(
-                format!("Rounds: {}", self.pbkdf2_rounds),
-                slider(
-                    10_000..=1_000_000u32,
-                    self.pbkdf2_rounds,
-                    Message::Pbkdf2RoundsChanged,
-                ),
+            KdfChoice::Pbkdf2 => slider(
+                "Rounds",
+                10_000.0..=1_000_000.0,
+                self.pbkdf2_rounds as f32,
+                format!("{}", self.pbkdf2_rounds),
+                |v: f32| Message::Pbkdf2RoundsChanged(v.round() as u32),
             ),
         };
 
-        container(
+        card(
             column![
-                field(
+                picker(
                     "Variant",
-                    pick_list(&VARIANTS[..], Some(self.variant), Message::VariantSelected)
-                        .width(Length::Fill)
-                        .padding(9),
+                    &VARIANTS[..],
+                    Some(self.variant),
+                    Message::VariantSelected,
                 ),
-                field(
+                picker(
                     "Key derivation",
-                    pick_list(&KDFS[..], Some(self.kdf), Message::KdfSelected)
-                        .width(Length::Fill)
-                        .padding(9),
+                    &KDFS[..],
+                    Some(self.kdf),
+                    Message::KdfSelected,
                 ),
-                field(
+                picker(
                     "Authentication (MAC)",
-                    pick_list(&MACS[..], Some(self.mac), Message::MacSelected)
-                        .width(Length::Fill)
-                        .padding(9),
+                    &MACS[..],
+                    Some(self.mac),
+                    Message::MacSelected,
                 ),
                 cost,
-                slider_field(
-                    format!("Chunk size: {} KiB", self.chunk_kib),
-                    slider(1..=512u32, self.chunk_kib, Message::ChunkChanged),
+                slider(
+                    "Chunk size",
+                    1.0..=512.0,
+                    self.chunk_kib as f32,
+                    format!("{} KiB", self.chunk_kib),
+                    |v: f32| Message::ChunkChanged(v.round() as u32),
                 ),
-                field(
+                labeled(
                     "Tweak (hex, optional)",
-                    input("blank = zeros", &self.tweak_hex, Message::TweakChanged),
+                    text_field("blank = zeros", &self.tweak_hex, Message::TweakChanged),
                 ),
             ]
             .spacing(14),
         )
-        .padding(14)
-        .width(Length::Fill)
-        .style(style::panel())
-        .into()
     }
-}
-
-/// A muted label above a control.
-fn field<'a>(label: &'a str, control: impl Into<Element<'a, Message>>) -> Element<'a, Message> {
-    column![
-        text(label).size(12).style(style::text_muted()),
-        control.into()
-    ]
-    .spacing(7)
-    .into()
-}
-
-/// A muted "label: value" caption above a slider.
-fn slider_field<'a>(caption: String, s: impl Into<Element<'a, Message>>) -> Element<'a, Message> {
-    column![text(caption).size(12).style(style::text_muted()), s.into()]
-        .spacing(7)
-        .into()
-}
-
-/// A styled single-line input.
-fn input<'a>(
-    placeholder: &'a str,
-    value: &'a str,
-    on_input: impl Fn(String) -> Message + 'a,
-) -> iced::widget::TextInput<'a, Message> {
-    text_input(placeholder, value)
-        .on_input(on_input)
-        .padding(11)
-        .size(15)
-        .style(style::input())
-}
-
-/// A segmented control: a row of pill buttons, one selected. Generic over the
-/// value each segment carries.
-fn segmented<'a, V: Copy + 'a>(items: &[(&'a str, bool, V)]) -> Element<'a, V> {
-    let mut row = iced::widget::Row::new().spacing(8);
-    for &(label, selected, value) in items {
-        row = row.push(
-            button(text(label).size(14))
-                .padding([9, 20])
-                .style(style::segment(selected))
-                .on_press(value),
-        );
-    }
-    row.into()
 }
 
 fn hex(bytes: &[u8]) -> String {

@@ -12,20 +12,26 @@ This is an educational, unaudited implementation. For real data, prefer an audit
 
 ## Project layout
 
-This is a Cargo workspace of six crates:
+This is a Cargo workspace of seven crates:
 
 - `crates/dorado` — the primitives library, zero runtime dependencies. Threefish + CTR is the core; alongside it are the from-scratch hashes, each verified against official test vectors or differentially against an audited crate: Skein-512 (the hash Threefish was built for) and BLAKE3.
 - `crates/dorado-engine` — the shared construction (KDFs, the authenticated chunked container, raw CTR, the MAC menu). Depends on `dorado`.
 - `crates/dorado-cli` — the command-line frontend (produces the `dorado` binary).
-- `crates/dorado-gui` — the iced graphical frontend for the password tool (produces `dorado-gui`).
+- `crates/dorado-gui` — the graphical frontend for the password tool (produces `dorado-gui`), built on `rime` (a sibling repo, `alleato-llc/rime`, a small `iced` component/theming kit) plus `dorado-gui-kit`'s composites over it. Has a theme picker (any of rime's built-in named palettes) and native Open/Save file dialogs (`rfd`).
+- `crates/dorado-gui-kit` — composite, dorado-flavored widgets shared by both GUI crates, built on `rime`.
 - `crates/dorado-gyotaku` — a standalone Skein-512 hashing tool (produces the `gyotaku` binary), like `sha256sum` but Skein.
-- `crates/dorado-gyotaku-gui` — the iced graphical frontend for the hashing tool (produces `gyotaku-gui`), a sibling of `dorado-gui`.
+- `crates/dorado-gyotaku-gui` — the graphical frontend for the hashing tool (produces `gyotaku-gui`), a sibling of `dorado-gui`, sharing its look via `rime` + `dorado-gui-kit`.
+
+`dorado-gui`, `dorado-gui-kit`, and `dorado-gyotaku-gui` depend on the sibling `rime`
+repo by path, so they are excluded from this workspace (see `Cargo.toml`) and each
+resolves its own separate `Cargo.lock`; build/test them from their own directories
+(`cd crates/dorado-gui && cargo build`), not via `--workspace`/`-p` from here.
 
 ## Using dorado
 
 ```
-cargo build --workspace      # everything
-cargo test  --workspace      # all tests
+cargo build --workspace      # the primitives, engine, and both CLIs
+cargo test  --workspace      # their tests
 cargo build -p dorado        # just the primitives library
 cargo build -p dorado-gyotaku  # just the gyotaku hashing tool
 cargo bench -p dorado        # cipher and hash throughput (criterion)
@@ -122,15 +128,17 @@ target/release/gyotaku -c sums               # prints "file.txt: OK", fails on m
 
 ### GUI demos
 
-Two small graphical demos built on [iced](https://iced.rs/), one per tool, sharing a look.
+Two small graphical demos built on [iced](https://iced.rs/) plus [rime](https://github.com/alleato-llc/rime) (a sibling repo's small component/theming kit) and the shared `dorado-gui-kit` composites over it, one per tool, sharing a look. Both offer a theme picker (any of rime's built-in named palettes) and native Open/Save file dialogs.
 
 `dorado-gui` is the password tool in a window: pick a source (typed text or a file) and a direction (encrypt or decrypt), enter a password, and run. A collapsible Options panel exposes the variant, KDF and its cost parameters, chunk size, and an optional tweak. The key derivation runs on a background thread so the window stays responsive; build with `--release` for snappy performance, since the KDF is deliberately slow and a debug build makes it much slower.
 
 `gyotaku-gui` is the hashing tool in a window: pick a source (typed text or a file) and an output length, and it shows the Skein-512 digest, computed by the same `dorado::skein` code as the CLI (streaming a file in constant memory on a worker thread). Paste an expected digest to verify a match.
 
+Both crates depend on the sibling `rime` repo by path and are excluded from the main workspace (see above), so run them from their own directories:
+
 ```
-cargo run --release -p dorado-gui          # the password tool
-cargo run --release -p dorado-gyotaku-gui  # the hashing tool (gyotaku-gui)
+cd crates/dorado-gui && cargo run --release          # the password tool
+cd crates/dorado-gyotaku-gui && cargo run --release  # the hashing tool (gyotaku-gui)
 ```
 
 Each GUI is a separate binary that shares the same library code as its CLI, so they are for the same educational purpose and carry the same caveats. iced pulls in a large graphics stack, which is why they are their own crates.

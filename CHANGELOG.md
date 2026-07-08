@@ -47,6 +47,27 @@ This changelog starts in 2026-06; for earlier history see the git log.
     a single file. `LICENSE` is attached to the release once rather than duplicated per
     platform. See [`rust/CHANGELOG.md`](rust/CHANGELOG.md) for the release-policy and
     packaging details. Other ports can add their own `<port>-v*` tracks later.
+- **Screenshot-generation script + CI workflow** (`scripts/generate_screenshots.py`,
+  `.github/workflows/screenshots.yml`), ported from soroban's own
+  (`soroban/scripts/generate_screenshots.py` /
+  `.github/workflows/screenshots.yml`): drives `dorado-gui`'s and
+  `dorado-gyotaku-gui`'s permanent env-gated `src/shot.rs` harnesses (see
+  [`rust/CHANGELOG.md`](rust/CHANGELOG.md)) to produce a small, fixed set of PNGs
+  landing in [`web/public/screenshots/`](web/public/screenshots/) — an "encrypt"
+  scene for `dorado-gui` and a "hash" scene for `dorado-gyotaku-gui`, each in
+  rime's "Dracula" (dark) and "Solarized Light" (light) built-in themes (4
+  images total: `dorado-encrypt-<theme>.png`, `gyotaku-hash-<theme>.png`). Each
+  crate is excluded from the main Rust workspace
+  and resolves its own `Cargo.lock` (see `rust/Cargo.toml`'s exclude comment), so
+  the script runs `cargo run` separately in each crate's own directory rather than
+  from one shared workspace root, unlike soroban's single `rust/gui`. The workflow
+  is manual (`workflow_dispatch`) plus path-filtered on push to `main`
+  (`rust/crates/dorado-gui/**`, `rust/crates/dorado-gyotaku-gui/**`, the script
+  itself); it checks out `dorado` and the sibling `alleato-llc/rime` repo side by
+  side (matching `ci.yml`'s `gui` job), captures headlessly via Xvfb + software
+  Vulkan (lavapipe) with a software-GL (llvmpipe) fallback, and commits the
+  regenerated PNGs as `github-actions[bot]` with no `[skip ci]` so the commit's
+  `web/**` path re-triggers `deploy-site.yml`.
 - **C++ port** (`cpp/`), the tenth implementation: an SDK (`libdorado.a`) plus the
   `dorado`/`gyotaku` CLIs, byte-for-byte cross-compatible with the others (verified by
   decrypting the Rust CLI's `.mahi` fixtures and by Rust decrypting its output, with
@@ -68,6 +89,16 @@ This changelog starts in 2026-06; for earlier history see the git log.
 - CI: the `cpp` job gains a sanitized rerun (a second CMake build with `-DSANITIZE=ON`,
   ASan + UBSan), matching the C/Zig tier of per-port hardening. Details in
   [`cpp/CHANGELOG.md`](cpp/CHANGELOG.md).
+- **New cross-repo dependency: `rime`** (`github.com/alleato-llc/rime`, a public sibling
+  repo; a small house `iced` component/theming kit already used by `soroban`). Both Rust
+  GUIs (`dorado-gui`, `dorado-gyotaku-gui`) are rebuilt on it, consumed as a path
+  dependency (mirroring `soroban`'s own convention). Because that path dependency would
+  otherwise force every job touching the main Rust workspace (notably the CLI-only
+  release pipeline, across four platforms) to also check out `rime`, the three
+  GUI-related crates (`dorado-gui`, the new `dorado-gui-kit`, `dorado-gyotaku-gui`) are
+  excluded from the main workspace and CI's `gui` job checks `rime` out as a sibling of
+  `dorado` itself, matching the pattern the screenshot workflow below also uses. Full
+  per-crate details are in [`rust/CHANGELOG.md`](rust/CHANGELOG.md).
 - **Haskell port** (`haskell/`), the ninth implementation: an SDK plus the
   `dorado`/`gyotaku` CLIs, byte-for-byte cross-compatible with the others (verified by
   decrypting the Rust CLI's `.mahi` fixtures and by Rust decrypting its output). It is

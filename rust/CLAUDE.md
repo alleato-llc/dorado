@@ -7,7 +7,7 @@ below concerns the Rust workspace.
 
 ## What this is
 
-Dorado is a Cargo workspace of six crates:
+Dorado is a Cargo workspace of seven crates:
 
 - `crates/dorado` — the primitives library, zero runtime dependencies. The core is
   a from-scratch Threefish (256/512/1024) following Skein 1.3, plus CTR mode.
@@ -18,15 +18,30 @@ Dorado is a Cargo workspace of six crates:
   authenticated chunked password container, raw CTR, and the MAC menu. Depends on
   `dorado`.
 - `crates/dorado-cli` — clap frontend; produces the `dorado` binary.
-- `crates/dorado-gui` — iced frontend; produces `dorado-gui`.
+- `crates/dorado-gui` — iced frontend; produces `dorado-gui`. Built on `rime` (a
+  sibling repo, `alleato-llc/rime`; a small `iced` component/theming kit consumed
+  as a path dependency) plus `dorado-gui-kit`'s composites over it. A theme picker
+  offers any of rime's built-in named palettes (default Dracula); native Open/Save
+  file dialogs (`rfd`) fill the input/output path fields. `src/shot.rs` is a
+  permanent, env-gated (`DORADO_SHOT`) review-screenshot harness (ported from
+  soroban), inert unless set.
+- `crates/dorado-gui-kit` — composite, dorado-flavored widgets (a segmented
+  control, a labeled dropdown, a theme picker, a password field, a file-path field
+  with a browse slot, a progress/status row, an output+copy panel) built on top of
+  `rime`. Internal; shared by `dorado-gui` and `dorado-gyotaku-gui` so neither
+  re-derives its own copy. Depends on `rime` + `iced`.
 - `crates/dorado-gyotaku` — clap frontend; produces the standalone `gyotaku`
   hashing binary (Skein-512, like `sha256sum`; named for the Japanese fish-print
   art, a file's fingerprint). Depends only on `dorado` + `clap`, kept separate so
   a hash tool does not pull in the KDF/engine stack.
 - `crates/dorado-gyotaku-gui` — iced frontend; produces `gyotaku-gui`, the hashing
-  tool in a window (a sibling of `dorado-gui`, sharing its `style.rs` look). Hashes
-  text or streams a file with the same `dorado::skein` code the CLI uses, on a
-  worker thread, at a selectable output length. Depends on `dorado` + `iced`.
+  tool in a window (a sibling of `dorado-gui`, sharing its look via `rime` +
+  `dorado-gui-kit`, including the same theme picker). Hashes text or streams a
+  file with the same `dorado::skein` code the CLI uses, on a worker thread, at a
+  selectable output length; a native Open dialog (`rfd`) fills the input-file
+  field. Depends on `dorado` + `iced` + `rime` + `dorado-gui-kit`. `src/shot.rs`
+  is a permanent, env-gated (`GYOTAKU_SHOT`) review-screenshot harness (a sibling
+  of `dorado-gui`'s own), inert unless set.
 
 Educational and unaudited. The cipher provides confidentiality only; the engine
 adds authentication (encrypt-then-MAC) for password files.

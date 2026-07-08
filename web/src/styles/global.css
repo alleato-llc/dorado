@@ -202,6 +202,154 @@ header.site nav a {
   border-color: var(--accent);
 }
 
+/* ---------- hero screenshot (real app, theme-matched) ---------- */
+
+/* The two apps' screenshots are portrait windows (dorado 960x1280, gyotaku
+   920x1120), so unlike a wide breakout gallery this stays a modest, centered
+   box under the CTA — no layout shift, since the box reserves the aspect
+   ratio up front. */
+.hero-shot {
+  width: min(420px, 92vw);
+  margin: 2rem auto 0;
+}
+
+/* The slides are stacked and crossfaded. Each real screenshot's window can be
+   a different height (a scene with less content gets a shorter capture, see
+   scripts/generate_screenshots.py), so the box's aspect ratio tracks the
+   ACTIVE slide's own width/height (set by the script via --shot-ratio, read
+   off the img's width/height attributes); object-fit: contain (not cover) so
+   a real UI screenshot is never cropped, just letterboxed during the
+   transition between two slides of differing ratio.
+
+   The border/radius/shadow live on THIS container, not on each .shot image:
+   a fractional aspect-ratio (e.g. 420px * 1560/960 = 682.5px) rounds to a
+   whole pixel, which can leave a hairline gap between an image and its own
+   border on one edge -- invisible against most content, but a per-image
+   border makes it read as a faint second line right at the frame. One
+   border on the container plus overflow: hidden clips any such gap instead
+   of framing it. */
+.hero-shot .shots {
+  position: relative;
+  aspect-ratio: var(--shot-ratio, 960 / 1560);
+  cursor: pointer;
+  overflow: hidden;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  box-shadow: 0 12px 40px var(--shadow);
+  background: var(--surface);
+}
+
+.hero-shot .shot {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  opacity: 0;
+  transition: opacity 0.7s ease;
+  pointer-events: none; /* clicks fall through to .shots (pause toggle) */
+}
+
+/* Only the current theme's slides participate; among those, the active
+   index is faded in. The non-matching theme is removed entirely. */
+:root[data-theme="dark"] .hero-shot .shot-light {
+  display: none;
+}
+
+:root[data-theme="light"] .hero-shot .shot-dark {
+  display: none;
+}
+
+:root[data-theme="dark"] .hero-shot .shot-dark.is-active,
+:root[data-theme="light"] .hero-shot .shot-light.is-active {
+  opacity: 1;
+}
+
+/* Only the currently-selected app's shots participate (dorado vs gyotaku);
+   the theme rules above then pick the right one of those. */
+.hero-shot[data-app="dorado"] .shot[data-app="gyotaku"],
+.hero-shot[data-app="gyotaku"] .shot[data-app="dorado"] {
+  display: none;
+}
+
+/* Segmented dorado/gyotaku toggle above the carousel. */
+.hero-shot .app-toggle {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 0.85rem;
+}
+.hero-shot .at-opt {
+  font-size: 0.8rem;
+  font-weight: 550;
+  padding: 0.3rem 0.85rem;
+  background: var(--surface);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  cursor: pointer;
+}
+.hero-shot .at-opt:first-child {
+  border-radius: 8px 0 0 8px;
+}
+.hero-shot .at-opt:last-child {
+  border-radius: 0 8px 8px 0;
+  border-left: none;
+}
+.hero-shot .at-opt.is-active {
+  background: var(--accent);
+  color: #fff;
+  border-color: transparent;
+}
+
+.hero-shot .dots {
+  display: flex;
+  gap: 0.45rem;
+  justify-content: center;
+  margin-top: 0.85rem;
+}
+
+.hero-shot .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  background: color-mix(in srgb, var(--faint) 45%, transparent);
+  transition: background 0.2s ease;
+}
+
+.hero-shot .dot.is-active {
+  background: var(--accent);
+}
+
+/* Maximize: a full-screen lightbox of the current shot. */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 4vmin;
+  background: rgba(0, 0, 0, 0.82);
+  cursor: zoom-out;
+}
+
+.lightbox.open {
+  display: flex;
+}
+
+.lightbox-img {
+  max-width: 96vw;
+  max-height: 92vh;
+  width: auto;
+  height: auto;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+  cursor: default;
+}
+
 /* ---------- sections ---------- */
 
 section {

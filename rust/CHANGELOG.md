@@ -8,7 +8,54 @@ the Rust-specific details. Format: [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Added
+
+- `dorado-gui` and `dorado-gyotaku-gui` each gain a permanent, env-gated
+  review-screenshot harness (`src/shot.rs`), ported from soroban's own
+  (`soroban/rust/gui/src/shot.rs`): inert unless `DORADO_SHOT` /
+  `GYOTAKU_SHOT` is set, in which case it seeds the app's state from
+  `DORADO_SHOT_*` / `GYOTAKU_SHOT_*` env vars (direction, source, options,
+  theme, KDF, variant, MAC, password/text for `dorado-gui`; source, bits,
+  theme, text, expected digest for `dorado-gyotaku-gui`), waits three painted
+  frames, captures the window via iced's wgpu-readback `window::screenshot`
+  (no macOS screen-recording prompt, works headlessly), PNG-encodes it via the
+  `png` crate, and exits. `dorado-gui`'s harness runs the real encrypt/decrypt
+  synchronously (text source, non-empty password) so the shot shows genuinely
+  computed output/status instead of a blank pre-run state; `dorado-gyotaku-gui`'s
+  always runs the real (cheap, KDF-free) hash for a text source. Added `png =
+  "0.17"` to `dorado-gyotaku-gui`'s `Cargo.toml` (already present in
+  `dorado-gui`'s from the iced 0.14 migration). Feeds a later automated
+  screenshot gallery.
+
+- New crate `dorado-gui-kit`: composite, dorado-flavored widgets (a segmented
+  control, a labeled dropdown, a theme picker, a password field, a file-path
+  field with a browse slot, a progress/status row, an output+copy panel) built
+  on top of `rime`, the house iced component kit (sibling repo
+  `alleato-llc/rime`). Shared by both `dorado-gui` and `dorado-gyotaku-gui`.
+
 ### Changed
+
+- **Both GUIs (`dorado-gui`, `dorado-gyotaku-gui`) migrated from raw iced 0.12 to
+  iced 0.14 + `rime`.** Same behavior in each (`dorado-gui`: direction/source
+  toggles, password field, text/file inputs, the collapsible KDF/variant/MAC/
+  chunk/tweak options panel; `dorado-gyotaku-gui`: source toggle, output-length
+  toggle, text/expected-digest fields; both: the worker-thread job execution and
+  the busy/progress/status/output/copy flow), rebuilt on `rime` widgets and
+  `dorado-gui-kit` composites instead of each crate's hand-rolled, near-identical
+  Darcula-only `style.rs` `StyleSheet` theme (both deleted). Both gain a theme
+  picker (any of rime's built-in named palettes, default Dracula) and native file
+  dialogs via `rfd` (`dorado-gui`: Open + Save, for its input/output path fields;
+  `dorado-gyotaku-gui`: Open only, since it only ever reads a file), replacing
+  bare text entry for paths. `iced`'s `application`/`Task` builder API replaces
+  the old `Application` trait/`Command` in both. All three GUI-related crates
+  (`dorado-gui`, `dorado-gui-kit`, `dorado-gyotaku-gui`) are excluded from the
+  main workspace (see `rust/Cargo.toml`) and each resolves its own `Cargo.lock`:
+  their path dependency on the sibling `rime` repo would otherwise force every
+  job touching the main workspace (notably the CLI-only release pipeline, which
+  builds `dorado`/`gyotaku` across four platforms) to also check out `rime`,
+  for crates those jobs never build. `png` was added to `dorado-gui` in this
+  migration (unused at the time); it is now used by both GUIs' screenshot
+  harness (see Added, above).
 
 - **Release packaging: no more archives.** `rust/salpa.yaml` now drives only the shared
   `test`/`version` stages; `build`/`publish` instead run against two new configs,

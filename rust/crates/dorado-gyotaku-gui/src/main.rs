@@ -3,33 +3,49 @@
 //! the same `dorado::skein` code the CLI uses (streaming a file in constant memory
 //! on a worker thread). Optionally paste an expected digest to verify a match.
 //!
-//! Educational and unaudited. A sibling of `dorado-gui`, the encryption GUI; the
-//! two share a look. Hashing is unkeyed, matching the `gyotaku` CLI.
+//! The look is built on `rime`, the house iced component kit (a sibling repo),
+//! plus `dorado-gui-kit`'s composites over it; see `rust/CLAUDE.md`. A sibling of
+//! `dorado-gui`, the encryption GUI; the two share a look. Hashing is unkeyed,
+//! matching the `gyotaku` CLI.
 
 #![forbid(unsafe_code)]
-
-mod style;
 
 use std::io::Read;
 use std::time::Duration;
 
 use iced::alignment::Horizontal;
 use iced::futures::channel::oneshot;
-use iced::widget::{
-    button, column, container, progress_bar, row, scrollable, text, text_input, Column, Space,
-};
-use iced::{
-    executor, Alignment, Application, Command, Element, Length, Settings, Subscription, Theme,
-};
+use iced::widget::{column, container, scrollable, text, Column};
+use iced::{Element, Length, Subscription, Task, Theme};
+
+use dorado_gui_kit::{file_path_field, output_panel, progress_status_row, segmented, theme_picker};
+use rime::theme;
+use rime::widgets::{labeled, text_field};
+
+mod shot;
+
+/// The default theme, by name (see [`rime::theme::builtin_themes`]).
+const DEFAULT_THEME: &str = "Dracula";
 
 fn main() -> iced::Result {
-    App::run(Settings {
-        window: iced::window::Settings {
-            size: iced::Size::new(460.0, 560.0),
+    // A review screenshot (src/shot.rs) needs the whole scrollable content
+    // visible with nothing scrolled out of frame (the digest output panel is
+    // taller than the normal window), so it gets a taller window; the normal
+    // app keeps its compact default.
+    let height = if std::env::var_os("GYOTAKU_SHOT").is_some() {
+        760.0
+    } else {
+        560.0
+    };
+    iced::application(App::launch, App::update, App::view)
+        .title(App::title)
+        .theme(App::theme)
+        .subscription(App::subscription)
+        .window(iced::window::Settings {
+            size: iced::Size::new(460.0, height),
             ..Default::default()
-        },
-        ..Default::default()
-    })
+        })
+        .run()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,12 +64,17 @@ enum Message {
     SourceSelected(Source),
     TextChanged(String),
     InPathChanged(String),
+    BrowseInPath,
     BitsSelected(usize),
     ExpectedChanged(String),
+    ThemeSelected(String),
     Run,
     Tick,
     Copy,
     Completed(Result<String, String>),
+    /// A screenshot-harness lifecycle event; see [`shot`]. No-op unless
+    /// `GYOTAKU_SHOT` is set.
+    Shot(shot::Event),
 }
 
 struct App {
@@ -62,10 +83,16 @@ struct App {
     in_path: String,
     bits: usize,
     expected: String,
+    // Appearance.
+    theme_name: String,
+    // Result.
     output: String,
     status: String,
     busy: bool,
     progress: f32,
+    /// The review-screenshot harness, present only when `GYOTAKU_SHOT` is set —
+    /// otherwise `None` and the whole thing is inert. See [`shot`].
+    shot: Option<shot::Shot>,
 }
 
 impl Default for App {
@@ -76,11 +103,25 @@ impl Default for App {
             in_path: String::new(),
             bits: 256,
             expected: String::new(),
+            theme_name: DEFAULT_THEME.to_string(),
             output: String::new(),
             status: String::new(),
             busy: false,
             progress: 0.0,
+            shot: None,
         }
+    }
+}
+
+impl App {
+    /// The active palette: the named theme, falling back to the default for an
+    /// unknown (e.g. stale) name.
+    fn palette(&self) -> theme::Palette {
+        theme::builtin_themes()
+            .iter()
+            .find(|(name, _, _)| *name == self.theme_name)
+            .map(|(_, palette, _)| *palette)
+            .unwrap_or(theme::DRACULA)
     }
 }
 
@@ -140,14 +181,13 @@ async fn run_job(job: Job) -> Result<String, String> {
         .unwrap_or_else(|_| Err("worker thread stopped unexpectedly".into()))
 }
 
-impl Application for App {
-    type Executor = executor::Default;
-    type Message = Message;
-    type Theme = Theme;
-    type Flags = ();
-
-    fn new(_flags: ()) -> (Self, Command<Message>) {
-        (App::default(), Command::none())
+impl App {
+    /// The initial state: `App::default`, then the screenshot harness gets a
+    /// chance to seed it (a no-op unless `GYOTAKU_SHOT` is set — see [`shot`]).
+    fn launch() -> Self {
+        let mut app = App::default();
+        shot::configure(&mut app);
+        app
     }
 
     fn title(&self) -> String {
@@ -155,29 +195,39 @@ impl Application for App {
     }
 
     fn theme(&self) -> Theme {
-        Theme::custom("darcula".to_string(), style::PALETTE)
+        self.palette().iced_theme(self.theme_name.clone())
     }
 
     fn subscription(&self) -> Subscription<Message> {
-        if self.busy {
+        let busy = if self.busy {
             iced::time::every(Duration::from_millis(40)).map(|_| Message::Tick)
         } else {
             Subscription::none()
+        };
+        match shot::subscription(self) {
+            Some(shot) => Subscription::batch([busy, shot]),
+            None => busy,
         }
     }
 
-    fn update(&mut self, message: Message) -> Command<Message> {
+    fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::SourceSelected(s) => self.source = s,
             Message::TextChanged(v) => self.text = v,
             Message::InPathChanged(v) => self.in_path = v,
+            Message::BrowseInPath => {
+                if let Some(path) = rfd::FileDialog::new().pick_file() {
+                    self.in_path = path.display().to_string();
+                }
+            }
             Message::BitsSelected(b) => self.bits = b,
             Message::ExpectedChanged(v) => self.expected = v,
+            Message::ThemeSelected(name) => self.theme_name = name,
             Message::Tick => self.progress = (self.progress + 0.04) % 1.0,
             Message::Copy => return iced::clipboard::write(self.output.clone()),
             Message::Run => {
                 if self.busy {
-                    return Command::none();
+                    return Task::none();
                 }
                 let job = Job {
                     source: self.source,
@@ -189,7 +239,7 @@ impl Application for App {
                 self.progress = 0.0;
                 self.status = "Working…".to_string();
                 self.output.clear();
-                return Command::perform(run_job(job), Message::Completed);
+                return Task::perform(run_job(job), Message::Completed);
             }
             Message::Completed(result) => {
                 self.busy = false;
@@ -211,16 +261,18 @@ impl Application for App {
                     }
                 }
             }
+            Message::Shot(e) => return shot::handle(self, e),
         }
-        Command::none()
+        Task::none()
     }
 
     fn view(&self) -> Element<'_, Message> {
+        let _scope = theme::enter(self.palette());
+        let p = theme::tokens();
+
         let header = column![
-            text("gyotaku").size(32).style(style::text_strong()),
-            text("Skein-512 file fingerprint")
-                .size(13)
-                .style(style::text_muted()),
+            text("gyotaku").size(32).color(p.ink),
+            text("Skein-512 file fingerprint").size(13).color(p.muted),
         ]
         .spacing(3);
 
@@ -240,116 +292,60 @@ impl Application for App {
             .spacing(16)
             .max_width(420)
             .push(header)
+            .push(theme_picker(&self.theme_name, Message::ThemeSelected))
             .push(source);
 
         match self.source {
             Source::Text => {
-                content = content.push(field(
+                content = content.push(labeled(
                     "Message",
-                    input("text to hash", &self.text, Message::TextChanged),
+                    text_field("text to hash", &self.text, Message::TextChanged),
                 ));
             }
             Source::File => {
-                content = content.push(field(
+                content = content.push(file_path_field(
                     "Input file",
-                    input("path to read", &self.in_path, Message::InPathChanged),
+                    "path to read",
+                    &self.in_path,
+                    Message::InPathChanged,
+                    Message::BrowseInPath,
                 ));
             }
         }
 
-        content = content.push(field("Output length", bits)).push(field(
+        content = content.push(labeled("Output length", bits)).push(labeled(
             "Expected digest (hex, optional)",
-            input("paste to verify", &self.expected, Message::ExpectedChanged),
+            text_field("paste to verify", &self.expected, Message::ExpectedChanged),
         ));
 
-        let mut go = button(
-            text(if self.busy { "Working…" } else { "Hash" })
+        let go_label = if self.busy { "Working…" } else { "Hash" };
+        let mut go = iced::widget::button(
+            text(go_label)
                 .size(16)
-                .horizontal_alignment(Horizontal::Center),
+                .width(Length::Fill)
+                .align_x(Horizontal::Center),
         )
         .padding(13)
         .width(Length::Fill)
-        .style(style::primary());
+        .style(theme::rounded(iced::widget::button::primary));
         if !self.busy {
             go = go.on_press(Message::Run);
         }
         content = content.push(go);
 
-        if self.busy {
-            content =
-                content.push(progress_bar(0.0..=1.0, self.progress).height(Length::Fixed(5.0)));
-        }
-        if !self.status.is_empty() {
-            content = content.push(
-                text(self.status.as_str())
-                    .size(13)
-                    .style(style::text_muted()),
-            );
-        }
+        content = content.push(progress_status_row(self.busy, self.progress, &self.status));
+
         if !self.output.is_empty() {
-            let head = row![
-                text("Digest").size(12).style(style::text_muted()),
-                Space::with_width(Length::Fill),
-                button(text("Copy").size(12))
-                    .padding([5, 12])
-                    .style(style::segment(false))
-                    .on_press(Message::Copy),
-            ]
-            .align_items(Alignment::Center);
-            content = content.push(head).push(
-                container(scrollable(text(self.output.as_str()).size(13)))
-                    .padding(12)
-                    .width(Length::Fill)
-                    .height(Length::Fixed(90.0))
-                    .style(style::panel()),
-            );
+            content = content.push(output_panel("Digest", &self.output, Message::Copy));
         }
 
-        let centered = container(content).width(Length::Fill).center_x();
+        let centered = container(content).center_x(Length::Fill);
         container(scrollable(centered))
             .padding(16)
             .width(Length::Fill)
             .height(Length::Fill)
             .into()
     }
-}
-
-/// A muted label above a control.
-fn field<'a>(label: &'a str, control: impl Into<Element<'a, Message>>) -> Element<'a, Message> {
-    column![
-        text(label).size(12).style(style::text_muted()),
-        control.into()
-    ]
-    .spacing(7)
-    .into()
-}
-
-/// A styled single-line input.
-fn input<'a>(
-    placeholder: &'a str,
-    value: &'a str,
-    on_input: impl Fn(String) -> Message + 'a,
-) -> iced::widget::TextInput<'a, Message> {
-    text_input(placeholder, value)
-        .on_input(on_input)
-        .padding(11)
-        .size(15)
-        .style(style::input())
-}
-
-/// A segmented control: a row of pill buttons, one selected. Generic over the
-/// value each segment carries.
-fn segmented<'a, V: Copy + 'a>(items: &[(&'a str, bool, V)]) -> Element<'a, V> {
-    let mut row = iced::widget::Row::new().spacing(8);
-    for &(label, selected, value) in items {
-        row = row.push(
-            button(text(label).size(14))
-                .padding([9, 20])
-                .style(style::segment(selected))
-                .on_press(value),
-        );
-    }
-    row.into()
 }
 
 fn hex(bytes: &[u8]) -> String {

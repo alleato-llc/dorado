@@ -1,0 +1,29 @@
+//! A titled output block: a caption + "Copy" button header row above a
+//! bordered, scrollable text block.
+
+use iced::widget::{column, container, row, scrollable, text, Space};
+use iced::{Alignment, Element, Length};
+use rime::theme::tokens;
+use rime::widgets::{button, card};
+
+/// `caption` and a "Copy" button (emitting `on_copy`) in a header row, above
+/// `body` shown in a scrollable card. Used for a completed job's result.
+pub fn output_panel<'a, M: Clone + 'a>(
+    caption: &'a str,
+    body: &'a str,
+    on_copy: M,
+) -> Element<'a, M> {
+    let p = tokens();
+    let header = row![
+        text(caption.to_string()).size(12).color(p.muted),
+        Space::new().width(Length::Fill),
+        button::ghost("Copy", on_copy),
+    ]
+    .align_y(Alignment::Center);
+    let content = card(
+        container(scrollable(text(body.to_string()).size(13)))
+            .width(Length::Fill)
+            .height(Length::Fixed(120.0)),
+    );
+    column![header, content].spacing(8).into()
+}

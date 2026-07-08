@@ -1,9 +1,9 @@
 [package]
 name = "dorado-gui"
 description = "Graphical frontend for dorado (educational, unaudited)."
-version.workspace = true
-edition.workspace = true
-license.workspace = true
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
 
 [[bin]]
 name = "dorado-gui"
@@ -11,5 +11,17 @@ path = "src/main.rs"
 
 [dependencies]
 dorado-engine = { path = "../dorado-engine" }
-# The tokio executor enables timer subscriptions (the progress animation).
-iced = { version = "0.12", features = ["tokio"] }
+dorado-gui-kit = { path = "../dorado-gui-kit" }
+# The house component kit + theming. A sibling repo; path dep for local dev.
+# iced is re-exported as rime::iced, but we also depend on it directly for the
+# application entry point; cargo unifies to one 0.14.x across the graph. The
+# `tokio` feature (on top of iced's own defaults, which already include
+# `thread-pool` and so give `Task::perform` a working executor) is needed
+# specifically for `iced::time::every`, which drives the busy-progress tick;
+# the default (featureless) executor's timer module is empty.
+rime = { path = "../../../../rime/rime" }
+iced = { version = "0.14", features = ["canvas", "advanced", "tokio"] }
+# Native Open/Save file dialogs; iced has none.
+rfd = "0.15"
+# PNG encoder for the env-gated review-screenshot harness (src/shot.rs).
+png = "0.17"

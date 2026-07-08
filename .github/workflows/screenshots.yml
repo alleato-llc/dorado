@@ -1,0 +1,107 @@
+name: Screenshots (GUIs)
+
+# Regenerates dorado-gui's and gyotaku-gui's landing-page screenshot set and
+# commits the PNGs to web/public/screenshots/. That commit touches web/**, so
+# it auto-triggers deploy-site.yml, which picks them up.
+#
+# Both GUIs render with wgpu, so this needs a GPU. GitHub's Linux runners have
+# none -- we use a SOFTWARE stack: Xvfb for a virtual display + Mesa's software
+# Vulkan (lavapipe) with a software-GL (llvmpipe) fallback. The capture itself
+# is each crate's permanent env-gated harness (src/shot.rs), driven by
+# scripts/generate_screenshots.py.
+#
+# rime is a public sibling repo (dorado-gui / dorado-gyotaku-gui depend on it
+# by path, ../../../../rime/rime from each crate -- see rust/Cargo.toml's
+# workspace exclude comment and the `gui` job in ci.yml, which checks rime out
+# the same way).
+#
+# Manual by default; also runs when either GUI's rendering could change
+# (rust/crates/dorado-gui/**, rust/crates/dorado-gyotaku-gui/**) or the
+# generator itself changes. It commits to web/public/screenshots/ (not the
+# rust/** paths above), so it never re-triggers itself; the site deploy picks
+# the change up.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "rust/crates/dorado-gui/**"
+      - "rust/crates/dorado-gyotaku-gui/**"
+      - "scripts/generate_screenshots.py"
+      - ".github/workflows/screenshots.yml"
+
+permissions:
+  contents: write # commit the regenerated PNGs back to the repo
+
+concurrency:
+  group: dorado-screenshots
+  cancel-in-progress: true
+
+jobs:
+  screenshots:
+    name: Generate + commit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: dorado }
+      - uses: actions/checkout@v4
+        with: { repository: alleato-llc/rime, path: rime } # sibling of dorado
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            dorado/rust/crates/dorado-gui
+            dorado/rust/crates/dorado-gyotaku-gui
+          key: rust-screenshots
+
+      # iced/winit windowing + a software renderer: Xvfb (virtual display),
+      # Mesa Vulkan ICDs (lavapipe = the `lvp` software Vulkan device) and the
+      # software-GL drivers (llvmpipe) for the fallback path, plus vulkan-tools
+      # for diagnostics.
+      - name: Headless GPU + windowing deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            xvfb \
+            mesa-vulkan-drivers vulkan-tools \
+            libgl1-mesa-dri \
+            libxkbcommon-dev libxkbcommon-x11-0 libwayland-dev libx11-dev
+
+      - name: Generate screenshots (software Vulkan, GL fallback)
+        working-directory: dorado
+        env:
+          # Force a 2x (HiDPI) scale factor on X11 so the headless captures
+          # come out crisper (~1900-wide) rather than the 1x winit default
+          # under Xvfb. The Xvfb screen below is sized to hold the doubled
+          # framebuffer.
+          WINIT_X11_SCALE_FACTOR: "2"
+        run: |
+          set -euo pipefail
+          run() { # backend-selecting env... -> run the generator under a virtual X server
+            xvfb-run -a --server-args="-screen 0 3200x2000x24" \
+              env "$@" python3 scripts/generate_screenshots.py
+          }
+          # lavapipe (software Vulkan) first; software GL (llvmpipe) as fallback.
+          if ! run WGPU_BACKEND=vulkan; then
+            echo "::warning::Vulkan/lavapipe capture failed -- retrying with software GL (llvmpipe)"
+            run WGPU_BACKEND=gl LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe
+          fi
+          ls -la web/public/screenshots/*.png
+
+      - name: Commit regenerated screenshots
+        working-directory: dorado
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add web/public/screenshots/dorado-*.png web/public/screenshots/gyotaku-*.png
+          if git diff --cached --quiet; then
+            echo "No screenshot changes to commit."
+            exit 0
+          fi
+          # NO [skip ci]: this commit touches only web/** (never a release
+          # path), so it can't cut a release -- but it SHOULD trigger
+          # deploy-site.yml so the new screenshots go live.
+          git commit -m "web: regenerate GUI screenshots"
+          git push

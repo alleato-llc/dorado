@@ -5,11 +5,22 @@ members = [
     "crates/dorado",
     "crates/dorado-engine",
     "crates/dorado-cli",
-    "crates/dorado-gui",
     "crates/dorado-gyotaku",
-    "crates/dorado-gyotaku-gui",
 ]
-exclude = ["fuzz", "wasm"]
+# The three GUI-related crates (dorado-gui, dorado-gui-kit, dorado-gyotaku-gui)
+# depend on the sibling `rime` component kit by path (github.com/alleato-llc/rime,
+# a public repo, checked out alongside dorado on a dev machine or in CI). A path
+# dependency means resolving the *workspace* manifest needs `rime` present, not
+# just building the GUI targets themselves — so keeping them workspace members
+# would force every job that touches this workspace (the release pipeline's
+# CLI-only builds across 4 platforms, `cargo audit`, the no_std check, ...) to
+# also check out `rime`, for crates those jobs never build. Excluding them keeps
+# the CLI/library workspace (this file) independent of rime entirely; each GUI
+# crate resolves its own separate Cargo.lock instead, built directly (`cd
+# crates/dorado-gui && cargo build`, which pulls in dorado-gui-kit as a plain
+# path dependency). Only the CI `gui` job (and later, a screenshot-generation
+# job) needs rime checked out.
+exclude = ["fuzz", "wasm", "crates/dorado-gui", "crates/dorado-gui-kit", "crates/dorado-gyotaku-gui"]
 
 [workspace.package]
 version = "0.1.0"

@@ -1,9 +1,29 @@
-//! Password-based key derivation for the CLI.
+//! Key derivation, in its two standard forms.
 //!
-//! Wraps Argon2id, scrypt, and PBKDF2-HMAC-SHA256 behind a single `derive`
-//! call that stretches a password into a raw Threefish key of the requested
-//! length. The parameters live in the file header (see `format`), so they are
-//! not secret; they only need to be reproduced at decryption time.
+//! [`derive_from_password`] is password-based derivation (a PBKDF): it
+//! stretches a weak, guessable secret into a raw key, deliberately slowly,
+//! under caller-tunable cost parameters ([`validate`] bounds untrusted ones).
+//! Inside the container this reproduces the header's recipe at decryption
+//! time (the parameters live in the header, see `format`; they are not
+//! secret).
+//!
+//! [`derive_from_key`] is key-based derivation (a KBKDF): it splits an
+//! already high-entropy key into independent, domain-separated children,
+//! fast (one keyed hash), with no salt and no cost parameters because there
+//! is nothing to stretch. The keyed hash defaults to Skein-512 (Threefish's
+//! native companion); [`derive_from_key_with`] lets a caller pick the PRF
+//! ([`KdfPrf`]) instead — e.g. BLAKE3 to keep a ChaCha-family construction
+//! single-family top to bottom. Every secure PRF does this job identically,
+//! so the choice is about matching the surrounding cipher, not security. The
+//! names are the guardrail: a password must never take the fast path, and a
+//! key never needs the slow one.
+//!
+//! The module is public because embedders of the raw-key modes need the same
+//! two steps with their own parameter storage: stretch a password once per
+//! session (or fetch a random key from an OS keychain), fan it out into
+//! per-purpose keys, and feed those to `encrypt_raw_authenticated_*` or
+//! another AEAD, rather than paying the KDF per file the way the
+//! self-contained container does by design.
 
 use crate::error::{Error, Result};
 
@@ -64,8 +84,16 @@ pub enum KdfParams {
     },
 }
 
-/// Derive `out.len()` key bytes from `password` and `salt` using `params`.
-pub fn derive(params: &KdfParams, password: &[u8], salt: &[u8], out: &mut [u8]) -> Result<()> {
+/// Derive `out.len()` key bytes from `password` and `salt` using `params` —
+/// password-based derivation, deliberately slow (the cost is what an
+/// attacker pays per guess). For deriving from an already-strong key, use
+/// [`derive_from_key`] instead.
+pub fn derive_from_password(
+    params: &KdfParams,
+    password: &[u8],
+    salt: &[u8],
+    out: &mut [u8],
+) -> Result<()> {
     match *params {
         KdfParams::Argon2id {
             m_cost,
@@ -94,6 +122,67 @@ pub fn derive(params: &KdfParams, password: &[u8], salt: &[u8], out: &mut [u8]) 
                 Ok(())
             }
         },
+    }
+}
+
+/// The keyed hash [`derive_from_key_with`] fans a master key out with. Both
+/// are secure PRFs and produce identically strong children; the choice exists
+/// only to let a construction stay within one cryptographic family (Skein for
+/// Threefish, BLAKE3 for a ChaCha-family cipher) rather than mixing lineages.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum KdfPrf {
+    /// Skein-512 keyed hash (Threefish's native companion). The default, and
+    /// what [`derive_from_key`] uses. Accepts a key of any length.
+    Skein512,
+    /// BLAKE3 keyed hash. Requires a 32-byte `key` (BLAKE3's keyed mode is
+    /// defined only for a 256-bit key); other lengths panic.
+    Blake3,
+}
+
+/// Fixed prefix domain-separating [`derive_from_key`]'s keyed hashing from
+/// every other keyed use in the engine (`DRDOrawE`/`DRDOrawM` in the raw-key
+/// split, `DRDOchnk`/`DRDOrwFr` in the frame MACs).
+const DERIVE_FROM_KEY_DOMAIN: &[u8; 8] = b"DRDOkdrv";
+
+/// Derive `out.len()` key bytes from an already high-entropy `key`, separated
+/// by `domain` — key-based derivation (the fast form): one domain-separated
+/// Skein-512 keyed hash, no salt, no cost parameters, because a strong key
+/// has nothing to stretch. Deterministic: the same key and domain always
+/// yield the same bytes, and different domains yield computationally
+/// unrelated ones, so a caller can fan one master key out into independent
+/// per-purpose keys (`derive_from_key(master, "myapp/index", ..)`,
+/// `derive_from_key(master, "myapp/data", ..)`). Never pass a password here:
+/// there is no stretching, so a guessable input stays guessable — that is
+/// [`derive_from_password`]'s job. To fan out with a different PRF (e.g.
+/// BLAKE3), use [`derive_from_key_with`].
+pub fn derive_from_key(key: &[u8], domain: &str, out: &mut [u8]) {
+    derive_from_key_with(KdfPrf::Skein512, key, domain, out);
+}
+
+/// [`derive_from_key`] with a caller-chosen PRF ([`KdfPrf`]). The domain
+/// separation, determinism, and "never pass a password" contract are exactly
+/// the same; only the underlying keyed hash changes. With [`KdfPrf::Skein512`]
+/// this is byte-for-byte identical to [`derive_from_key`]. [`KdfPrf::Blake3`]
+/// requires `key` to be 32 bytes.
+pub fn derive_from_key_with(prf: KdfPrf, key: &[u8], domain: &str, out: &mut [u8]) {
+    match prf {
+        KdfPrf::Skein512 => {
+            // Streaming update(A) then update(B) equals update(A‖B), so this
+            // matches a one-shot MAC over the concatenated message.
+            let mut h = dorado::skein::Skein512::new_mac(key, out.len());
+            h.update(DERIVE_FROM_KEY_DOMAIN);
+            h.update(domain.as_bytes());
+            h.finalize_into(out);
+        }
+        KdfPrf::Blake3 => {
+            let key: [u8; 32] = key
+                .try_into()
+                .expect("derive_from_key_with(Blake3) requires a 32-byte key");
+            let mut msg = Vec::with_capacity(DERIVE_FROM_KEY_DOMAIN.len() + domain.len());
+            msg.extend_from_slice(DERIVE_FROM_KEY_DOMAIN);
+            msg.extend_from_slice(domain.as_bytes());
+            dorado::blake3::keyed_mac_into(out, &key, &msg);
+        }
     }
 }
 
@@ -137,6 +226,10 @@ pub fn validate(params: &KdfParams) -> Result<()> {
             }
         }
         KdfParams::Pbkdf2 { rounds, .. } => {
+            if rounds == 0 {
+                // Zero rounds would "derive" an all-zero key without error.
+                return Err(Error::InvalidParams("pbkdf2 rounds must be nonzero".into()));
+            }
             if rounds > 50_000_000 {
                 return Err(Error::InvalidParams("pbkdf2 rounds too large".into()));
             }

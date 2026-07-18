@@ -95,8 +95,16 @@ the keystream into the data. The counter is public, so the carry branch in
 
 The `dorado-engine` crate is the shared construction; both frontends are thin
 clients of it (`use dorado_engine as engine`). Its `lib.rs` is the engine API; it
-uses three private modules: `kdf.rs` (Argon2id, scrypt, PBKDF2-HMAC-SHA256 behind
-one `derive` call, plus a `validate` that bounds untrusted cost params),
+uses three modules: `kdf.rs` (both standard forms of key derivation:
+`derive_from_password`, the slow password stretch behind Argon2id, scrypt, and
+PBKDF2-HMAC-SHA256 plus a `validate` that bounds untrusted cost params, and
+`derive_from_key`, the fast domain-separated Skein-512 fan-out of an
+already-strong key into per-purpose children, with `derive_from_key_with`
+taking a `KdfPrf` (`Skein512`/`Blake3`) to fan out under either PRF so a
+ChaCha-family construction can stay single-family; public, so embedders of the
+raw-key modes can reuse both steps with their own parameter storage instead of
+re-implementing them. First external consumer: tty's encrypted command
+history),
 `format.rs` (the container header and streaming reader; magic `DRDO`, version,
 variant, KDF id and params, MAC id, chunk size, salt, tweak, IV), and `mac.rs`
 (encrypt-then-MAC, dispatching the `MacId` to one of three from-scratch keyed

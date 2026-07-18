@@ -12,7 +12,7 @@
 
 mod error;
 mod format;
-mod kdf;
+pub mod kdf;
 mod mac;
 
 use std::io::{Cursor, Read, Write};
@@ -24,7 +24,7 @@ use dorado::{Threefish1024, Threefish256, Threefish512};
 
 pub use crate::error::{Error, Result};
 use crate::format::Header;
-use crate::kdf::{derive, validate};
+use crate::kdf::{derive_from_password, validate};
 
 // Types the frontends need to build options and labels.
 pub use crate::format::{MacId, Variant};
@@ -103,7 +103,7 @@ pub fn encrypt_password_stream(
 
     // Derive an encryption key and a separate MAC key from one KDF output.
     let mut keymat = Zeroizing::new(vec![0u8; variant.key_len() + mac::KEY_LEN]);
-    derive(&opts.kdf, password, &salt, &mut keymat)?;
+    derive_from_password(&opts.kdf, password, &salt, &mut keymat)?;
     let (enc_key, mac_key) = keymat.split_at(variant.key_len());
 
     if opts.label.len() > format::MAX_LABEL_LEN {
@@ -204,7 +204,7 @@ pub fn decrypt_password_stream_expecting(
     validate(&header.kdf)?;
 
     let mut keymat = Zeroizing::new(vec![0u8; header.variant.key_len() + mac::KEY_LEN]);
-    derive(&header.kdf, password, &header.salt, &mut keymat)?;
+    derive_from_password(&header.kdf, password, &header.salt, &mut keymat)?;
     let (enc_key, mac_key) = keymat.split_at(header.variant.key_len());
     let cipher = Cipher::new(header.variant, enc_key, &header.tweak)?;
     let blocks_per_chunk = (header.chunk_size as usize / block_len) as u64;

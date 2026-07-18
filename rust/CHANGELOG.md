@@ -8,6 +8,44 @@ the Rust-specific details. Format: [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Added
+
+- **`dorado-engine`'s `kdf` module is now public, with both standard forms
+  of key derivation.** `kdf::derive_from_password` (the former private
+  `derive`: Argon2id, scrypt, PBKDF2-HMAC-SHA256 behind one call, plus
+  `kdf::validate` bounding untrusted cost parameters) stretches a weak
+  secret, deliberately slowly. The new `kdf::derive_from_key` is the fast,
+  key-based form (one domain-separated Skein-512 keyed hash, its own
+  `DRDOkdrv` domain prefix): it fans an already high-entropy key out into
+  independent per-purpose children, the same discipline `split_raw_key`
+  applies internally. The parallel names are deliberate guardrails: a
+  password must never take the fast path, a key never needs the slow one.
+  Both were private implementation details of the password container;
+  embedders of the raw-key modes need exactly these two steps with their own
+  parameter storage (stretch or fetch a master once per session, fan it out,
+  encrypt many files), so re-implementing them outside the crate was pure
+  duplication. API surface only: the container wire format, the CLI, and the
+  other ports are unchanged. First consumer: tty's encrypted command
+  history. `KdfParams`/`PrfId` remain re-exported at the crate root.
+- **`kdf::derive_from_key_with` — a selectable fan-out PRF.** The new
+  `kdf::KdfPrf { Skein512, Blake3 }` lets a caller fan a master key out with
+  BLAKE3's keyed hash instead of the default Skein-512, so a ChaCha-family
+  construction can stay single-family top to bottom (both are secure PRFs and
+  yield equally strong children; the choice is about matching the surrounding
+  cipher, not security). `derive_from_key` is unchanged and now delegates to
+  `derive_from_key_with(KdfPrf::Skein512, ..)`, byte-for-byte identical. The
+  BLAKE3 variant requires a 32-byte key. API surface only; the container,
+  CLI, and wire format are untouched. Consumer: tty's per-cipher history
+  key hierarchy.
+
+### Fixed
+
+- **`kdf::validate` now rejects `rounds: 0` for PBKDF2.** Zero rounds would
+  "derive" an all-zero key without error; a crafted or corrupted header
+  carrying it now fails cleanly at validation instead. (Decryption already
+  failed authentication in that case, so this closes an oddity, not a
+  vulnerability.)
+
 ### Changed
 
 - **Raw-key mode (`--key`/`--key-file`) is now authenticated by default in the

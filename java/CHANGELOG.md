@@ -10,6 +10,16 @@ the master table.
 
 ### Added
 
+- **Raw-key mode gains an authenticated option**: `Engine.{encrypt,decrypt}RawAuthenticatedStream`
+  / `{encrypt,decrypt}RawAuthenticated`, encrypt-then-MAC over a caller-supplied key
+  with no password or KDF, reusing the password container's chunk/frame machinery
+  and `AuthenticationException` for a failed tag. See the
+  [Core CHANGELOG](../CHANGELOG.md) for the cross-port rationale and
+  [docs/spec.md](../docs/spec.md)'s "Raw-key modes" section for the byte-level
+  construction (key-splitting via domain-separated Skein-512, the frame AAD).
+  Bare `rawCtrStream`/`rawCtr` are unchanged and remain the default. Verified against
+  the shared cross-language known-answer vectors in
+  `docs/fixtures/raw-authenticated.md`.
 - Typed exceptions `AuthenticationException` and `MalformedContainerException` under
   `DoradoException`, so container failures are type-distinguishable. Wrong password and
   tampering stay merged as `AuthenticationException` (same type and message). Encrypt-side

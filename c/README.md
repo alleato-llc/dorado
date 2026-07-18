@@ -18,7 +18,7 @@ from **OpenSSL**, both found via `pkg-config`. Educational and unaudited.
 - `src/threefish.c`, `skein.c`, `blake3.c` — the from-scratch primitives.
 - `src/format.c`, `kdf.c`, `mac.c`, `engine.c` — the construction: the container
   header, the KDFs (libargon2 + OpenSSL), the MAC menu, and the streaming password
-  container, raw CTR, and inspect. Functions return `NULL` on success or a static
+  container, raw CTR (bare and authenticated), and inspect. Functions return `NULL` on success or a static
   error string; the three failure classes are exposed as stable sentinels
   (`dorado_err_auth`, `dorado_err_malformed`, `dorado_err_params`) a caller can
   classify by pointer identity. Wrong-password and tampering both map to

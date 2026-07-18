@@ -2,7 +2,7 @@
 // over Uint8Array (the output is byte-identical to the streaming Rust/Go ports,
 // so .mahi files are cross-compatible). Async because the KDFs and HMAC are.
 
-import { concat, equalBytes } from "../bytes";
+import { concat, equalBytes, utf8 } from "../bytes";
 import { AuthError, InvalidParamsError, MalformedContainerError } from "./errors";
 import { derive, validate } from "./kdf";
 import { macTag, macVerify } from "./mac";
@@ -198,4 +198,149 @@ export function rawCTR(
 ): Uint8Array {
   if (iv.length !== blockLen(v)) throw new InvalidParamsError(`iv must be ${blockLen(v)} bytes, got ${iv.length}`);
   return backend.ctr(v, key, tweak, iv, data);
+}
+
+// ---------------------------------------------------------------------------
+// Raw-key authenticated CTR (encrypt-then-MAC, caller-supplied key). Adds
+// authentication on top of rawCTR's bare keystream by reusing the password
+// container's frame construction, without a password or KDF. See
+// ../../../docs/spec.md's "Raw-key modes" section for the byte-level spec.
+// ---------------------------------------------------------------------------
+
+// Domain separator for deriving the encryption subkey from a raw key.
+const RAW_AUTH_ENC_DOMAIN = "DRDOrawE";
+// Domain separator for deriving the MAC subkey from a raw key.
+const RAW_AUTH_MAC_DOMAIN = "DRDOrawM";
+// Domain separator mixed into every raw-authenticated frame tag. Distinct from
+// FRAME_DOMAIN so a raw-mode frame's tag can never collide with or be replayed
+// as a password-mode frame's tag, even under key reuse across both paths.
+const RAW_FRAME_DOMAIN = "DRDOrwFr";
+
+// Split a caller-supplied raw key into an independent encryption subkey and MAC
+// subkey, each derived via domain-separated Skein-512 keyed hashing (`key` is
+// the MAC key, the domain label is the message). This is deliberately not a
+// password KDF: `key` is assumed to already be high-entropy (e.g. from an OS
+// keychain or a CSPRNG), so no cost-parameterized stretching is needed, only
+// separation into two subkeys that must not be the same bytes used for two
+// different primitives.
+function splitRawKey(
+  v: Variant,
+  key: Uint8Array,
+  backend: CipherBackend,
+): { encKey: Uint8Array; macKey: Uint8Array } {
+  if (key.length !== keyLen(v)) {
+    throw new InvalidParamsError(`raw key must be ${keyLen(v)} bytes for this variant, got ${key.length}`);
+  }
+  const encKey = backend.skeinMac(key, keyLen(v), utf8(RAW_AUTH_ENC_DOMAIN));
+  const macKey = backend.skeinMac(key, MAC_KEY_LEN, utf8(RAW_AUTH_MAC_DOMAIN));
+  return { encKey, macKey };
+}
+
+// Authenticated data for a raw-mode frame: a domain separator, the tweak and IV
+// (for the first frame only, binding the parameters — raw mode has no header to
+// bind them into the way the password container does), the frame index, the
+// last flag, and the ciphertext. Mirrors frameAAD, substituting tweak+IV for
+// the header.
+function rawFrameAAD(tweak: Uint8Array, iv: Uint8Array, index: number, isLast: boolean, ct: Uint8Array): Uint8Array {
+  const parts: Uint8Array[] = [utf8(RAW_FRAME_DOMAIN)];
+  if (index === 0) parts.push(tweak, iv);
+  parts.push(u64be(index), new Uint8Array([isLast ? 1 : 0]), u32be(ct.length), ct);
+  return concat(...parts);
+}
+
+// Validate the IV and chunk size shared by the raw-authenticated encrypt and
+// decrypt paths.
+function validateRawAuthParams(v: Variant, iv: Uint8Array, chunkSize: number): void {
+  const bl = blockLen(v);
+  if (iv.length !== bl) throw new InvalidParamsError(`iv must be ${bl} bytes for this variant, got ${iv.length}`);
+  if (chunkSize === 0 || chunkSize % bl !== 0) {
+    throw new InvalidParamsError(`chunk size must be a positive multiple of the block size (${bl}), got ${chunkSize}`);
+  }
+}
+
+/**
+ * Encrypt-then-MAC over CTR keystream with a caller-supplied key: no password,
+ * no KDF (see {@link splitRawKey}). Data is authenticated in fixed-size chunks,
+ * reusing the same frame construction as the password container, so truncation,
+ * reordering, and dropped chunks are all rejected on decryption exactly as they
+ * are there. There is no header: the caller must supply the same `variant`,
+ * `tweak`, `iv`, `mac`, and `chunkSize` on decrypt as were used to encrypt, and
+ * remember them out of band (nothing here is recoverable from the ciphertext
+ * alone, matching {@link rawCTR}'s no-header philosophy).
+ */
+export async function encryptRawAuthenticatedBytes(
+  variant: Variant,
+  key: Uint8Array,
+  tweak: Uint8Array,
+  iv: Uint8Array,
+  mac: MacId,
+  chunkSize: number,
+  plaintext: Uint8Array,
+  backend: CipherBackend = tsBackend,
+): Promise<Uint8Array> {
+  validateRawAuthParams(variant, iv, chunkSize);
+  const { encKey, macKey } = splitRawKey(variant, key, backend);
+  const ct = backend.ctr(variant, encKey, tweak, iv, plaintext);
+
+  const parts: Uint8Array[] = [];
+  const cs = chunkSize;
+  const numChunks = Math.max(1, Math.ceil(ct.length / cs));
+  for (let i = 0; i < numChunks; i++) {
+    const chunk = ct.subarray(i * cs, Math.min((i + 1) * cs, ct.length));
+    const isLast = i === numChunks - 1;
+    const tag = await macTag(backend, mac, macKey, rawFrameAAD(tweak, iv, i, isLast, chunk));
+    parts.push(new Uint8Array([isLast ? 1 : 0]), u32be(chunk.length), chunk, tag);
+  }
+  return concat(...parts);
+}
+
+/**
+ * Decrypt an {@link encryptRawAuthenticatedBytes} stream. Each frame's tag is
+ * verified (constant-time compare) before that frame is decrypted, so a wrong
+ * key or a corrupted or tampered stream throws {@link AuthError} instead of
+ * silently producing garbage or attacker-influenced plaintext — the failure
+ * mode {@link rawCTR} cannot detect.
+ */
+export async function decryptRawAuthenticatedBytes(
+  variant: Variant,
+  key: Uint8Array,
+  tweak: Uint8Array,
+  iv: Uint8Array,
+  mac: MacId,
+  chunkSize: number,
+  data: Uint8Array,
+  backend: CipherBackend = tsBackend,
+): Promise<Uint8Array> {
+  validateRawAuthParams(variant, iv, chunkSize);
+  const cap = effectiveMaxChunkBytes();
+  if (chunkSize > cap) throw new InvalidParamsError(`chunk size ${chunkSize} exceeds the accepted maximum`);
+  const { encKey, macKey } = splitRawKey(variant, key, backend);
+
+  let pos = 0;
+  let index = 0;
+  const chunks: Uint8Array[] = [];
+  for (;;) {
+    if (pos + 5 > data.length) throw new MalformedContainerError("stream ended before the final chunk (truncated)");
+    const flag = data[pos];
+    if (flag > 1) throw new MalformedContainerError(`invalid frame flag ${flag}`);
+    const isLast = flag === 1;
+    const ctLen = ((data[pos + 1] << 24) | (data[pos + 2] << 16) | (data[pos + 3] << 8) | data[pos + 4]) >>> 0;
+    pos += 5;
+    if (ctLen > chunkSize) throw new MalformedContainerError("frame length exceeds the chunk size");
+    if (pos + ctLen + TAG_LEN > data.length) throw new MalformedContainerError("truncated frame");
+    const ct = data.subarray(pos, pos + ctLen);
+    pos += ctLen;
+    const tag = data.subarray(pos, pos + TAG_LEN);
+    pos += TAG_LEN;
+    if (!(await macVerify(backend, mac, macKey, rawFrameAAD(tweak, iv, index, isLast, ct), tag))) {
+      throw new AuthError("authentication failed (wrong key, corruption, or tampering)");
+    }
+    chunks.push(ct.slice());
+    if (isLast) break;
+    if (ct.length !== chunkSize) throw new MalformedContainerError("non-final chunk is not full size");
+    index++;
+  }
+
+  const ciphertext = concat(...chunks);
+  return backend.ctr(variant, encKey, tweak, iv, ciphertext);
 }

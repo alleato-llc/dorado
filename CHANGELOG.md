@@ -23,6 +23,50 @@ This changelog starts in 2026-06; for earlier history see the git log.
 
 ### Added
 
+- **Raw-key mode gains an authenticated construction** (encrypt-then-MAC), a
+  cross-port decision recorded here and being ported to every language
+  (Rust is the reference; see [`rust/CHANGELOG.md`](rust/CHANGELOG.md) for the
+  Rust-specific entry, and the byte-level construction is documented in
+  [`docs/spec.md`](docs/spec.md) under "Raw-key modes"). Bare raw-key CTR is
+  unauthenticated by design (confidentiality only, no header) — a corrupted or
+  tampered ciphertext byte silently decrypts to a flipped plaintext byte, with
+  no error, because CTR mode has nothing that can detect it. This was
+  considered acceptable when raw mode's only consumer needed a low-level,
+  bring-your-own-integrity primitive, but it is the wrong tool for a consumer
+  that needs to detect corruption or tampering and refuse to load rather than
+  silently produce wrong data. Rather than have that consumer build its own
+  MAC composition ad hoc (reintroducing the hand-rolled-composition risk this
+  project exists to avoid, just one layer up), the fix is in dorado itself:
+  raw-key mode gains a second path that reuses already-shipped, already-tested
+  pieces (the password container's chunk/frame/MAC machinery, Skein-512 keyed
+  hashing) rather than inventing new primitives. The caller's raw key is split
+  into an independent encryption subkey and MAC subkey via domain-separated
+  Skein-512 keyed hashing (not a password KDF — the caller's key is assumed
+  already high-entropy, so no cost-parameterized stretching is needed, only
+  subkey separation); frames reuse the password container's exact wire
+  layout; the tweak and IV are bound into the frame AAD (there being no
+  header to bind them into the way the password container does), under a
+  domain separator distinct from the password path's so the two can never
+  collide. At the library level both raw-key functions (bare and
+  authenticated) are equally first-class — a caller always names the one it
+  wants, there is no "default" to speak of there. **The CLI is a different
+  matter, and its default changed**: `dorado encrypt --key ...` is now
+  authenticated by default, with bare CTR moved behind an explicit
+  `--unauthenticated` opt-out (see [`rust/CHANGELOG.md`](rust/CHANGELOG.md)'s
+  own Changed entry for the concrete behavior and breakage). The reasoning:
+  tools that treat security as a primary design goal (libsodium, age) make
+  the authenticated construction the thing you get by default and demote or
+  omit the bare primitive; tools that expose the bare primitive as the plain
+  default (`openssl enc -ctr` and similar) are the older style the security
+  community has spent years steering people away from for anything
+  sensitive. A casual CLI user typing `--key`/`--iv` is far more likely to be
+  protecting real data than building a custom protocol layer on the bare
+  primitive, and is much less likely to already know to ask for
+  authentication than someone with the latter need is to tolerate an extra
+  flag. The bare primitive remains fully available, at both the library and
+  CLI layers — it still has legitimate uses (cross-language interop,
+  composability, dorado's own educational purpose) — it is simply no longer
+  what you get by not asking.
 - **Site deploy workflow** (`.github/workflows/deploy-site.yml`) and **release workflow**
   (`.github/workflows/release.yml`), both driven end-to-end by
   [salpa](https://github.com/alleato-llc/salpa) (a private house release tool, pulled from

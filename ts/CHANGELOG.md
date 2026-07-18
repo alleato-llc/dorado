@@ -10,6 +10,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Raw-key mode gains an authenticated construction** (encrypt-then-MAC):
+  `encryptRawAuthenticatedBytes` / `decryptRawAuthenticatedBytes` in
+  `src/engine/engine.ts`, keyed directly by a caller-supplied key with no
+  password or KDF, reusing the password container's frame/MAC machinery
+  (`splitRawKey`, `rawFrameAAD`). A wrong key, corruption, or tampering throws
+  `AuthError`, matching the password container's error taxonomy. `rawCTR` is
+  unchanged and remains the default. See the
+  [Core CHANGELOG](../CHANGELOG.md) for the cross-port rationale and
+  [docs/spec.md](../docs/spec.md)'s "Raw-key modes" section for the byte-level
+  construction; verified against the six known-answer vectors in
+  [docs/fixtures/raw-authenticated.md](../docs/fixtures/raw-authenticated.md).
 - CLI parity: `dorado`/`gyotaku` now support `--help`/`-h` (usage to stdout, exit 0),
   and `gyotaku` accepts `--check` as well as `-c`; `--version` already worked. See
   [Core](../CHANGELOG.md).

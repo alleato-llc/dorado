@@ -10,6 +10,14 @@ the master table.
 
 ### Added
 
+- **Raw-key mode gains an authenticated construction** (encrypt-then-MAC):
+  `encrypt_raw_authenticated`/`decrypt_raw_authenticated` and their `_stream`
+  variants in `dorado.engine`, exported from the package. Caller-supplied key,
+  no password, no KDF, reusing the password container's chunk/frame machinery.
+  See the [Core CHANGELOG](../CHANGELOG.md) for the cross-port rationale and
+  [docs/spec.md](../docs/spec.md)'s "Raw-key modes" section for the byte-level
+  construction (key-splitting via domain-separated Skein-512, the frame AAD).
+  Bare `raw_ctr`/`raw_ctr_stream` is unchanged and remains the default.
 - CLI parity: `dorado` and `gyotaku` gained `--version` (`<name> 0.1.0`); `--help`
   already worked via argparse. See [Core](../CHANGELOG.md).
 - Exception subclasses `AuthError`, `MalformedContainer`, and `InvalidParams` under

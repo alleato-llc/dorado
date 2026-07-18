@@ -9,12 +9,21 @@
 #include <utility>
 
 #include "dorado/format.hpp"
+#include "dorado/skein.hpp"
 #include "internal.hpp"
 
 namespace dorado::engine {
 namespace {
 
 constexpr std::array<std::uint8_t, 8> kDomain = {'D', 'R', 'D', 'O', 'c', 'h', 'n', 'k'};
+
+// Domain separators for the raw-key authenticated construction (encrypt-then-MAC
+// over a caller-supplied key, no password or KDF). Distinct from `kDomain` (the
+// password container's frame domain) so a raw-mode frame's tag can never collide
+// with or be replayed as a password-mode frame's tag, even under key reuse.
+constexpr std::array<std::uint8_t, 8> kRawAuthEncDomain = {'D', 'R', 'D', 'O', 'r', 'a', 'w', 'E'};
+constexpr std::array<std::uint8_t, 8> kRawAuthMacDomain = {'D', 'R', 'D', 'O', 'r', 'a', 'w', 'M'};
+constexpr std::array<std::uint8_t, 8> kRawFrameDomain = {'D', 'R', 'D', 'O', 'r', 'w', 'F', 'r'};
 
 // Run a cleanup action on scope exit (the C++ analog of C's cleanup attribute).
 template <class F>
@@ -35,6 +44,24 @@ void put_u64be(std::vector<std::uint8_t>& o, std::uint64_t w) {
 Bytes frame_aad(Span header_bytes, std::uint64_t idx, bool is_last, Span ct) {
   Bytes aad(kDomain.begin(), kDomain.end());
   if (idx == 0) aad.insert(aad.end(), header_bytes.begin(), header_bytes.end());
+  put_u64be(aad, idx);
+  aad.push_back(is_last ? 1 : 0);
+  put_u32be(aad, std::uint32_t(ct.size()));
+  aad.insert(aad.end(), ct.begin(), ct.end());
+  return aad;
+}
+
+// Authenticated data for a raw-mode frame: a domain separator, the tweak and IV
+// (for frame index 0 only, binding the parameters since raw mode has no header
+// to bind them into the way the password container does), the index, the last
+// flag, and the ciphertext. Mirrors `frame_aad`, substituting tweak+IV for the
+// header.
+Bytes raw_frame_aad(Span tweak, Span iv, std::uint64_t idx, bool is_last, Span ct) {
+  Bytes aad(kRawFrameDomain.begin(), kRawFrameDomain.end());
+  if (idx == 0) {
+    aad.insert(aad.end(), tweak.begin(), tweak.end());
+    aad.insert(aad.end(), iv.begin(), iv.end());
+  }
   put_u64be(aad, idx);
   aad.push_back(is_last ? 1 : 0);
   put_u32be(aad, std::uint32_t(ct.size()));
@@ -74,6 +101,39 @@ Keys derive_keys(const kdf::Kdf& k, Span password, Span salt, int key_len) {
 void wipe_keys(Keys& k) {
   detail::secure_wipe(k.enc.data(), k.enc.size());
   detail::secure_wipe(k.mac.data(), k.mac.size());
+}
+
+// Split a caller-supplied raw key into an independent encryption subkey and MAC
+// subkey, each derived via domain-separated Skein-512 keyed hashing (`key` is
+// the MAC key, the domain label is the message). Deliberately not a password
+// KDF: `key` is assumed to already be high-entropy (an OS keychain or a CSPRNG),
+// so no cost-parameterized stretching is needed, only separation into two
+// subkeys that must not be the same bytes used for two different primitives.
+Result<Keys> split_raw_key(Variant variant, Span key) {
+  int key_len = key_size(variant);
+  if (int(key.size()) != key_len) {
+    return std::unexpected("raw key must be " + std::to_string(key_len) +
+                           " bytes for this variant, got " + std::to_string(key.size()));
+  }
+  Bytes enc = skein::mac(key, std::size_t(key_len),
+                        Span(kRawAuthEncDomain.data(), kRawAuthEncDomain.size()));
+  Bytes mk = skein::mac(key, 32, Span(kRawAuthMacDomain.data(), kRawAuthMacDomain.size()));
+  return Keys{std::move(enc), std::move(mk)};
+}
+
+// Validate the IV and chunk size shared by the raw-authenticated encrypt and
+// decrypt paths.
+Result<void> validate_raw_auth_params(Variant variant, Span iv, std::uint32_t chunk_size) {
+  int bs = block_size(variant);
+  if (int(iv.size()) != bs) {
+    return std::unexpected("iv must be " + std::to_string(bs) + " bytes for this variant, got " +
+                           std::to_string(iv.size()));
+  }
+  if (chunk_size == 0 || chunk_size % std::uint32_t(bs) != 0) {
+    return std::unexpected("chunk size must be a positive multiple of the block size (" +
+                           std::to_string(bs) + "), got " + std::to_string(chunk_size));
+  }
+  return {};
 }
 
 // Read up to n bytes from `in`, appending to `out`. Returns true iff it got n.
@@ -238,6 +298,86 @@ Result<void> raw_ctr_stream(Span key, Span tweak, Span iv, std::istream& in, std
   return {};
 }
 
+Result<void> encrypt_raw_authenticated_stream(Variant variant, Span key, Span tweak, Span iv,
+                                              mac::Mac m, std::uint32_t chunk_size,
+                                              std::istream& in, std::ostream& out) {
+  if (auto v = validate_raw_auth_params(variant, iv, chunk_size); !v) return std::unexpected(v.error());
+  auto keys_r = split_raw_key(variant, key);
+  if (!keys_r) return std::unexpected(keys_r.error());
+  Keys keys = std::move(*keys_r);
+  ScopeExit wipe{[&] { wipe_keys(keys); }};  // scrub keys on every exit path
+  Threefish tf(variant, keys.enc, tweak);
+  std::uint64_t bpc = chunk_size / block_size(variant);
+
+  // Read one chunk ahead so each chunk knows whether it is the last (which is
+  // authenticated, defeating truncation) -- same shape as encrypt_password_stream.
+  std::vector<std::uint8_t> counter(iv.begin(), iv.end());
+  Bytes cur;
+  read_up_to(in, cur, chunk_size);
+  std::uint64_t idx = 0;
+  for (;;) {
+    Bytes next;
+    read_up_to(in, next, chunk_size);
+    bool is_last = next.empty();
+    Bytes ct = cur;
+    tf.ctr_apply(counter, ct);
+    auto tag = mac::tag(m, keys.mac, raw_frame_aad(tweak, iv, idx, is_last, ct));
+    std::uint8_t lastb = is_last ? 1 : 0;
+    out.write(reinterpret_cast<const char*>(&lastb), 1);
+    Bytes lenb;
+    put_u32be(lenb, std::uint32_t(ct.size()));
+    write_bytes(out, lenb);
+    write_bytes(out, ct);
+    write_bytes(out, tag);
+    if (is_last) break;
+    iv_advance(counter, bpc);
+    cur = std::move(next);
+    ++idx;
+  }
+  return {};
+}
+
+Result<void> decrypt_raw_authenticated_stream(Variant variant, Span key, Span tweak, Span iv,
+                                              mac::Mac m, std::uint32_t chunk_size,
+                                              std::istream& in, std::ostream& out) {
+  if (auto v = validate_raw_auth_params(variant, iv, chunk_size); !v) return std::unexpected(v.error());
+  auto keys_r = split_raw_key(variant, key);
+  if (!keys_r) return std::unexpected(keys_r.error());
+  Keys keys = std::move(*keys_r);
+  ScopeExit wipe{[&] { wipe_keys(keys); }};  // scrub keys on every exit path
+  Threefish tf(variant, keys.enc, tweak);
+  std::uint64_t bpc = chunk_size / block_size(variant);
+  std::vector<std::uint8_t> counter(iv.begin(), iv.end());
+
+  std::uint64_t idx = 0;
+  for (;;) {
+    Bytes is_last_b;
+    if (!read_up_to(in, is_last_b, 1)) return std::unexpected("truncated: no final frame before end of input");
+    Bytes len_b;
+    if (!read_up_to(in, len_b, 4)) return std::unexpected("truncated frame");
+    std::uint32_t ct_len = 0;
+    for (int i = 0; i < 4; ++i) ct_len = ct_len << 8 | len_b[i];
+    if (ct_len > chunk_size) return std::unexpected("frame ct_len exceeds chunk size");
+    Bytes ct;
+    if (!read_up_to(in, ct, ct_len)) return std::unexpected("truncated frame");
+    Bytes tag;
+    if (!read_up_to(in, tag, 32)) return std::unexpected("truncated frame");
+    bool is_last = is_last_b[0] == 1;
+    // Verify before decrypting (which also rejects a wrong key), so no
+    // plaintext from an unverified frame is ever written.
+    auto expected = mac::tag(m, keys.mac, raw_frame_aad(tweak, iv, idx, is_last, ct));
+    if (!ct_eq(expected, tag)) return std::unexpected("authentication failed");
+    if (!is_last && ct.size() != chunk_size)
+      return std::unexpected("non-final frame is not a full chunk");
+    Bytes pt = ct;
+    tf.ctr_apply(counter, pt);
+    write_bytes(out, pt);
+    if (is_last) return {};
+    iv_advance(counter, bpc);
+    ++idx;
+  }
+}
+
 // --- in-memory wrappers over the streaming core ---
 
 namespace {
@@ -282,6 +422,24 @@ Result<Bytes> raw_ctr(Span key, Span tweak, Span iv, Span data) {
   auto in = as_stream(data);
   std::ostringstream oss(std::ios::binary);
   auto r = raw_ctr_stream(key, tweak, iv, in, oss);
+  if (!r) return std::unexpected(r.error());
+  return drain(oss);
+}
+
+Result<Bytes> encrypt_raw_authenticated(Variant variant, Span key, Span tweak, Span iv, mac::Mac m,
+                                        std::uint32_t chunk_size, Span plaintext) {
+  auto in = as_stream(plaintext);
+  std::ostringstream oss(std::ios::binary);
+  auto r = encrypt_raw_authenticated_stream(variant, key, tweak, iv, m, chunk_size, in, oss);
+  if (!r) return std::unexpected(r.error());
+  return drain(oss);
+}
+
+Result<Bytes> decrypt_raw_authenticated(Variant variant, Span key, Span tweak, Span iv, mac::Mac m,
+                                        std::uint32_t chunk_size, Span data) {
+  auto in = as_stream(data);
+  std::ostringstream oss(std::ios::binary);
+  auto r = decrypt_raw_authenticated_stream(variant, key, tweak, iv, m, chunk_size, in, oss);
   if (!r) return std::unexpected(r.error());
   return drain(oss);
 }

@@ -10,6 +10,15 @@ the master table.
 
 ### Added
 
+- `go/engine`: raw-key authenticated mode (`EncryptRawAuthenticatedStream` /
+  `DecryptRawAuthenticatedStream` / `*Bytes`, in the new `go/engine/raw_authenticated.go`),
+  encrypt-then-MAC over a caller-supplied key with no password or KDF, reusing the
+  password container's chunk/frame machinery. Ports the Rust reference construction;
+  see the [Core CHANGELOG](../CHANGELOG.md) for the cross-port rationale and
+  [docs/spec.md](../docs/spec.md)'s "Raw-key modes" section for the byte-level
+  construction. Verified against the six cross-language known-answer vectors in
+  [docs/fixtures/raw-authenticated.md](../docs/fixtures/raw-authenticated.md).
+  `RawCTRStream` (bare, unauthenticated) is unchanged and remains the default.
 - `go/engine`: exported sentinel errors (`ErrAuthFailed`, `ErrMalformedContainer`,
   `ErrUnsupportedVersion`, `ErrInvalidParams`) wrapped with `%w`, so callers classify
   failures with `errors.Is` instead of matching strings. Wrong password and tampering

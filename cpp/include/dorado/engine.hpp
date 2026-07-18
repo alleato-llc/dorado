@@ -45,6 +45,20 @@ Result<void> decrypt_password_stream(Span password, std::optional<Span> expect_l
                                      std::istream& in, std::ostream& out);
 Result<void> raw_ctr_stream(Span key, Span tweak, Span iv, std::istream& in, std::ostream& out);
 
+// Raw-key authenticated CTR (encrypt-then-MAC, caller-supplied key, no password
+// or KDF): reuses the password container's frame layout and MAC pattern, but
+// binds the tweak and IV into frame 0's AAD instead of a header (there is none
+// here). Unlike raw_ctr_stream, a wrong key or a tampered/corrupted stream is
+// reported as an error instead of silently producing garbage. See
+// ../docs/spec.md's "Raw-key modes" section. Bare raw_ctr_stream is unchanged
+// and stays the default.
+Result<void> encrypt_raw_authenticated_stream(Variant variant, Span key, Span tweak, Span iv,
+                                              mac::Mac mac, std::uint32_t chunk_size,
+                                              std::istream& in, std::ostream& out);
+Result<void> decrypt_raw_authenticated_stream(Variant variant, Span key, Span tweak, Span iv,
+                                              mac::Mac mac, std::uint32_t chunk_size,
+                                              std::istream& in, std::ostream& out);
+
 // --- in-memory ---
 Bytes encrypt_password_with(const Options& opts, Span salt, Span tweak, Span iv, Span password,
                             Span plaintext);
@@ -53,6 +67,10 @@ Result<Bytes> decrypt_password(Span password, Span container);
 Result<Bytes> decrypt_password_expecting(Span password, std::optional<Span> expect_label,
                                          Span container);
 Result<Bytes> raw_ctr(Span key, Span tweak, Span iv, Span data);
+Result<Bytes> encrypt_raw_authenticated(Variant variant, Span key, Span tweak, Span iv,
+                                        mac::Mac mac, std::uint32_t chunk_size, Span plaintext);
+Result<Bytes> decrypt_raw_authenticated(Variant variant, Span key, Span tweak, Span iv,
+                                        mac::Mac mac, std::uint32_t chunk_size, Span data);
 
 struct ContainerInfo {
   std::uint8_t version;

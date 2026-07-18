@@ -176,3 +176,73 @@ rejects an unknown magic or an unsupported version with a clear error. Any chang
 the layout is a version bump (`format::VERSION`, currently 4). A header read from a
 file keeps its own version so it reserializes byte-for-byte (its tag still
 verifies); the reader currently accepts versions 3 and 4, and writes 4.
+
+## Raw-key modes
+
+Raw-key mode takes the key directly from the caller instead of a password, and
+produces no header, magic, or version byte — nothing self-describing is written
+to the stream. The caller must supply the same variant, key, tweak, and IV (and,
+for authenticated mode, the same MAC and chunk size) on decrypt as were used to
+encrypt, and remember them out of band; none of it is recoverable from the
+ciphertext alone. There are two raw-key modes.
+
+### Bare CTR (unauthenticated)
+
+The stream is Threefish-CTR keyed directly by the caller's key, with no framing
+of any kind: ciphertext length equals plaintext length exactly, byte for byte.
+Encrypt and decrypt are the identical operation (CTR is symmetric). This
+provides confidentiality only. A corrupted or tampered ciphertext byte decrypts
+to a flipped plaintext byte at the same position with no error of any kind:
+there is nothing in this mode that can detect it.
+
+### Raw-key authenticated (encrypt-then-MAC)
+
+Adds authentication on top of the same Threefish-CTR keystream, reusing the
+password container's frame layout (`is_last | ct_len | ciphertext | tag`,
+described above) so a tampered, corrupted, or wrong-key stream is rejected on
+decrypt rather than silently producing garbage.
+
+**Key derivation.** The caller's key is not used directly for either primitive.
+It is split into an independent encryption subkey and MAC subkey, each derived
+by keying Skein-512's MAC mode with the caller's key and hashing a fixed,
+public domain label as the message (not a password KDF: the caller's key is
+assumed to already be high-entropy, e.g. from an OS keychain or a CSPRNG, so no
+cost-parameterized stretching is applied, only separation into two subkeys that
+must not be the same bytes used for two different primitives):
+
+```
+enc_key = Skein512-MAC(key = caller_key, out_len = variant.key_len, msg = "DRDOrawE")
+mac_key = Skein512-MAC(key = caller_key, out_len = 32,               msg = "DRDOrawM")
+```
+
+This derivation is fixed regardless of which MAC (`--mac`) authenticates the
+frames; only the frame tag itself uses the selected MAC.
+
+**Frames.** Identical wire layout to the password container's frames (`is_last`
+1 byte, `ct_len` u32 big-endian, ciphertext, then a 32-byte tag), read and
+written with the same streaming rules (a frame's `ct_len` bounded by the
+caller-supplied chunk size before allocation; every non-final frame carries
+exactly `chunk_size` plaintext bytes; reaching end of input without an
+`is_last = 1` frame is a truncation error). The keystream is one continuous CTR
+stream across all chunks, starting at the caller-supplied IV, exactly as in the
+password container.
+
+**Frame authentication (AAD).** Each frame's tag is `MAC(mac_key, AAD)` where:
+
+```
+AAD = "DRDOrwFr"                          domain separator, 8 bytes
+      || tweak                            only for chunk index 0, 16 bytes
+      || iv                               only for chunk index 0, block-size bytes
+      || index            u64, big-endian
+      || is_last          1 byte
+      || ct_len           u32, big-endian
+      || ciphertext
+```
+
+The domain separator is distinct from the password container's (`DRDOchnk`), so
+a raw-authenticated frame's tag can never collide with or be replayed as a
+password-container frame's tag, even under key reuse across both modes. Since
+raw mode has no header to bind into chunk 0's tag the way the password
+container does, the tweak and IV are bound directly into chunk 0's AAD instead,
+so an attacker cannot pair a captured ciphertext with a different tweak or IV
+than the one it was actually encrypted under.

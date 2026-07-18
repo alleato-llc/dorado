@@ -10,6 +10,15 @@ the master table.
 
 ### Added
 
+- **Raw-key mode gains an authenticated option**: `dorado_encrypt_raw_authenticated_stream`
+  / `dorado_decrypt_raw_authenticated_stream` (plus `dorado_encrypt_raw_authenticated` /
+  `dorado_decrypt_raw_authenticated` in-memory wrappers), encrypt-then-MAC over the
+  caller-supplied key with no password or KDF, reusing the password container's
+  chunk/frame/MAC machinery. Decryption verifies each frame before decrypting it and
+  returns `dorado_err_auth` (merged with wrong-key) on a corrupted, tampered, or
+  wrong-key stream. See the [Core CHANGELOG](../CHANGELOG.md) for the cross-port
+  rationale and [docs/spec.md](../docs/spec.md)'s "Raw-key modes" section for the
+  byte-level construction. `dorado_raw_ctr_stream` is unchanged and remains the default.
 - CLI parity: `dorado` and `gyotaku` now support `--help`/`-h` (usage to stdout,
   exit 0) and `--version` (`<name> 0.1.0`); both previously errored on `--help`. See
   [Core](../CHANGELOG.md).

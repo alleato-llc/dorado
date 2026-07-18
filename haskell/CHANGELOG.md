@@ -11,6 +11,16 @@ is the master table.
 
 ### Added
 
+- **Raw-key mode gains an authenticated option**: `Dorado.Engine.encryptRawAuthenticated`
+  / `decryptRawAuthenticated` (in-memory) and `encryptRawAuthenticatedStream` /
+  `decryptRawAuthenticatedStream` (streaming over `Handle`s), encrypt-then-MAC over the
+  caller-supplied key with no password or KDF, reusing the password container's
+  chunk/frame machinery. See the [Core CHANGELOG](../CHANGELOG.md) for the cross-port
+  rationale and [docs/spec.md](../docs/spec.md)'s "Raw-key modes" section for the
+  byte-level construction (key-splitting via domain-separated Skein-512, the frame
+  AAD). Verified against the cross-language known-answer vectors in
+  `docs/fixtures/raw-authenticated.md`. Bare `rawCtr` / `rawCtrStream` are unchanged
+  and remain the default.
 - Initial Haskell port (Cabal package `dorado`, built with GHC): an SDK plus the
   `dorado` and `gyotaku` CLIs, byte-for-byte cross-compatible with the other ports.
 - From-scratch primitives, each verified against the same vectors as the Rust

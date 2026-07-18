@@ -140,6 +140,14 @@ garbage.
 example a file header. Tampering with it is still detected even though it stays
 readable.
 
+**Domain separator.** A short, fixed, public tag mixed into what a MAC (or hash)
+signs, so that two different uses of the same key can never be confused with or
+substituted for each other. dorado's password container tags start with
+`"DRDOchnk"`; the raw-key authenticated construction uses distinct separators
+for its own frame tags (`"DRDOrwFr"`) and for deriving its two subkeys
+(`"DRDOrawE"`, `"DRDOrawM"`) from one caller-supplied key, so a value computed
+for one purpose can never accidentally verify for another.
+
 **AEAD (authenticated encryption with associated data).** A construction that
 provides confidentiality and integrity together, optionally binding associated
 data. dorado's password mode is effectively a hand-built streaming AEAD (CTR plus a

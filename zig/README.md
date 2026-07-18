@@ -20,7 +20,7 @@ Educational and unaudited; for real data prefer a vetted library.
   vectors as the Rust reference.
 - `src/format.zig`, `kdf.zig`, `mac.zig`, `engine.zig` — the construction: the
   container header, the KDFs (Zig stdlib), the MAC menu, and the streaming password
-  container, raw CTR, and inspect. `engine.Error` is the error set for a bad
+  container, raw CTR (bare and authenticated), and inspect. `engine.Error` is the error set for a bad
   container.
 - `src/root.zig` — the library module root (the SDK surface).
 - `src/cli_dorado.zig`, `src/cli_gyotaku.zig` — the two CLIs.

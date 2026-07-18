@@ -17,7 +17,7 @@ Module path: `github.com/alleato-llc/dorado/go`. Educational and unaudited.
   `lukechampine.com/blake3`.
 - `engine/` — the construction: KDFs (`golang.org/x/crypto` argon2/scrypt, stdlib
   pbkdf2), the chunked authenticated container over `io.Reader`/`io.Writer`, the
-  MAC menu, v4 label binding, raw CTR, and inspect.
+  MAC menu, v4 label binding, raw CTR (bare and authenticated), and inspect.
 - `cmd/dorado`, `cmd/gyotaku` — the two CLIs.
 
 ## Build

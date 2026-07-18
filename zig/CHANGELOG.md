@@ -10,6 +10,17 @@ the master table.
 
 ### Added
 
+- `zig/src/engine.zig`: raw-key authenticated mode
+  (`encryptRawAuthenticatedStream` / `decryptRawAuthenticatedStream` / the
+  `encryptRawAuthenticated` / `decryptRawAuthenticated` slice wrappers),
+  encrypt-then-MAC over a caller-supplied key with no password or KDF, reusing
+  the password container's chunk/frame machinery. Ports the Rust reference
+  construction; see the [Core CHANGELOG](../CHANGELOG.md) for the cross-port
+  rationale and [docs/spec.md](../docs/spec.md)'s "Raw-key modes" section for
+  the byte-level construction. Verified against the six cross-language
+  known-answer vectors in
+  [docs/fixtures/raw-authenticated.md](../docs/fixtures/raw-authenticated.md).
+  `rawCtrStream` (bare, unauthenticated) is unchanged and remains the default.
 - CLI parity: `dorado` and `gyotaku` now support `--help`/`-h` (usage to stdout,
   exit 0) and `--version` (`<name> 0.1.0`); previously both printed the error-usage and
   `gyotaku --help` tried to open `--help` as a file. See [Core](../CHANGELOG.md).

@@ -224,6 +224,277 @@ fn raw_ctr_rejects_wrong_key_length() {
     assert!(err.is_err());
 }
 
+// --- Raw-key authenticated CTR path (encrypt-then-MAC, caller-supplied key) ---
+
+fn raw_auth_fixture() -> (Variant, [u8; 32], [u8; 16], [u8; 32]) {
+    (Variant::T256, [0x11u8; 32], [0u8; 16], [0x02u8; 32])
+}
+
+#[test]
+fn raw_authenticated_round_trips_and_rejects_wrong_key() {
+    let (variant, key, tweak, iv) = raw_auth_fixture();
+    let pt = b"a message that spans more than nothing";
+
+    let ct = encrypt_raw_authenticated_bytes(variant, &key, &tweak, &iv, MacId::Skein512, 4096, pt)
+        .unwrap();
+    assert_ne!(&ct[..], &pt[..]);
+
+    let back =
+        decrypt_raw_authenticated_bytes(variant, &key, &tweak, &iv, MacId::Skein512, 4096, &ct)
+            .unwrap();
+    assert_eq!(&back[..], &pt[..]);
+
+    let wrong_key = [0x99u8; 32];
+    assert!(
+        decrypt_raw_authenticated_bytes(
+            variant,
+            &wrong_key,
+            &tweak,
+            &iv,
+            MacId::Skein512,
+            4096,
+            &ct
+        )
+        .is_err(),
+        "wrong key must fail"
+    );
+
+    let mut tampered = ct.clone();
+    *tampered.last_mut().unwrap() ^= 1;
+    assert!(
+        decrypt_raw_authenticated_bytes(
+            variant,
+            &key,
+            &tweak,
+            &iv,
+            MacId::Skein512,
+            4096,
+            &tampered
+        )
+        .is_err(),
+        "tampering must fail"
+    );
+}
+
+#[test]
+fn raw_authenticated_ciphertext_differs_from_bare_raw_ctr() {
+    // Same key/tweak/iv into both paths must not produce related output on the
+    // ciphertext bytes preceding the tag, confirming the encryption subkey (not
+    // the raw key itself) drives the keystream.
+    let (variant, key, tweak, iv) = raw_auth_fixture();
+    let pt = b"identical plaintext into both raw paths";
+
+    let bare = {
+        let mut out = Vec::new();
+        raw_ctr_stream(variant, &key, &tweak, &iv, &mut Cursor::new(pt), &mut out).unwrap();
+        out
+    };
+    let authenticated =
+        encrypt_raw_authenticated_bytes(variant, &key, &tweak, &iv, MacId::Skein512, 4096, pt)
+            .unwrap();
+
+    assert_ne!(
+        &authenticated[..bare.len()],
+        &bare[..],
+        "the authenticated path must derive its own encryption subkey, not reuse the raw key directly"
+    );
+}
+
+#[test]
+fn raw_authenticated_every_mac_round_trips_and_rejects() {
+    let (variant, key, tweak, iv) = raw_auth_fixture();
+    for mac in [MacId::Skein512, MacId::HmacSha256, MacId::Blake3] {
+        let pt = b"plaintext authenticated by each MAC in turn";
+        let ct =
+            encrypt_raw_authenticated_bytes(variant, &key, &tweak, &iv, mac, 4096, pt).unwrap();
+        let back =
+            decrypt_raw_authenticated_bytes(variant, &key, &tweak, &iv, mac, 4096, &ct).unwrap();
+        assert_eq!(&back[..], &pt[..], "{mac:?} round-trip");
+
+        let mut tampered = ct.clone();
+        *tampered.last_mut().unwrap() ^= 1;
+        assert!(
+            decrypt_raw_authenticated_bytes(variant, &key, &tweak, &iv, mac, 4096, &tampered)
+                .is_err(),
+            "{mac:?} tampering"
+        );
+    }
+}
+
+#[test]
+fn raw_authenticated_every_variant_round_trips() {
+    for (variant, key) in [
+        (Variant::T256, vec![0x11u8; 32]),
+        (Variant::T512, vec![0x11u8; 64]),
+        (Variant::T1024, vec![0x11u8; 128]),
+    ] {
+        let tweak = [0u8; 16];
+        let iv = vec![0x02u8; variant.block_len()];
+        let pt = b"payload exercising each Threefish width";
+        let ct =
+            encrypt_raw_authenticated_bytes(variant, &key, &tweak, &iv, MacId::Skein512, 4096, pt)
+                .unwrap();
+        let back =
+            decrypt_raw_authenticated_bytes(variant, &key, &tweak, &iv, MacId::Skein512, 4096, &ct)
+                .unwrap();
+        assert_eq!(&back[..], &pt[..], "{variant:?} round-trip");
+    }
+}
+
+#[test]
+fn raw_authenticated_multi_chunk_round_trip_and_rejects_early_chunk_tampering() {
+    let (variant, key, tweak, iv) = raw_auth_fixture();
+    let pt: Vec<u8> = (0..200u32).map(|i| i as u8).collect();
+    let ct = encrypt_raw_authenticated_bytes(variant, &key, &tweak, &iv, MacId::Skein512, 64, &pt)
+        .unwrap();
+    let back =
+        decrypt_raw_authenticated_bytes(variant, &key, &tweak, &iv, MacId::Skein512, 64, &ct)
+            .unwrap();
+    assert_eq!(back, pt);
+
+    // Flip a byte roughly inside the first chunk's ciphertext; its tag must
+    // reject it before any later chunk is decrypted.
+    let mut tampered = ct.clone();
+    let pos = ct.len() / 3;
+    tampered[pos] ^= 1;
+    assert!(decrypt_raw_authenticated_bytes(
+        variant,
+        &key,
+        &tweak,
+        &iv,
+        MacId::Skein512,
+        64,
+        &tampered
+    )
+    .is_err());
+}
+
+#[test]
+fn raw_authenticated_rejects_truncation() {
+    let (variant, key, tweak, iv) = raw_auth_fixture();
+    let pt: Vec<u8> = (0..200u32).map(|i| i as u8).collect();
+    let ct = encrypt_raw_authenticated_bytes(variant, &key, &tweak, &iv, MacId::Skein512, 64, &pt)
+        .unwrap();
+
+    for cut in [1usize, 33, 80, 150] {
+        let truncated = &ct[..ct.len() - cut];
+        assert!(
+            decrypt_raw_authenticated_bytes(
+                variant,
+                &key,
+                &tweak,
+                &iv,
+                MacId::Skein512,
+                64,
+                truncated
+            )
+            .is_err(),
+            "truncation by {cut} bytes must fail"
+        );
+    }
+}
+
+#[test]
+fn raw_authenticated_rejects_mismatched_tweak_or_iv() {
+    // Neither is stored anywhere (raw mode has no header): both are bound into
+    // frame 0's AAD, so decrypting with the wrong one must fail rather than
+    // silently produce wrong plaintext.
+    let (variant, key, tweak, iv) = raw_auth_fixture();
+    let pt = b"bound parameters must not be swappable";
+    let ct = encrypt_raw_authenticated_bytes(variant, &key, &tweak, &iv, MacId::Skein512, 4096, pt)
+        .unwrap();
+
+    let other_tweak = [0x7fu8; 16];
+    assert!(
+        decrypt_raw_authenticated_bytes(
+            variant,
+            &key,
+            &other_tweak,
+            &iv,
+            MacId::Skein512,
+            4096,
+            &ct
+        )
+        .is_err(),
+        "a mismatched tweak must fail"
+    );
+
+    let other_iv = [0x7fu8; 32];
+    assert!(
+        decrypt_raw_authenticated_bytes(
+            variant,
+            &key,
+            &tweak,
+            &other_iv,
+            MacId::Skein512,
+            4096,
+            &ct
+        )
+        .is_err(),
+        "a mismatched iv must fail"
+    );
+}
+
+#[test]
+fn raw_authenticated_rejects_wrong_key_length() {
+    let tweak = [0u8; 16];
+    let iv = [0u8; 32];
+    let err = encrypt_raw_authenticated_bytes(
+        Variant::T256,
+        &[0u8; 16], // a 256-bit variant needs a 32-byte key
+        &tweak,
+        &iv,
+        MacId::Skein512,
+        4096,
+        b"data",
+    );
+    assert!(err.is_err());
+}
+
+#[test]
+fn raw_authenticated_auth_failure_does_not_distinguish_wrong_key_from_tampering() {
+    let (variant, key, tweak, iv) = raw_auth_fixture();
+    let ct = encrypt_raw_authenticated_bytes(
+        variant,
+        &key,
+        &tweak,
+        &iv,
+        MacId::Skein512,
+        4096,
+        b"secret",
+    )
+    .unwrap();
+
+    let wrong_key = [0x99u8; 32];
+    let wrong = decrypt_raw_authenticated_bytes(
+        variant,
+        &wrong_key,
+        &tweak,
+        &iv,
+        MacId::Skein512,
+        4096,
+        &ct,
+    )
+    .unwrap_err();
+
+    let mut tampered = ct.clone();
+    *tampered.last_mut().unwrap() ^= 1;
+    let tamper = decrypt_raw_authenticated_bytes(
+        variant,
+        &key,
+        &tweak,
+        &iv,
+        MacId::Skein512,
+        4096,
+        &tampered,
+    )
+    .unwrap_err();
+
+    assert!(matches!(wrong, Error::AuthFailed));
+    assert!(matches!(tamper, Error::AuthFailed));
+    assert_eq!(wrong.to_string(), tamper.to_string());
+}
+
 // --- block_transform across the larger variants ---
 
 #[test]

@@ -19,7 +19,7 @@ data prefer a vetted library.
 - `src/main/java/com/alleato/dorado/engine/` — the construction: `Format` (the
   container header), `Kdf` (Argon2id, scrypt, PBKDF2 via Bouncy Castle), `Mac` (the
   MAC menu; HMAC-SHA256 from the JDK), and `Engine` (the streaming password
-  container, raw CTR, and inspect). `DoradoException` marks a bad or
+  container, raw CTR (bare and authenticated), and inspect). `DoradoException` marks a bad or
   failed-authentication container.
 
 The cipher and hashes are from-scratch; only the KDFs are a dependency

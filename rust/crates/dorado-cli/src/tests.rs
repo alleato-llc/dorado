@@ -209,6 +209,36 @@ fn label_and_expect_label_parse() {
 }
 
 #[test]
+fn unauthenticated_flag_parses_for_raw_key_mode() {
+    let cli = parse(&[
+        "dorado",
+        "encrypt",
+        "--key",
+        "00",
+        "--iv",
+        "00",
+        "--unauthenticated",
+    ])
+    .unwrap();
+    assert!(args_of(&cli).unauthenticated);
+
+    let default = parse(&["dorado", "encrypt", "--key", "00", "--iv", "00"]).unwrap();
+    assert!(
+        !args_of(&default).unauthenticated,
+        "authenticated by default"
+    );
+}
+
+#[test]
+fn unauthenticated_is_rejected_in_password_mode() {
+    let cli = parse(&["dorado", "encrypt", "--password", "--unauthenticated"]).unwrap();
+    assert!(encrypt(args_of(&cli)).is_err());
+
+    let cli = parse(&["dorado", "decrypt", "--password", "--unauthenticated"]).unwrap();
+    assert!(decrypt(args_of(&cli)).is_err());
+}
+
+#[test]
 fn inspect_command_takes_no_credential() {
     // inspect is a separate subcommand with no required credential group.
     assert!(parse(&["dorado", "inspect"]).is_ok());

@@ -9,7 +9,21 @@ implementation and the baseline for test vectors and cross-compat fixtures.
 What is identical in all ten (so it is left out of the table below): the
 from-scratch primitives (Threefish 256/512/1024 + CTR, Skein-512, BLAKE3), the
 DRDO v4 on-disk format, cross-compatibility, and encrypt-then-MAC authentication
-with a constant-time tag compare.
+with a constant-time tag compare. Every port's raw-key mode also gained an
+authenticated construction alongside its original bare CTR: the caller's key
+is split into an independent encryption subkey and MAC subkey via
+domain-separated Skein-512 keyed hashing (not a password KDF — no
+cost-parameterized stretching), reusing the password container's exact frame
+layout, with the tweak and IV bound into frame 0's authenticated data since
+raw mode has no header to bind them into. See
+[`spec.md`](spec.md#raw-key-modes) for the byte-level construction and
+[`fixtures/raw-authenticated.md`](fixtures/raw-authenticated.md) for the
+cross-language known-answer vectors every port is verified against. The
+CLI-level default differs by port: only the Rust CLI currently exposes this
+(authenticated by default, `--unauthenticated` opts out to bare CTR); the
+other ports' CLIs are unchanged and still only offer bare raw-key CTR, with
+the new authenticated construction reachable as a library/SDK call but not
+yet wired to a flag.
 
 The eight native ports (Rust, Go, C, C++, Zig, Java, Python, Haskell) run their own
 compiled cipher and stream in constant memory. The TypeScript port is one codebase run two ways:

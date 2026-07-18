@@ -15,7 +15,7 @@ This is an educational, unaudited implementation. For real data, prefer an audit
 This is a Cargo workspace of seven crates:
 
 - `crates/dorado` — the primitives library, zero runtime dependencies. Threefish + CTR is the core; alongside it are the from-scratch hashes, each verified against official test vectors or differentially against an audited crate: Skein-512 (the hash Threefish was built for) and BLAKE3.
-- `crates/dorado-engine` — the shared construction (KDFs, the authenticated chunked container, raw CTR, the MAC menu). Depends on `dorado`.
+- `crates/dorado-engine` — the shared construction (KDFs, the authenticated chunked container, raw CTR (bare and authenticated), the MAC menu). Depends on `dorado`.
 - `crates/dorado-cli` — the command-line frontend (produces the `dorado` binary).
 - `crates/dorado-gui` — the graphical frontend for the password tool (produces `dorado-gui`), built on `rime` (a sibling repo, `alleato-llc/rime`, a small `iced` component/theming kit) plus `dorado-gui-kit`'s composites over it. Has a theme picker (any of rime's built-in named palettes) and native Open/Save file dialogs (`rfd`).
 - `crates/dorado-gui-kit` — composite, dorado-flavored widgets shared by both GUI crates, built on `rime`.
@@ -82,11 +82,14 @@ cargo build --release -p dorado-cli
 
 That produces the binary at `target/release/dorado`, which the examples below call directly. To put `dorado` on your PATH, run `cargo install --path crates/dorado-cli`. During development you can skip the build step and substitute `cargo run -p dorado-cli --` for the binary path, which compiles and runs in one go (for example `cargo run -p dorado-cli -- encrypt --password --in plain --out cipher`).
 
-With a raw key you supply the key bytes (hex) and the IV. Output is bare, unauthenticated CTR ciphertext. The key length selects the variant. Use `--key-file <path>` to keep the key off the process list.
+With a raw key you supply the key bytes (hex) and the IV. Output is authenticated by default (encrypt-then-MAC: a tampered, corrupted, or wrong-key file is rejected on decrypt rather than silently producing garbage); add `--unauthenticated` to fall back to bare CTR ciphertext instead (no tamper detection, output length equal to input length). The key length selects the variant. Use `--key-file <path>` to keep the key off the process list.
 
 ```
 target/release/dorado encrypt --key <hex> --iv <hex> --in plain --out cipher
 target/release/dorado decrypt --key <hex> --iv <hex> --in cipher --out plain
+
+# bare CTR, no authentication (an expert opt-out, not the default):
+target/release/dorado encrypt --key <hex> --iv <hex> --unauthenticated --in plain --out cipher
 ```
 
 With a password the tool derives the key with a KDF and writes an authenticated, self-describing file. Decryption only needs the password, and reports a wrong password or a tampered or truncated file as an error. These files use the `.mahi`
@@ -159,7 +162,7 @@ Skein, the hash function Threefish was designed to power, is another constructio
 
 ## Security note
 
-This is an educational, unaudited implementation with no broader key management. The library API exposes only the unauthenticated cipher and CTR. In the CLI,password files are authenticated (encrypt-then-MAC), so tampering, a wrong password, reordered or dropped chunks, and truncation are detected; raw-key mode is bare CTR with no integrity, by design. The CLI wipes passwords and derived keys from memory when they go out of scope.
+This is an educational, unaudited implementation with no broader key management. The library API exposes the bare cipher and CTR alongside authenticated constructions built on top. In the CLI, password files are always authenticated (encrypt-then-MAC), so tampering, a wrong password, reordered or dropped chunks, and truncation are detected; raw-key mode is authenticated the same way by default, with an explicit `--unauthenticated` opt-out to bare CTR with no integrity, for callers who specifically want the low-level primitive (interop, composability, or just seeing the raw cipher mode). The CLI wipes passwords and derived keys from memory when they go out of scope.
 
 Dorado is not described as secure, production-ready, or guaranteed constant-time. The ARX design uses only data-independent operations (no secret-dependent table lookups or branches), so a straightforward build behaves in constant time on typical hardware, but that is a property of the design, not a promise. The full threat model, including what is not defended, is in `docs/overview.md`.
 

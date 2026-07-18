@@ -18,7 +18,7 @@ explicit mask. Educational and unaudited; for real data prefer a vetted library.
 - `src/dorado/format.py`, `kdf.py`, `mac.py`, `engine.py` — the construction: the
   container header, the KDFs (Argon2id via `argon2-cffi`; scrypt and PBKDF2 from
   `hashlib`), the MAC menu (HMAC-SHA256 from `hmac`), and the streaming password
-  container, raw CTR, and inspect. `DoradoError` marks a bad container.
+  container, raw CTR (bare and authenticated), and inspect. `DoradoError` marks a bad container.
 - `src/dorado/cli/dorado.py`, `cli/gyotaku.py` — the two CLIs.
 
 The cipher and hashes are from-scratch; only Argon2id is a dependency

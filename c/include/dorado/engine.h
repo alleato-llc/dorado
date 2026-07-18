@@ -91,6 +91,26 @@ const char *dorado_decrypt_password_stream(const uint8_t *password, size_t passw
                                            size_t expected_label_len, FILE *in, FILE *out);
 const char *dorado_raw_ctr_stream(int variant, const uint8_t *key, const uint8_t *tweak, const uint8_t *iv, FILE *in,
                                   FILE *out);
+
+/* Raw-key authenticated CTR (encrypt-then-MAC, caller-supplied key, no password or
+ * KDF): reuses the password container's frame layout (is_last | ct_len | ciphertext
+ * | tag) and MAC machinery. Unlike dorado_raw_ctr_stream, this detects a corrupted or
+ * tampered ciphertext byte instead of silently flipping the corresponding plaintext
+ * byte. There is no header: the caller must supply the same variant, key, tweak, iv,
+ * mac, and chunk_size on decrypt as were used to encrypt. key and iv must be
+ * variant-length bytes (see dorado_variant_len); tweak is always 16 bytes.
+ * Decryption verifies each frame's tag (constant time) before decrypting it, so a
+ * wrong key or a tampered/corrupted stream returns dorado_err_auth (merged with
+ * wrong-key, same as the password container) instead of producing garbage or partial
+ * output. See docs/spec.md's "Raw-key modes" section for the byte-level
+ * construction. */
+const char *dorado_encrypt_raw_authenticated_stream(int variant, const uint8_t *key, const uint8_t *tweak,
+                                                     const uint8_t *iv, int mac, uint32_t chunk_size, FILE *in,
+                                                     FILE *out);
+const char *dorado_decrypt_raw_authenticated_stream(int variant, const uint8_t *key, const uint8_t *tweak,
+                                                     const uint8_t *iv, int mac, uint32_t chunk_size, FILE *in,
+                                                     FILE *out);
+
 const char *dorado_inspect_stream(FILE *in, dorado_container_info *info);
 
 /* In-memory wrappers. On success they malloc *out (caller frees) and set *out_len. */
@@ -99,6 +119,13 @@ const char *dorado_encrypt_password(const uint8_t *password, size_t password_len
 const char *dorado_decrypt_password(const uint8_t *password, size_t password_len, const uint8_t *expected_label,
                                     size_t expected_label_len, const uint8_t *data, size_t data_len, uint8_t **out,
                                     size_t *out_len);
+const char *dorado_encrypt_raw_authenticated(int variant, const uint8_t *key, const uint8_t *tweak,
+                                             const uint8_t *iv, int mac, uint32_t chunk_size,
+                                             const uint8_t *plaintext, size_t plaintext_len, uint8_t **out,
+                                             size_t *out_len);
+const char *dorado_decrypt_raw_authenticated(int variant, const uint8_t *key, const uint8_t *tweak,
+                                             const uint8_t *iv, int mac, uint32_t chunk_size, const uint8_t *data,
+                                             size_t data_len, uint8_t **out, size_t *out_len);
 const char *dorado_inspect(const uint8_t *data, size_t data_len, dorado_container_info *info);
 
 #endif /* DORADO_ENGINE_H */

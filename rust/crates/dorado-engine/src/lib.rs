@@ -336,6 +336,11 @@ pub fn inspect_bytes(data: &[u8]) -> Result<ContainerInfo> {
 
 /// Stream bare CTR with a user-supplied key and IV (no header, no authentication).
 /// Encrypt and decrypt are the same operation.
+///
+/// This provides confidentiality only. A corrupted or tampered ciphertext byte
+/// decrypts to a flipped plaintext byte at the same position, silently, with no
+/// error of any kind — CTR mode has no way to detect this. If the caller needs
+/// tamper/corruption detection, use [`encrypt_raw_authenticated_stream`] instead.
 pub fn raw_ctr_stream(
     variant: Variant,
     key: &[u8],
@@ -364,6 +369,252 @@ pub fn raw_ctr_stream(
         }
     }
     writer.flush().map_err(Error::from)
+}
+
+// ---------------------------------------------------------------------------
+// Raw-key authenticated CTR (encrypt-then-MAC, caller-supplied key).
+// ---------------------------------------------------------------------------
+
+/// Domain separator for deriving the encryption subkey from a raw key.
+const RAW_AUTH_ENC_DOMAIN: &[u8; 8] = b"DRDOrawE";
+/// Domain separator for deriving the MAC subkey from a raw key.
+const RAW_AUTH_MAC_DOMAIN: &[u8; 8] = b"DRDOrawM";
+/// Domain separator mixed into every raw-authenticated frame tag. Distinct from
+/// [`FRAME_DOMAIN`] so a raw-mode frame's tag can never collide with or be
+/// replayed as a password-mode frame's tag, even under key reuse across both
+/// paths.
+const RAW_FRAME_DOMAIN: &[u8; 8] = b"DRDOrwFr";
+
+/// Split a caller-supplied raw key into an independent encryption subkey and MAC
+/// subkey, each derived via domain-separated Skein-512 keyed hashing (`key` is
+/// the MAC key, the domain label is the message). This is deliberately not a
+/// password KDF: `key` is assumed to already be high-entropy (e.g. from an OS
+/// keychain or a CSPRNG), so no cost-parameterized stretching is needed, only
+/// separation into two subkeys that must not be the same bytes used for two
+/// different primitives.
+fn split_raw_key(variant: Variant, key: &[u8]) -> Result<Zeroizing<Vec<u8>>> {
+    if key.len() != variant.key_len() {
+        return Err(Error::InvalidParams(format!(
+            "raw key must be {} bytes for this variant, got {}",
+            variant.key_len(),
+            key.len()
+        )));
+    }
+    let mut keymat = Zeroizing::new(vec![0u8; variant.key_len() + mac::KEY_LEN]);
+    let (enc_part, mac_part) = keymat.split_at_mut(variant.key_len());
+    dorado::skein::mac_into(enc_part, key, RAW_AUTH_ENC_DOMAIN);
+    dorado::skein::mac_into(mac_part, key, RAW_AUTH_MAC_DOMAIN);
+    Ok(keymat)
+}
+
+/// Authenticated data for a raw-mode frame: a domain separator, the tweak and
+/// IV (for the first frame only, binding the parameters — raw mode has no
+/// header to bind them into the way the password container does), the frame
+/// index, the last flag, and the ciphertext. Mirrors [`frame_aad`], substituting
+/// tweak+IV for the header.
+fn raw_frame_aad(
+    tweak: &[u8; 16],
+    iv: &[u8],
+    index: u64,
+    is_last: bool,
+    ciphertext: &[u8],
+) -> Vec<u8> {
+    let mut aad = Vec::with_capacity(ciphertext.len() + 64);
+    aad.extend_from_slice(RAW_FRAME_DOMAIN);
+    if index == 0 {
+        aad.extend_from_slice(tweak);
+        aad.extend_from_slice(iv);
+    }
+    aad.extend_from_slice(&index.to_be_bytes());
+    aad.push(is_last as u8);
+    aad.extend_from_slice(&(ciphertext.len() as u32).to_be_bytes());
+    aad.extend_from_slice(ciphertext);
+    aad
+}
+
+/// Validate the IV and chunk size shared by the raw-authenticated encrypt and
+/// decrypt paths.
+fn validate_raw_auth_params(variant: Variant, iv: &[u8], chunk_size: u32) -> Result<()> {
+    if iv.len() != variant.block_len() {
+        return Err(Error::InvalidParams(format!(
+            "iv must be {} bytes for this variant, got {}",
+            variant.block_len(),
+            iv.len()
+        )));
+    }
+    if chunk_size == 0 || !(chunk_size as usize).is_multiple_of(variant.block_len()) {
+        return Err(Error::InvalidParams(format!(
+            "chunk size must be a positive multiple of the block size ({}), got {chunk_size}",
+            variant.block_len()
+        )));
+    }
+    Ok(())
+}
+
+/// Stream authenticated CTR with a caller-supplied key: encrypt-then-MAC, no
+/// password, no KDF (see [`split_raw_key`]). Data streams in fixed-size
+/// authenticated chunks, reusing the same frame construction as the password
+/// container (`frame_aad`/`write_frame`/`read_frame`), so truncation,
+/// reordering, and dropped chunks are all rejected on decryption exactly as
+/// they are there. There is no header: the caller must supply the same
+/// `variant`, `tweak`, `iv`, `mac`, and `chunk_size` on decrypt as were used to
+/// encrypt, and remember them out of band (nothing here is written to the
+/// stream itself, matching [`raw_ctr_stream`]'s no-header philosophy).
+#[allow(clippy::too_many_arguments)]
+pub fn encrypt_raw_authenticated_stream(
+    variant: Variant,
+    key: &[u8],
+    tweak: &[u8; 16],
+    iv: &[u8],
+    mac: MacId,
+    chunk_size: u32,
+    reader: &mut dyn Read,
+    writer: &mut dyn Write,
+) -> Result<()> {
+    validate_raw_auth_params(variant, iv, chunk_size)?;
+    let keymat = split_raw_key(variant, key)?;
+    let (enc_key, mac_key) = keymat.split_at(variant.key_len());
+    let cipher = Cipher::new(variant, enc_key, tweak)?;
+    let blocks_per_chunk = (chunk_size as usize / variant.block_len()) as u64;
+
+    // Read one chunk ahead so each chunk knows whether it is the last (which is
+    // authenticated, defeating truncation) — same shape as encrypt_password_stream.
+    let mut counter = iv.to_vec();
+    let mut index: u64 = 0;
+    let mut current = vec![0u8; chunk_size as usize];
+    let mut n = read_fill(reader, &mut current)?;
+    loop {
+        let mut next = vec![0u8; chunk_size as usize];
+        let next_n = read_fill(reader, &mut next)?;
+        let is_last = next_n == 0;
+
+        let mut chunk = current[..n].to_vec();
+        cipher.ctr_apply(&counter, &mut chunk)?;
+        let tag = mac::tag(
+            mac,
+            mac_key,
+            &raw_frame_aad(tweak, iv, index, is_last, &chunk),
+        );
+        write_frame(writer, is_last, &chunk, &tag)?;
+
+        if is_last {
+            break;
+        }
+        advance_counter(&mut counter, blocks_per_chunk);
+        index += 1;
+        current = next;
+        n = next_n;
+    }
+    writer.flush().map_err(Error::from)
+}
+
+/// Decrypt an [`encrypt_raw_authenticated_stream`] stream. Each frame's tag is
+/// verified in constant time before that frame is decrypted, so a wrong key or
+/// a corrupted or tampered stream is reported as [`Error::AuthFailed`] instead
+/// of silently producing garbage or attacker-influenced plaintext — the failure
+/// mode `raw_ctr_stream` cannot detect.
+#[allow(clippy::too_many_arguments)]
+pub fn decrypt_raw_authenticated_stream(
+    variant: Variant,
+    key: &[u8],
+    tweak: &[u8; 16],
+    iv: &[u8],
+    mac: MacId,
+    chunk_size: u32,
+    reader: &mut dyn Read,
+    writer: &mut dyn Write,
+) -> Result<()> {
+    validate_raw_auth_params(variant, iv, chunk_size)?;
+    if chunk_size > max_chunk_bytes() {
+        return Err(Error::InvalidParams(format!(
+            "chunk size {chunk_size} exceeds the accepted maximum"
+        )));
+    }
+    let keymat = split_raw_key(variant, key)?;
+    let (enc_key, mac_key) = keymat.split_at(variant.key_len());
+    let cipher = Cipher::new(variant, enc_key, tweak)?;
+    let blocks_per_chunk = (chunk_size as usize / variant.block_len()) as u64;
+
+    let mut counter = iv.to_vec();
+    let mut index: u64 = 0;
+    loop {
+        let frame = read_frame(reader, chunk_size)?;
+        // Verify before decrypting (which also rejects a wrong key).
+        mac::verify(
+            mac,
+            mac_key,
+            &raw_frame_aad(tweak, iv, index, frame.is_last, &frame.ciphertext),
+            &frame.tag,
+        )?;
+
+        let mut chunk = frame.ciphertext;
+        cipher.ctr_apply(&counter, &mut chunk)?;
+        writer.write_all(&chunk)?;
+
+        if frame.is_last {
+            break;
+        }
+        if chunk.len() != chunk_size as usize {
+            return Err(Error::MalformedHeader(
+                "non-final chunk is not full size".into(),
+            ));
+        }
+        advance_counter(&mut counter, blocks_per_chunk);
+        index += 1;
+    }
+    writer.flush().map_err(Error::from)
+}
+
+/// In-memory convenience wrapper over [`encrypt_raw_authenticated_stream`].
+#[allow(clippy::too_many_arguments)]
+pub fn encrypt_raw_authenticated_bytes(
+    variant: Variant,
+    key: &[u8],
+    tweak: &[u8; 16],
+    iv: &[u8],
+    mac: MacId,
+    chunk_size: u32,
+    plaintext: &[u8],
+) -> Result<Vec<u8>> {
+    let mut out = Vec::new();
+    let mut reader = Cursor::new(plaintext);
+    encrypt_raw_authenticated_stream(
+        variant,
+        key,
+        tweak,
+        iv,
+        mac,
+        chunk_size,
+        &mut reader,
+        &mut out,
+    )?;
+    Ok(out)
+}
+
+/// In-memory convenience wrapper over [`decrypt_raw_authenticated_stream`].
+#[allow(clippy::too_many_arguments)]
+pub fn decrypt_raw_authenticated_bytes(
+    variant: Variant,
+    key: &[u8],
+    tweak: &[u8; 16],
+    iv: &[u8],
+    mac: MacId,
+    chunk_size: u32,
+    data: &[u8],
+) -> Result<Vec<u8>> {
+    let mut out = Vec::new();
+    let mut reader = Cursor::new(data);
+    decrypt_raw_authenticated_stream(
+        variant,
+        key,
+        tweak,
+        iv,
+        mac,
+        chunk_size,
+        &mut reader,
+        &mut out,
+    )?;
+    Ok(out)
 }
 
 // ---------------------------------------------------------------------------

@@ -15,13 +15,19 @@ import struct
 from dataclasses import dataclass, field
 from typing import BinaryIO, Optional
 
-from . import format as fmt, kdf as kdf_mod, mac as mac_mod
+from . import format as fmt, kdf as kdf_mod, mac as mac_mod, skein
 from .errors import AuthError, InvalidParams, MalformedContainer
 from .format import KdfParams
 from .threefish import Threefish
 
 _FRAME_DOMAIN = b"DRDOchnk"
 _RAW_BUF = 64 * 1024
+
+# Raw-key authenticated mode (encrypt-then-MAC, caller-supplied key, no password,
+# no KDF). See ../../../docs/spec.md, "Raw-key modes".
+_RAW_AUTH_ENC_DOMAIN = b"DRDOrawE"
+_RAW_AUTH_MAC_DOMAIN = b"DRDOrawM"
+_RAW_FRAME_DOMAIN = b"DRDOrwFr"
 
 
 @dataclass
@@ -191,6 +197,105 @@ def raw_ctr_stream(variant: int, key: bytes, tweak: bytes, iv: bytes, reader: Bi
             break
 
 
+def _split_raw_key(variant: int, key: bytes) -> tuple[bytes, bytes]:
+    """Split a caller-supplied raw key into an independent encryption subkey and MAC
+    subkey via domain-separated Skein-512 keyed hashing (key is the MAC key, the
+    domain label is the message). Not a password KDF: key is assumed to already be
+    high-entropy, so no cost-parameterized stretching is applied, only separation
+    into two subkeys that must not be the same bytes used for two different
+    primitives."""
+    kl = fmt.key_len(variant)
+    if len(key) != kl:
+        raise InvalidParams(f"raw key must be {kl} bytes for this variant, got {len(key)}")
+    enc_key = skein.mac(key, kl, _RAW_AUTH_ENC_DOMAIN)
+    mac_key = skein.mac(key, fmt.MAC_KEY_LEN, _RAW_AUTH_MAC_DOMAIN)
+    return enc_key, mac_key
+
+
+def _raw_frame_aad(tweak: bytes, iv: bytes, index: int, is_last: bool, ct: bytes) -> bytes:
+    """AAD for a raw-authenticated frame: a domain separator, the tweak and IV (for
+    the first frame only, binding the parameters — raw mode has no header to bind
+    them into the way the password container does), the frame index, the last
+    flag, and the ciphertext. Mirrors _frame_aad, substituting tweak+iv for the
+    header."""
+    parts = [_RAW_FRAME_DOMAIN]
+    if index == 0:
+        parts.append(tweak)
+        parts.append(iv)
+    parts.append(struct.pack(">Q", index))
+    parts.append(bytes([1 if is_last else 0]))
+    parts.append(struct.pack(">I", len(ct)))
+    parts.append(ct)
+    return b"".join(parts)
+
+
+def _validate_raw_auth_params(variant: int, iv: bytes, chunk_size: int) -> None:
+    bl = fmt.block_len(variant)
+    if len(iv) != bl:
+        raise InvalidParams(f"iv must be {bl} bytes for this variant, got {len(iv)}")
+    if chunk_size <= 0 or chunk_size % bl != 0:
+        raise InvalidParams(f"chunk size must be a positive multiple of the block size ({bl}), got {chunk_size}")
+
+
+def encrypt_raw_authenticated_stream(
+    variant: int, key: bytes, tweak: bytes, iv: bytes, mac: int, chunk_size: int, reader: BinaryIO, writer: BinaryIO
+) -> None:
+    """Stream authenticated CTR with a caller-supplied key: encrypt-then-MAC, no
+    password, no KDF (see _split_raw_key). Data streams in fixed-size authenticated
+    chunks, reusing the same frame construction as the password container
+    (_raw_frame_aad/_write_frame/_read_frame), so truncation, reordering, and
+    dropped chunks are all rejected on decryption exactly as they are there. There
+    is no header: the caller must supply the same variant, tweak, iv, mac, and
+    chunk_size on decrypt as were used to encrypt, and remember them out of band."""
+    _validate_raw_auth_params(variant, iv, chunk_size)
+    enc_key, mac_key = _split_raw_key(variant, key)
+    ctr = _cipher(variant, enc_key, tweak).new_ctr(iv)
+
+    current = fmt.read_full(reader, chunk_size)
+    index = 0
+    while True:
+        nxt = fmt.read_full(reader, chunk_size)
+        is_last = len(nxt) == 0
+        chunk = bytearray(current)
+        ctr.apply(chunk)
+        chunk = bytes(chunk)
+        tag = mac_mod.tag(mac, mac_key, _raw_frame_aad(tweak, iv, index, is_last, chunk))
+        _write_frame(writer, is_last, chunk, tag)
+        if is_last:
+            break
+        index += 1
+        current = nxt
+
+
+def decrypt_raw_authenticated_stream(
+    variant: int, key: bytes, tweak: bytes, iv: bytes, mac: int, chunk_size: int, reader: BinaryIO, writer: BinaryIO
+) -> None:
+    """Decrypt an encrypt_raw_authenticated_stream stream. Each frame's tag is
+    verified in constant time before that frame is decrypted, so a wrong key or a
+    corrupted or tampered stream raises AuthError instead of silently producing
+    garbage or attacker-influenced plaintext -- the failure mode raw_ctr_stream
+    cannot detect."""
+    _validate_raw_auth_params(variant, iv, chunk_size)
+    if chunk_size > fmt.effective_max_chunk_bytes():
+        raise InvalidParams(f"chunk size {chunk_size} exceeds the accepted maximum")
+    enc_key, mac_key = _split_raw_key(variant, key)
+    ctr = _cipher(variant, enc_key, tweak).new_ctr(iv)
+
+    index = 0
+    while True:
+        is_last, ct, tag = _read_frame(reader, chunk_size)
+        if not mac_mod.verify(mac, mac_key, _raw_frame_aad(tweak, iv, index, is_last, ct), tag):
+            raise AuthError("authentication failed (wrong key, corruption, or tampering)")
+        plain = bytearray(ct)
+        ctr.apply(plain)
+        writer.write(bytes(plain))
+        if is_last:
+            break
+        if len(ct) != chunk_size:
+            raise MalformedContainer("non-final chunk is not full size")
+        index += 1
+
+
 def inspect_stream(reader: BinaryIO) -> ContainerInfo:
     """Read and describe a container's header without decrypting it."""
     h = fmt.read(reader)
@@ -219,4 +324,20 @@ def inspect(data: bytes) -> ContainerInfo:
 def raw_ctr(variant: int, key: bytes, tweak: bytes, iv: bytes, data: bytes) -> bytes:
     out = io.BytesIO()
     raw_ctr_stream(variant, key, tweak, iv, io.BytesIO(data), out)
+    return out.getvalue()
+
+
+def encrypt_raw_authenticated(
+    variant: int, key: bytes, tweak: bytes, iv: bytes, mac: int, chunk_size: int, plaintext: bytes
+) -> bytes:
+    out = io.BytesIO()
+    encrypt_raw_authenticated_stream(variant, key, tweak, iv, mac, chunk_size, io.BytesIO(plaintext), out)
+    return out.getvalue()
+
+
+def decrypt_raw_authenticated(
+    variant: int, key: bytes, tweak: bytes, iv: bytes, mac: int, chunk_size: int, data: bytes
+) -> bytes:
+    out = io.BytesIO()
+    decrypt_raw_authenticated_stream(variant, key, tweak, iv, mac, chunk_size, io.BytesIO(data), out)
     return out.getvalue()

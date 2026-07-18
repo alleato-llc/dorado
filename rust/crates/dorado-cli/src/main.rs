@@ -4,8 +4,15 @@
 //! memory. There are two ways to supply the key:
 //!
 //!   * Raw key (`--key` / `--key-file`): you provide the exact key bytes as hex
-//!     and the IV with `--iv`. Output is bare CTR ciphertext, no container, and
-//!     no authentication.
+//!     and the IV with `--iv`. By default this is encrypt-then-MAC (see
+//!     `engine::encrypt_raw_authenticated_stream`): the key is split into
+//!     independent encryption and MAC subkeys, and a tampered, corrupted, or
+//!     wrong-key stream is rejected on decrypt rather than silently producing
+//!     garbage. Add `--unauthenticated` to fall back to bare CTR ciphertext
+//!     instead (no container, no authentication, output length equals input
+//!     length exactly) — a deliberate, expert opt-out, not the default, since a
+//!     corrupted or tampered byte in that mode silently decrypts to a flipped
+//!     plaintext byte with no error of any kind.
 //!   * Password (`--password` / `--password-stdin`): a KDF stretches your
 //!     password into encryption and MAC keys, and the output is an authenticated
 //!     chunked container (see the `engine` module).
@@ -59,9 +66,10 @@ use dorado_engine::{KdfParams, MacId, PrfId, Variant};
     name = "dorado",
     version,
     about = "Threefish in CTR mode (educational, unaudited).",
-    long_about = "Apply the Threefish block cipher in CTR mode. CTR provides \
-confidentiality only and does not authenticate data. Supply the key directly \
-with --key/--key-file, or derive it from a password with --password/--password-stdin."
+    long_about = "Apply the Threefish block cipher in CTR mode, authenticated \
+(encrypt-then-MAC) by default. Supply the key directly with --key/--key-file \
+(add --unauthenticated for bare CTR with no authentication, an expert opt-out), \
+or derive it from a password with --password/--password-stdin."
 )]
 struct Cli {
     #[command(subcommand)]
@@ -159,6 +167,15 @@ struct Args {
     #[arg(long)]
     iv: Option<String>,
 
+    /// Opt out of authentication (encrypt-then-MAC, using --mac) for raw-key
+    /// mode, falling back to bare CTR: confidentiality only, no
+    /// tamper/corruption detection — a corrupted or tampered byte silently
+    /// decrypts to a flipped plaintext byte with no error. Raw-key mode is
+    /// authenticated by default; this is a deliberate, expert opt-out. Not
+    /// used in password mode, which is always authenticated.
+    #[arg(long)]
+    unauthenticated: bool,
+
     /// Tweak as hex, 16 bytes. Defaults to all zero.
     #[arg(long, default_value = "00000000000000000000000000000000")]
     tweak: String,
@@ -171,7 +188,7 @@ struct Args {
     #[arg(long, value_enum, default_value = "argon2id")]
     kdf: KdfArg,
 
-    /// MAC for password mode (authentication).
+    /// MAC for password mode, or for raw-key mode (unless --unauthenticated).
     #[arg(long, value_enum, default_value = "skein")]
     mac: MacArg,
 
@@ -213,7 +230,8 @@ struct Args {
     #[arg(long = "pbkdf2-rounds", default_value_t = 600_000)]
     pbkdf2_rounds: u32,
 
-    /// Authenticated chunk size for password encryption, in KiB.
+    /// Authenticated chunk size, in KiB. Used by password mode, and by raw-key
+    /// mode (unless --unauthenticated).
     #[arg(long = "chunk-kib", default_value_t = 64)]
     chunk_kib: u32,
 
@@ -345,10 +363,15 @@ fn format_info(info: &engine::ContainerInfo) -> String {
 
 fn encrypt(args: &Args) -> Result<(), String> {
     if !args.password_mode() {
-        return run_raw(args);
+        return run_raw(args, false);
     }
     if args.iv.is_some() {
         return Err("--iv is not used in password mode; the IV is generated and stored".into());
+    }
+    if args.unauthenticated {
+        return Err(
+            "--unauthenticated is not used in password mode, which is always authenticated".into(),
+        );
     }
     guard_password_stdin(args)?;
 
@@ -362,11 +385,15 @@ fn encrypt(args: &Args) -> Result<(), String> {
 
 fn decrypt(args: &Args) -> Result<(), String> {
     if !args.password_mode() {
-        // CTR is symmetric, so raw-key decryption is the same path as encryption.
-        return run_raw(args);
+        return run_raw(args, true);
     }
     if args.iv.is_some() {
         return Err("--iv is not used in password mode; it comes from the file header".into());
+    }
+    if args.unauthenticated {
+        return Err(
+            "--unauthenticated is not used in password mode, which is always authenticated".into(),
+        );
     }
     guard_password_stdin(args)?;
 
@@ -378,7 +405,10 @@ fn decrypt(args: &Args) -> Result<(), String> {
         .map_err(String::from)
 }
 
-fn run_raw(args: &Args) -> Result<(), String> {
+/// Run raw-key mode in either direction. Encrypt-then-MAC (the default) is not
+/// symmetric, so `decrypt_pass` selects the direction; bare CTR
+/// (`--unauthenticated`) is symmetric and ignores it.
+fn run_raw(args: &Args, decrypt_pass: bool) -> Result<(), String> {
     let key = resolve_raw_key(args)?;
     let variant = engine::variant_from_key_len(key.len())?;
     let tweak = engine::parse_tweak(&args.tweak)?;
@@ -398,8 +428,39 @@ fn run_raw(args: &Args) -> Result<(), String> {
 
     let mut reader = open_reader(args.input.as_deref()).map_err(|e| e.to_string())?;
     let mut writer = open_writer(args.output.as_deref()).map_err(|e| e.to_string())?;
-    engine::raw_ctr_stream(variant, &key, &tweak, &iv, reader.as_mut(), writer.as_mut())
-        .map_err(String::from)
+
+    if args.unauthenticated {
+        engine::raw_ctr_stream(variant, &key, &tweak, &iv, reader.as_mut(), writer.as_mut())
+            .map_err(String::from)
+    } else {
+        let mac = args.mac.to_mac();
+        let chunk_size = args.chunk_bytes()?;
+        if decrypt_pass {
+            engine::decrypt_raw_authenticated_stream(
+                variant,
+                &key,
+                &tweak,
+                &iv,
+                mac,
+                chunk_size,
+                reader.as_mut(),
+                writer.as_mut(),
+            )
+            .map_err(String::from)
+        } else {
+            engine::encrypt_raw_authenticated_stream(
+                variant,
+                &key,
+                &tweak,
+                &iv,
+                mac,
+                chunk_size,
+                reader.as_mut(),
+                writer.as_mut(),
+            )
+            .map_err(String::from)
+        }
+    }
 }
 
 fn open_reader(path: Option<&str>) -> io::Result<Box<dyn Read>> {

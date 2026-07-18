@@ -5,6 +5,7 @@
 #include <string.h>
 #include <sys/random.h>
 
+#include "dorado/skein.h"
 #include "dorado/threefish.h"
 #include "format.h"
 #include "internal.h"
@@ -321,6 +322,189 @@ const char *dorado_raw_ctr_stream(int variant, const uint8_t *key, const uint8_t
     return err;
 }
 
+/* ---- Raw-key authenticated CTR (encrypt-then-MAC, caller-supplied key). ----
+ *
+ * Reuses the password container's frame/MAC machinery (write_frame, dorado_mac_tag,
+ * dorado_mac_verify) but with no header, no password, and no KDF. The caller's key is
+ * split into an independent encryption subkey and MAC subkey via domain-separated
+ * Skein-512 keyed hashing (not a password KDF: no cost-parameterized stretching, only
+ * subkey separation, since the caller's key is assumed already high-entropy). Since
+ * there is no header to bind into chunk 0's tag the way the password container does,
+ * the tweak and IV are bound directly into the frame AAD instead. See docs/spec.md's
+ * "Raw-key modes" section for the byte-level construction. */
+
+/* keymat must hold kl + 32 bytes (same layout as the password path's keymat[160]). */
+static void raw_auth_split_key(int kl, const uint8_t *key, uint8_t *keymat) {
+    dorado_skein512_mac(key, (size_t)kl, (size_t)kl, (const uint8_t *)"DRDOrawE", 8, keymat);
+    dorado_skein512_mac(key, (size_t)kl, 32, (const uint8_t *)"DRDOrawM", 8, keymat + kl);
+}
+
+/* Mirrors build_aad, substituting tweak+iv (chunk 0 only) for the header, under a
+ * distinct domain separator so a raw-mode tag can never collide with or be replayed
+ * as a password-mode tag, even under key reuse across both paths. */
+static size_t build_raw_aad(uint8_t *buf, const uint8_t tweak[16], const uint8_t *iv, int iv_len, uint64_t index,
+                            int is_last, const uint8_t *ct, size_t ct_len) {
+    size_t n = 0;
+    memcpy(buf + n, "DRDOrwFr", 8);
+    n += 8;
+    if (index == 0) {
+        memcpy(buf + n, tweak, 16);
+        n += 16;
+        memcpy(buf + n, iv, (size_t)iv_len);
+        n += (size_t)iv_len;
+    }
+    dorado_store64_be(buf + n, index);
+    n += 8;
+    buf[n++] = is_last ? 1 : 0;
+    dorado_store32_be(buf + n, (uint32_t)ct_len);
+    n += 4;
+    memcpy(buf + n, ct, ct_len);
+    n += ct_len;
+    return n;
+}
+
+const char *dorado_encrypt_raw_authenticated_stream(int variant, const uint8_t *key, const uint8_t *tweak,
+                                                     const uint8_t *iv, int mac, uint32_t chunk_size, FILE *in,
+                                                     FILE *out) {
+    int bl = dorado_variant_len(variant);
+    if (bl == 0) {
+        return dorado_err_params;
+    }
+    if (chunk_size == 0 || chunk_size % (uint32_t)bl != 0) {
+        return dorado_err_params;
+    }
+    int kl = bl;
+    uint8_t keymat[160] __attribute__((cleanup(cleanup_keymat)));
+    raw_auth_split_key(kl, key, keymat);
+
+    /* keymat and tf wipe themselves on every return via the cleanup attribute (the
+     * counter and ciphertext buffers are not secret). */
+    dorado_threefish tf __attribute__((cleanup(cleanup_cipher)));
+    dorado_threefish_init(&tf, variant, keymat, tweak);
+    dorado_ctr ctr;
+    dorado_ctr_init(&ctr, &tf, iv);
+
+    size_t cs = chunk_size;
+    uint8_t *cur = malloc(cs);
+    uint8_t *nxt = malloc(cs);
+    uint8_t *aad = malloc(8 + 16 + (size_t)bl + 13 + cs);
+    if (!cur || !nxt || !aad) {
+        free(cur);
+        free(nxt);
+        free(aad);
+        return "out of memory";
+    }
+    size_t cur_len = fread(cur, 1, cs, in);
+    uint64_t index = 0;
+    const char *err = NULL;
+    for (;;) {
+        size_t nxt_len = fread(nxt, 1, cs, in);
+        int is_last = nxt_len == 0;
+        dorado_ctr_apply(&ctr, cur, cur_len);
+        uint8_t tag[32];
+        size_t aad_len = build_raw_aad(aad, tweak, iv, bl, index, is_last, cur, cur_len);
+        dorado_mac_tag(mac, keymat + kl, aad, aad_len, tag);
+        err = write_frame(out, is_last, cur, cur_len, tag);
+        if (err || is_last) {
+            break;
+        }
+        index++;
+        uint8_t *tmp = cur;
+        cur = nxt;
+        nxt = tmp;
+        cur_len = nxt_len;
+    }
+    free(cur);
+    free(nxt);
+    free(aad);
+    return err;
+}
+
+const char *dorado_decrypt_raw_authenticated_stream(int variant, const uint8_t *key, const uint8_t *tweak,
+                                                     const uint8_t *iv, int mac, uint32_t chunk_size, FILE *in,
+                                                     FILE *out) {
+    int bl = dorado_variant_len(variant);
+    if (bl == 0) {
+        return dorado_err_params;
+    }
+    if (chunk_size == 0 || chunk_size % (uint32_t)bl != 0) {
+        return dorado_err_params;
+    }
+    if (chunk_size > dorado_effective_max_chunk_bytes()) {
+        return dorado_err_params;
+    }
+    int kl = bl;
+    uint8_t keymat[160] __attribute__((cleanup(cleanup_keymat)));
+    raw_auth_split_key(kl, key, keymat);
+
+    dorado_threefish tf __attribute__((cleanup(cleanup_cipher)));
+    dorado_threefish_init(&tf, variant, keymat, tweak);
+    dorado_ctr ctr;
+    dorado_ctr_init(&ctr, &tf, iv);
+
+    size_t cs = chunk_size;
+    uint8_t *ct = malloc(cs);
+    uint8_t *aad = malloc(8 + 16 + (size_t)bl + 13 + cs);
+    if (!ct || !aad) {
+        free(ct);
+        free(aad);
+        return "out of memory";
+    }
+    uint64_t index = 0;
+    const char *err = NULL;
+    for (;;) {
+        uint8_t head[5];
+        size_t got = fread(head, 1, 5, in);
+        if (got < 5) {
+            err = dorado_err_malformed;
+            break;
+        }
+        int flag = head[0];
+        if (flag > 1) {
+            err = dorado_err_malformed;
+            break;
+        }
+        int is_last = flag == 1;
+        uint32_t ct_len = dorado_load32_be(head + 1);
+        if (ct_len > cs) {
+            err = dorado_err_malformed;
+            break;
+        }
+        if (!dorado_read_full(in, ct, ct_len)) {
+            err = dorado_err_malformed;
+            break;
+        }
+        uint8_t tag[32];
+        if (!dorado_read_full(in, tag, 32)) {
+            err = dorado_err_malformed;
+            break;
+        }
+        /* Verify before decrypting (also rejects a wrong key), so no plaintext from a
+         * bad frame is ever written. */
+        size_t aad_len = build_raw_aad(aad, tweak, iv, bl, index, is_last, ct, ct_len);
+        if (!dorado_mac_verify(mac, keymat + kl, aad, aad_len, tag)) {
+            err = dorado_err_auth;
+            break;
+        }
+        dorado_ctr_apply(&ctr, ct, ct_len);
+        if (ct_len && fwrite(ct, 1, ct_len, out) != ct_len) {
+            err = "write error";
+            break;
+        }
+        if (is_last) {
+            break;
+        }
+        if (ct_len != cs) {
+            err = dorado_err_malformed;
+            break;
+        }
+        index++;
+    }
+    free(ct);
+    free(aad);
+    return err;
+}
+
 const char *dorado_inspect_stream(FILE *in, dorado_container_info *info) {
     dorado_header h;
     const char *e = dorado_format_read(in, &h);
@@ -384,6 +568,61 @@ const char *dorado_decrypt_password(const uint8_t *password, size_t password_len
     }
     const char *err =
         dorado_decrypt_password_stream(password, password_len, expected_label, expected_label_len, in, of);
+    fclose(in);
+    fclose(of);
+    if (err) {
+        free(buf);
+        return err;
+    }
+    *out = (uint8_t *)buf;
+    *out_len = sz;
+    return NULL;
+}
+
+const char *dorado_encrypt_raw_authenticated(int variant, const uint8_t *key, const uint8_t *tweak,
+                                             const uint8_t *iv, int mac, uint32_t chunk_size,
+                                             const uint8_t *plaintext, size_t plaintext_len, uint8_t **out,
+                                             size_t *out_len) {
+    /* fmemopen with size 0 is unsupported on some platforms (macOS), so use an
+     * empty tmpfile for empty input. */
+    FILE *in = plaintext_len ? fmemopen((void *)plaintext, plaintext_len, "rb") : tmpfile();
+    if (!in) {
+        return "input stream failed";
+    }
+    char *buf = NULL;
+    size_t sz = 0;
+    FILE *of = open_memstream(&buf, &sz);
+    if (!of) {
+        fclose(in);
+        return "open_memstream failed";
+    }
+    const char *err = dorado_encrypt_raw_authenticated_stream(variant, key, tweak, iv, mac, chunk_size, in, of);
+    fclose(in);
+    fclose(of);
+    if (err) {
+        free(buf);
+        return err;
+    }
+    *out = (uint8_t *)buf;
+    *out_len = sz;
+    return NULL;
+}
+
+const char *dorado_decrypt_raw_authenticated(int variant, const uint8_t *key, const uint8_t *tweak,
+                                             const uint8_t *iv, int mac, uint32_t chunk_size, const uint8_t *data,
+                                             size_t data_len, uint8_t **out, size_t *out_len) {
+    FILE *in = fmemopen((void *)data, data_len, "rb");
+    if (!in) {
+        return "fmemopen failed";
+    }
+    char *buf = NULL;
+    size_t sz = 0;
+    FILE *of = open_memstream(&buf, &sz);
+    if (!of) {
+        fclose(in);
+        return "open_memstream failed";
+    }
+    const char *err = dorado_decrypt_raw_authenticated_stream(variant, key, tweak, iv, mac, chunk_size, in, of);
     fclose(in);
     fclose(of);
     if (err) {

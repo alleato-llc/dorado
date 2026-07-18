@@ -22,7 +22,7 @@ vetted library.
   standard library.
 - `src/Dorado/Kdf.hs`, `Mac.hs`, `Format.hs`, `Engine.hs` — the construction: the KDFs
   (delegated to `crypton`), the MAC menu, the v4 container header, and the streaming
-  password container, raw CTR, inspect, and label binding. The engine returns
+  password container, raw CTR (bare and authenticated), inspect, and label binding. The engine returns
   `Either String` for malformed/auth failures.
 - `app/dorado/`, `app/gyotaku/` — the two CLIs.
 

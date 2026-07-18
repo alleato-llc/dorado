@@ -37,15 +37,17 @@ fn feed_password(mut cmd: Command, password: &str) -> bool {
 }
 
 #[test]
-fn raw_key_round_trip_via_files() {
+fn raw_key_is_authenticated_by_default_round_trip_and_rejects_tampering_and_wrong_key() {
     let key = "11".repeat(32); // 32 bytes selects the 256 variant
+    let wrong_key = "22".repeat(32);
     let iv = "00".repeat(32);
-    let plain = tmp("raw-plain");
-    let cipher = tmp("raw-cipher");
-    let out = tmp("raw-out");
-    let payload = b"raw-key CTR round trip through the CLI";
+    let plain = tmp("rawauth-plain");
+    let cipher = tmp("rawauth-cipher");
+    let out = tmp("rawauth-out");
+    let payload = b"raw-key round trip through the CLI, authenticated by default";
     fs::write(&plain, payload).unwrap();
 
+    // No --authenticated flag needed: this is the default now.
     let enc = Command::new(BIN)
         .args(["encrypt", "--key", &key, "--iv", &iv, "--in"])
         .arg(&plain)
@@ -54,10 +56,103 @@ fn raw_key_round_trip_via_files() {
         .status()
         .unwrap();
     assert!(enc.success(), "encrypt should succeed");
-    assert_ne!(fs::read(&cipher).unwrap(), payload, "data is transformed");
+    let ct = fs::read(&cipher).unwrap();
+    assert_ne!(ct, payload, "data is transformed");
+    assert!(
+        ct.len() > payload.len(),
+        "authenticated output carries a tag and frame overhead, so it must be \
+         larger than the plaintext, not byte-for-byte the same length"
+    );
 
     let dec = Command::new(BIN)
         .args(["decrypt", "--key", &key, "--iv", &iv, "--in"])
+        .arg(&cipher)
+        .arg("--out")
+        .arg(&out)
+        .status()
+        .unwrap();
+    assert!(dec.success(), "decrypt should succeed");
+    assert_eq!(
+        fs::read(&out).unwrap(),
+        payload,
+        "round-trips to the original"
+    );
+
+    // A wrong key must fail, not silently produce garbage.
+    let bad_key = Command::new(BIN)
+        .args(["decrypt", "--key", &wrong_key, "--iv", &iv, "--in"])
+        .arg(&cipher)
+        .arg("--out")
+        .arg(tmp("rawauth-badkey-out"))
+        .status()
+        .unwrap();
+    assert!(!bad_key.success(), "a wrong key must fail");
+
+    // Flipping a ciphertext byte must fail authentication, not decrypt to
+    // silently-wrong plaintext.
+    let tampered = tmp("rawauth-tampered");
+    let mut data = fs::read(&cipher).unwrap();
+    *data.last_mut().unwrap() ^= 1;
+    fs::write(&tampered, &data).unwrap();
+    let tam = Command::new(BIN)
+        .args(["decrypt", "--key", &key, "--iv", &iv, "--in"])
+        .arg(&tampered)
+        .arg("--out")
+        .arg(tmp("rawauth-tampered-out"))
+        .status()
+        .unwrap();
+    assert!(!tam.success(), "tampering must fail");
+
+    for f in [plain, cipher, out, tampered] {
+        let _ = fs::remove_file(f);
+    }
+}
+
+#[test]
+fn raw_key_unauthenticated_opt_out_round_trips_and_is_bare_ctr() {
+    let key = "11".repeat(32);
+    let iv = "00".repeat(32);
+    let plain = tmp("rawbare-plain");
+    let cipher = tmp("rawbare-cipher");
+    let out = tmp("rawbare-out");
+    let payload = b"raw-key CTR round trip through the CLI, unauthenticated opt-out";
+    fs::write(&plain, payload).unwrap();
+
+    let enc = Command::new(BIN)
+        .args([
+            "encrypt",
+            "--key",
+            &key,
+            "--iv",
+            &iv,
+            "--unauthenticated",
+            "--in",
+        ])
+        .arg(&plain)
+        .arg("--out")
+        .arg(&cipher)
+        .status()
+        .unwrap();
+    assert!(enc.success(), "encrypt should succeed");
+    let ct = fs::read(&cipher).unwrap();
+    assert_ne!(ct, payload, "data is transformed");
+    assert_eq!(
+        ct.len(),
+        payload.len(),
+        "bare CTR has no framing or tag, so output length equals input length exactly"
+    );
+
+    // CTR is symmetric, so decrypting is the same command shape as encrypting.
+    let dec = Command::new(BIN)
+        .args([
+            "decrypt",
+            "--key",
+            &key,
+            "--iv",
+            &iv,
+            "--unauthenticated",
+            "--in",
+        ])
         .arg(&cipher)
         .arg("--out")
         .arg(&out)

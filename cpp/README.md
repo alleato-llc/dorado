@@ -21,7 +21,7 @@ the three password KDFs (Argon2id, scrypt, PBKDF2) are delegated, to OpenSSL's
   primitives (incremental Skein/BLAKE3 hashers included for streaming).
 - `src/mac.cpp`, `kdf.cpp`, `format.cpp`, `engine.cpp` — the construction: the MAC
   menu, the OpenSSL-delegated KDFs, the container header, and the streaming password
-  container, raw CTR, and inspect. Engine results are `std::expected<T, std::string>`;
+  container, raw CTR (bare and authenticated), and inspect. Engine results are `std::expected<T, std::string>`;
   the KDF layer throws `std::runtime_error`.
 - `src/cli_dorado.cpp`, `src/cli_gyotaku.cpp` — the two CLIs.
 

@@ -35,3 +35,12 @@ is the master table.
   build directory, matching the C port's `make test SAN=1`. `-DFUZZ=ON` (needs Clang)
   builds a libFuzzer harness for the decrypt path (`cpp/fuzz/fuzz_decrypt.cpp`), local-only
   for now like the C port's `make fuzz` (not run in CI).
+- **Raw-key mode gains an authenticated option**:
+  `dorado::engine::{encrypt,decrypt}_raw_authenticated_stream` / `*_raw_authenticated`
+  (the in-memory forms), encrypt-then-MAC over the caller-supplied key with no
+  password or KDF, reusing the password container's chunk/frame machinery. See the
+  [Core CHANGELOG](../CHANGELOG.md) for the cross-port rationale and
+  [docs/spec.md](../docs/spec.md)'s "Raw-key modes" section for the byte-level
+  construction. Verified against all six known-answer vectors in
+  `docs/fixtures/raw-authenticated.md` in both directions. Bare `raw_ctr_stream` is
+  unchanged and remains the default.

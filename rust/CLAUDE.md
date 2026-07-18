@@ -15,7 +15,8 @@ Dorado is a Cargo workspace of seven crates:
   audited crate, are: Skein-512 (`src/skein.rs`, UBI over Threefish-512) and BLAKE3
   (`src/blake3.rs`).
 - `crates/dorado-engine` — the construction over the cipher: the three KDFs, the
-  authenticated chunked password container, raw CTR, and the MAC menu. Depends on
+  authenticated chunked password container, raw CTR (bare and, as of the
+  raw-authenticated construction, encrypt-then-MAC), and the MAC menu. Depends on
   `dorado`.
 - `crates/dorado-cli` — clap frontend; produces the `dorado` binary.
 - `crates/dorado-gui` — iced frontend; produces `dorado-gui`. Built on `rime` (a
@@ -50,7 +51,8 @@ Dorado is a Cargo workspace of seven crates:
   leg (see `rust/docs/RELEASING.md`).
 
 Educational and unaudited. The cipher provides confidentiality only; the engine
-adds authentication (encrypt-then-MAC) for password files.
+adds authentication (encrypt-then-MAC) for password files, and by default for
+raw-key mode too (`--unauthenticated` opts out; see below).
 
 Threefish is the project's reason to exist; dorado stays Threefish-based. Skein is
 a construction on Threefish, so it is built and surfaced (as the default MAC and as
@@ -113,8 +115,9 @@ only a container's header and return a `ContainerInfo` of its non-secret paramet
 (behind the CLI's `dorado inspect`, which needs no password). `FORMAT_VERSION` is
 re-exported for display. Keep new shared logic in `dorado-engine`.
 
-The engine has two key paths, both streamable in constant memory. Raw key: bare,
-unauthenticated CTR with a running counter, no header. Password: the KDF output is
+The engine has two key paths, both streamable in constant memory. Raw key: no
+header, no self-describing format; the caller supplies variant, key, tweak, and IV
+directly and must remember them for decryption. Password: the KDF output is
 split into a separate encryption key and MAC key, then the data is processed in
 fixed-size chunks (`--chunk-kib`, default 64 KiB, stored in the header). Each chunk
 is CTR-encrypted on a continuous counter and carries a MAC tag (the selected MAC)
@@ -125,6 +128,33 @@ and truncation (an authenticated final-chunk flag that must be seen before EOF)
 are all rejected. Streaming means verified plaintext can be emitted before a later
 chunk fails, so a non-zero exit means the output is incomplete and untrusted.
 Changing the container format is a version bump (`format::VERSION`, currently 4).
+
+Raw key itself has two modes, selected by `--unauthenticated` in the CLI
+(default off — raw-key mode is authenticated by default, matching the
+password path; this is a deliberate secure-by-default choice, since a casual
+user typing `--key`/`--iv` is unlikely to know to ask for authentication, and
+the tools that treat security as a primary goal, e.g. libsodium and age, make
+the authenticated construction the default reach-for API rather than the bare
+primitive). Bare (`raw_ctr_stream`) is unauthenticated CTR with a running
+counter: confidentiality only, and a corrupted or tampered byte decrypts to a
+flipped plaintext byte silently, with no error, since CTR has no way to
+detect it — reached only via the explicit `--unauthenticated` opt-out, kept
+available for cross-language interop, composability (a caller layering its
+own framing/authentication at a different protocol layer), and this project's
+educational purpose. Authenticated
+(`encrypt_raw_authenticated_stream` / `decrypt_raw_authenticated_stream`) adds
+encrypt-then-MAC on top, reusing the password container's chunk/frame machinery
+(`frame_aad`-shaped AAD, `write_frame`/`read_frame`) without a password or KDF:
+the caller's key is split into an independent encryption subkey and MAC subkey
+via domain-separated Skein-512 keyed hashing (`split_raw_key`; the caller's key
+is assumed already high-entropy, so no cost-parameterized stretching is applied,
+only subkey separation), and since there is no header to bind into chunk 0's tag,
+the tweak and IV are bound directly into the frame AAD instead (`raw_frame_aad`,
+domain `DRDOrwFr`, distinct from the password path's `DRDOchnk` so the two can
+never collide). The byte-level construction is documented in `../docs/spec.md`
+under "Raw-key modes". This construction stays within the Skein/Threefish family
+(same reasoning as the MAC default above), so it does not touch the
+ChaCha20-Poly1305 boundary described above.
 
 Two standalone env knobs override in-code defaults (everything works with no env set).
 `DORADO_RNG` picks the CSPRNG that `fill_random` draws the salt and IV from: `os`
@@ -221,7 +251,11 @@ inputs (all in `crates/dorado/src/<module>.rs` test modules). The engine crate h
 the KDF/header/MAC tests and the construction tests: password round-trip,
 wrong-password, tampering, multi-chunk, every-MAC round-trip-and-reject, and the
 streaming security properties (truncation, header tampering, early-chunk
-tampering), plus the KDF-cost `validate` bounds.
+tampering), plus the KDF-cost `validate` bounds. The raw-authenticated
+construction has the same shape of coverage under its own `raw_authenticated_*`
+tests: round-trip, wrong-key, tampering, every MAC, every variant, multi-chunk,
+truncation, early-chunk tampering, and mismatched-tweak-or-IV rejection (since
+those are bound into the AAD instead of a header there).
 
 Unit tests live in their own files, not inline: cipher tests in
 `crates/dorado/src/tests.rs`, engine tests in `crates/dorado-engine/src/tests.rs`,

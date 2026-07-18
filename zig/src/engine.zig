@@ -12,6 +12,7 @@ const tf = @import("threefish.zig");
 const fmt = @import("format.zig");
 const kdf = @import("kdf.zig");
 const mac_mod = @import("mac.zig");
+const skein = @import("skein.zig");
 
 pub const Variant = tf.Variant;
 pub const Kdf = fmt.Kdf;
@@ -268,6 +269,191 @@ pub fn rawCtrStream(variant: Variant, key: []const u8, tweak: []const u8, iv: []
     }
 }
 
+// ---------------------------------------------------------------------------
+// Raw-key authenticated CTR (encrypt-then-MAC, caller-supplied key). Adds
+// authentication on top of raw CTR (rawCtrStream above) by reusing the
+// password container's frame layout (writeFrame / the same is_last|ct_len|
+// ciphertext|tag shape), keyed by subkeys split from the caller's key. Bare
+// rawCtrStream is unchanged and stays the unauthenticated default; this is an
+// additional API for callers who need tamper/corruption detection.
+// ---------------------------------------------------------------------------
+
+/// Domain separator for deriving the encryption subkey from a raw key.
+const RAW_AUTH_ENC_DOMAIN = "DRDOrawE";
+/// Domain separator for deriving the MAC subkey from a raw key.
+const RAW_AUTH_MAC_DOMAIN = "DRDOrawM";
+/// Domain separator mixed into every raw-authenticated frame tag. Distinct from
+/// FRAME_DOMAIN so a raw-mode frame's tag can never collide with or be replayed
+/// as a password-mode frame's tag, even under key reuse across both paths.
+const RAW_FRAME_DOMAIN = "DRDOrwFr";
+
+/// Split a caller-supplied raw key into an independent encryption subkey and MAC
+/// subkey, each derived via domain-separated Skein-512 keyed hashing (`key` is
+/// the MAC key, the domain label is the message). Not a password KDF: `key` is
+/// assumed already high-entropy (an OS keychain or a CSPRNG), so only subkey
+/// separation is needed, not cost-parameterized stretching.
+fn splitRawKey(variant: Variant, key: []const u8, keymat: *[160]u8) void {
+    std.debug.assert(key.len == variant.keyLen());
+    const kl = variant.keyLen();
+    skein.mac(key, kl, RAW_AUTH_ENC_DOMAIN, keymat[0..kl]);
+    skein.mac(key, 32, RAW_AUTH_MAC_DOMAIN, keymat[kl .. kl + 32]);
+}
+
+/// Build the AAD for a raw-authenticated frame into `dst`, returning the length
+/// used. Mirrors buildAad, substituting the tweak+IV (bound only into frame 0,
+/// since raw mode has no header to bind instead) for the header bytes.
+fn buildRawAad(dst: []u8, tweak: []const u8, iv: []const u8, index: u64, is_last: bool, ct: []const u8) usize {
+    var n: usize = 0;
+    @memcpy(dst[0..8], RAW_FRAME_DOMAIN);
+    n += 8;
+    if (index == 0) {
+        @memcpy(dst[n .. n + 16], tweak);
+        n += 16;
+        @memcpy(dst[n .. n + iv.len], iv);
+        n += iv.len;
+    }
+    mem.writeInt(u64, dst[n..][0..8], index, .big);
+    n += 8;
+    dst[n] = if (is_last) 1 else 0;
+    n += 1;
+    writeBE32(dst[n..], @intCast(ct.len));
+    n += 4;
+    @memcpy(dst[n .. n + ct.len], ct);
+    n += ct.len;
+    return n;
+}
+
+/// Validate the IV and chunk size shared by the raw-authenticated encrypt and
+/// decrypt paths.
+fn validateRawAuthParams(variant: Variant, tweak: []const u8, iv: []const u8, chunk_size: u32) Error!void {
+    std.debug.assert(tweak.len == 16);
+    std.debug.assert(iv.len == variant.keyLen());
+    if (chunk_size == 0 or chunk_size % variant.keyLen() != 0) return Error.InvalidChunkSize;
+}
+
+/// Stream authenticated CTR with a caller-supplied key: encrypt-then-MAC, no
+/// password, no KDF (see splitRawKey). Data streams in fixed-size authenticated
+/// chunks, reusing the same frame construction as the password container
+/// (writeFrame), so truncation, reordering, and dropped chunks are all rejected
+/// on decryption exactly as they are there. There is no header: the caller must
+/// supply the same variant, tweak, iv, mac, and chunk_size on decrypt as were
+/// used to encrypt, and remember them out of band, matching rawCtrStream's
+/// no-header philosophy.
+pub fn encryptRawAuthenticatedStream(
+    variant: Variant,
+    key: []const u8,
+    tweak: []const u8,
+    iv: []const u8,
+    mac_id: Mac,
+    chunk_size: u32,
+    allocator: mem.Allocator,
+    r: Reader,
+    w: Writer,
+) Error!void {
+    try validateRawAuthParams(variant, tweak, iv, chunk_size);
+
+    var keymat: [160]u8 = undefined;
+    defer std.crypto.secureZero(u8, &keymat);
+    splitRawKey(variant, key, &keymat);
+    const kl = variant.keyLen();
+    const enc_key = keymat[0..kl];
+    const mac_key = keymat[kl .. kl + 32][0..32];
+
+    var cipher = tf.Threefish.init(variant, enc_key, tweak);
+    defer std.crypto.secureZero(u64, &cipher.ek);
+    var ctr = cipher.newCtr(iv);
+
+    const cs = chunk_size;
+    const cur = try allocator.alloc(u8, cs);
+    defer allocator.free(cur);
+    const nxt = try allocator.alloc(u8, cs);
+    defer allocator.free(nxt);
+    const aad = try allocator.alloc(u8, 8 + 16 + iv.len + 13 + cs);
+    defer allocator.free(aad);
+
+    // Read one chunk ahead so each chunk knows whether it is the last (which is
+    // authenticated, defeating truncation) -- same shape as encryptStream.
+    var cur_buf = cur;
+    var nxt_buf = nxt;
+    var cur_len = readSome(r, cur_buf);
+    var index: u64 = 0;
+    while (true) {
+        const nxt_len = readSome(r, nxt_buf);
+        const is_last = nxt_len == 0;
+        ctr.apply(cur_buf[0..cur_len]);
+        var tag: [32]u8 = undefined;
+        const aad_len = buildRawAad(aad, tweak, iv, index, is_last, cur_buf[0..cur_len]);
+        mac_mod.tag(mac_id, mac_key, aad[0..aad_len], &tag);
+        try writeFrame(w, is_last, cur_buf[0..cur_len], &tag);
+        if (is_last) break;
+        index += 1;
+        const tmp = cur_buf;
+        cur_buf = nxt_buf;
+        nxt_buf = tmp;
+        cur_len = nxt_len;
+    }
+}
+
+/// Decrypt an encryptRawAuthenticatedStream stream. Each frame's tag is
+/// verified in constant time before that frame is decrypted, so a wrong key, a
+/// mismatched tweak or IV, or a corrupted or tampered stream is reported as
+/// Error.AuthFailed instead of silently producing garbage or attacker-influenced
+/// plaintext -- the failure mode rawCtrStream cannot detect.
+pub fn decryptRawAuthenticatedStream(
+    variant: Variant,
+    key: []const u8,
+    tweak: []const u8,
+    iv: []const u8,
+    mac_id: Mac,
+    chunk_size: u32,
+    allocator: mem.Allocator,
+    r: Reader,
+    w: Writer,
+) Error!void {
+    try validateRawAuthParams(variant, tweak, iv, chunk_size);
+    if (chunk_size > fmt.chunkCap()) return Error.InvalidChunkSize;
+
+    var keymat: [160]u8 = undefined;
+    defer std.crypto.secureZero(u8, &keymat);
+    splitRawKey(variant, key, &keymat);
+    const kl = variant.keyLen();
+    const enc_key = keymat[0..kl];
+    const mac_key = keymat[kl .. kl + 32][0..32];
+
+    var cipher = tf.Threefish.init(variant, enc_key, tweak);
+    defer std.crypto.secureZero(u64, &cipher.ek);
+    var ctr = cipher.newCtr(iv);
+
+    const cs = chunk_size;
+    const ct = try allocator.alloc(u8, cs);
+    defer allocator.free(ct);
+    const aad = try allocator.alloc(u8, 8 + 16 + iv.len + 13 + cs);
+    defer allocator.free(aad);
+
+    var index: u64 = 0;
+    while (true) {
+        var head: [5]u8 = undefined;
+        const got = readSome(r, &head);
+        if (got == 0) return Error.Truncated;
+        if (got < 5) return Error.Truncated;
+        if (head[0] > 1) return Error.BadContainer;
+        const is_last = head[0] == 1;
+        const ct_len = mem.readInt(u32, head[1..5], .big);
+        if (ct_len > cs) return Error.BadContainer;
+        if (!r.readFull(ct[0..ct_len])) return Error.Truncated;
+        var tag: [32]u8 = undefined;
+        if (!r.readFull(&tag)) return Error.Truncated;
+        // Verify before decrypting (which also rejects a wrong key, tweak, or IV).
+        const aad_len = buildRawAad(aad, tweak, iv, index, is_last, ct[0..ct_len]);
+        if (!mac_mod.verify(mac_id, mac_key, aad[0..aad_len], &tag)) return Error.AuthFailed;
+        ctr.apply(ct[0..ct_len]);
+        if (ct_len > 0) try w.write(ct[0..ct_len]);
+        if (is_last) break;
+        if (ct_len != cs) return Error.BadContainer;
+        index += 1;
+    }
+}
+
 pub fn inspectStream(r: Reader, info: *ContainerInfo) Error!void {
     var h: Header = undefined;
     try fmt.read(r, &h);
@@ -343,4 +529,42 @@ pub fn decrypt(allocator: mem.Allocator, io: std.Io, password: []const u8, expec
 pub fn inspect(data: []const u8, info: *ContainerInfo) Error!void {
     var sr = SliceReader{ .data = data };
     try inspectStream(sr.reader(), info);
+}
+
+/// In-memory convenience wrapper over encryptRawAuthenticatedStream.
+pub fn encryptRawAuthenticated(
+    allocator: mem.Allocator,
+    variant: Variant,
+    key: []const u8,
+    tweak: []const u8,
+    iv: []const u8,
+    mac_id: Mac,
+    chunk_size: u32,
+    plaintext: []const u8,
+) Error![]u8 {
+    var sr = SliceReader{ .data = plaintext };
+    var list: std.ArrayList(u8) = .empty;
+    errdefer list.deinit(allocator);
+    var lw = ListWriter{ .list = &list, .allocator = allocator };
+    try encryptRawAuthenticatedStream(variant, key, tweak, iv, mac_id, chunk_size, allocator, sr.reader(), lw.writer());
+    return list.toOwnedSlice(allocator);
+}
+
+/// In-memory convenience wrapper over decryptRawAuthenticatedStream.
+pub fn decryptRawAuthenticated(
+    allocator: mem.Allocator,
+    variant: Variant,
+    key: []const u8,
+    tweak: []const u8,
+    iv: []const u8,
+    mac_id: Mac,
+    chunk_size: u32,
+    data: []const u8,
+) Error![]u8 {
+    var sr = SliceReader{ .data = data };
+    var list: std.ArrayList(u8) = .empty;
+    errdefer list.deinit(allocator);
+    var lw = ListWriter{ .list = &list, .allocator = allocator };
+    try decryptRawAuthenticatedStream(variant, key, tweak, iv, mac_id, chunk_size, allocator, sr.reader(), lw.writer());
+    return list.toOwnedSlice(allocator);
 }

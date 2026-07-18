@@ -17,7 +17,7 @@ use it for real secrets.
   the same vectors (BLAKE3 differential-tested against `@noble/hashes`).
 - `src/engine/` — the container: KDFs via `hash-wasm` (WASM Argon2id/scrypt/
   PBKDF2, isomorphic), HMAC via Web Crypto, the MAC menu, v4 label binding,
-  raw CTR, inspect.
+  raw CTR (bare and authenticated), inspect.
 - `src/cli/dorado.ts`, `src/cli/gyotaku.ts` — the Node CLIs.
 
 ## Build

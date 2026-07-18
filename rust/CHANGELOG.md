@@ -8,8 +8,37 @@ the Rust-specific details. Format: [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Changed
+
+- **Raw-key mode (`--key`/`--key-file`) is now authenticated by default in the
+  CLI.** Previously `dorado encrypt --key ... --iv ...` produced bare,
+  unauthenticated CTR ciphertext (output length exactly equal to input
+  length); it now produces encrypt-then-MAC output (larger than the input, by
+  a per-chunk tag and framing overhead) unless you pass the new
+  `--unauthenticated` flag to opt back into the old bare behavior. **This
+  breaks any existing script or pipeline** that assumed raw-key mode's old
+  output shape or that fed a bare-CTR file from an older build into a newer
+  `decrypt` (or vice versa) without also adding `--unauthenticated` on both
+  ends. The change is deliberate: bare CTR silently decrypts a corrupted or
+  tampered byte to a flipped plaintext byte with no error, and a user who
+  doesn't already know that distinction exists has no way to discover it
+  before it matters. See the [Core CHANGELOG](../CHANGELOG.md) for the
+  precedent this follows (libsodium, age — authenticated as the default,
+  reach-for API; openssl's `enc -ctr`-style bare-by-default is the
+  discouraged counterexample) and `--unauthenticated`'s own `--help` text for
+  why the opt-out still exists.
+
 ### Added
 
+- **Raw-key mode gains an authenticated construction**
+  (`dorado-engine::{encrypt,decrypt}_raw_authenticated_stream` / `*_bytes`),
+  encrypt-then-MAC over the caller-supplied key with no password or KDF,
+  reusing the password container's chunk/frame machinery. See the
+  [Core CHANGELOG](../CHANGELOG.md) for the cross-port rationale and
+  [docs/spec.md](../docs/spec.md)'s "Raw-key modes" section for the byte-level
+  construction (key-splitting via domain-separated Skein-512, the frame AAD).
+  Bare `raw_ctr_stream` is unchanged and still exists, reachable via the CLI's
+  `--unauthenticated` (see Changed, above) or directly as a library call.
 - **`dorado-gui` and `dorado-gyotaku-gui` now ship real release artifacts.**
   Each gets its own `salpa.yaml` (in its own crate directory, since both are
   excluded from the main workspace over their `rime` path dependency) driving

@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0f1b22"/>
+      <stop offset="1" stop-color="#123a44"/>
+    </linearGradient>
+    <linearGradient id="fish" x1="0" y1="0" x2="1" y2="0.3">
+      <stop offset="0" stop-color="#38c0e8"/>
+      <stop offset="0.55" stop-color="#7fd8c0"/>
+      <stop offset="1" stop-color="#f0c24b"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="1024" height="1024" rx="224" fill="url(#bg)"/>
+
+  <g transform="translate(512,512)">
+    <!-- tail fin -->
+    <path d="M -258,-18
+             C -322,-92 -424,-142 -486,-162
+             C -444,-92 -404,-42 -372,-10
+             L -372,10
+             C -404,42 -444,92 -486,162
+             C -424,142 -322,92 -258,18
+             Z" fill="url(#fish)" opacity="0.92"/>
+
+    <!-- dorsal fin -->
+    <path d="M -104,-138
+             C -66,-224 58,-266 164,-232
+             C 122,-190 40,-158 -22,-142
+             Z" fill="url(#fish)" opacity="0.92"/>
+
+    <!-- pectoral fin -->
+    <path d="M 116,108
+             C 138,172 182,204 224,192
+             C 192,160 160,128 138,102
+             Z" fill="url(#fish)" opacity="0.85"/>
+
+    <!-- body: blunt dorado forehead on the right, tapering to the tail on the left -->
+    <path d="M -258,0
+             C -258,-82 -78,-152 62,-152
+             C 202,-152 302,-90 302,-12
+             L 302,12
+             C 302,62 202,122 62,122
+             C -78,122 -258,72 -258,0
+             Z" fill="url(#fish)"/>
+
+    <!-- eye -->
+    <circle cx="266" cy="-32" r="17" fill="#0f1b22"/>
+    <circle cx="271" cy="-38" r="6" fill="#ffffff" opacity="0.85"/>
+  </g>
+</svg>

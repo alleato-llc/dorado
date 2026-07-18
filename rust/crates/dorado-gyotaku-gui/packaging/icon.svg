@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="paper" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f1ead9"/>
+      <stop offset="1" stop-color="#e3d8bf"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="1024" height="1024" rx="224" fill="url(#paper)"/>
+
+  <g transform="translate(492,512)" fill="#2b3a4a">
+    <!-- tail fin -->
+    <path d="M -258,-18
+             C -322,-92 -424,-142 -486,-162
+             C -444,-92 -404,-42 -372,-10
+             L -372,10
+             C -404,42 -444,92 -486,162
+             C -424,142 -322,92 -258,18
+             Z"/>
+
+    <!-- dorsal fin -->
+    <path d="M -104,-138
+             C -66,-224 58,-266 164,-232
+             C 122,-190 40,-158 -22,-142
+             Z"/>
+
+    <!-- pectoral fin -->
+    <path d="M 116,108
+             C 138,172 182,204 224,192
+             C 192,160 160,128 138,102
+             Z"/>
+
+    <!-- body -->
+    <path d="M -258,0
+             C -258,-82 -78,-152 62,-152
+             C 202,-152 302,-90 302,-12
+             L 302,12
+             C 302,62 202,122 62,122
+             C -78,122 -258,72 -258,0
+             Z"/>
+
+    <!-- gyotaku-style scale texture: rows of ink-rubbing arcs printed through the body -->
+    <g fill="none" stroke="#f1ead9" stroke-width="7" stroke-linecap="round" opacity="0.8">
+      <path d="M -190,-58 C -170,-78 -140,-78 -120,-58"/>
+      <path d="M -120,-58 C -100,-78 -70,-78 -50,-58"/>
+      <path d="M -50,-58 C -30,-78 0,-78 20,-58"/>
+      <path d="M 20,-58 C 40,-78 70,-78 90,-58"/>
+      <path d="M 90,-58 C 110,-78 140,-78 160,-58"/>
+
+      <path d="M -210,4 C -190,-16 -160,-16 -140,4"/>
+      <path d="M -140,4 C -120,-16 -90,-16 -70,4"/>
+      <path d="M -70,4 C -50,-16 -20,-16 0,4"/>
+      <path d="M 0,4 C 20,-16 50,-16 70,4"/>
+      <path d="M 70,4 C 90,-16 120,-16 140,4"/>
+      <path d="M 140,4 C 160,-16 190,-16 210,4"/>
+
+      <path d="M -190,66 C -170,46 -140,46 -120,66"/>
+      <path d="M -120,66 C -100,46 -70,46 -50,66"/>
+      <path d="M -50,66 C -30,46 0,46 20,66"/>
+      <path d="M 20,66 C 40,46 70,46 90,66"/>
+      <path d="M 90,66 C 110,46 140,46 160,66"/>
+    </g>
+
+    <!-- gill line -->
+    <path d="M 214,-96 C 200,-40 200,40 214,96" fill="none" stroke="#f1ead9" stroke-width="8" opacity="0.8"/>
+
+    <!-- eye -->
+    <circle cx="266" cy="-32" r="16" fill="#f1ead9"/>
+    <circle cx="266" cy="-32" r="7" fill="#2b3a4a"/>
+  </g>
+
+  <!-- hanko-style ink seal, the traditional finishing mark on a gyotaku print -->
+  <circle cx="808" cy="808" r="70" fill="#a3382f" opacity="0.92"/>
+  <text x="808" y="836" font-family="serif" font-size="64" fill="#f1ead9" text-anchor="middle">魚</text>
+</svg>

@@ -1,0 +1,33 @@
+# Release lifecycle for the dorado-gui iced app, driven by salpa
+# (github.com/alleato-llc/salpa). Runs with cwd = this directory (dorado-gui is
+# excluded from the main Cargo workspace over its `rime` path dependency, see
+# ../../Cargo.toml, so it has no wider workspace to `cd ..` into like the CLI's
+# shared rust/ directory does). Same rust-v* tag namespace as the CLI release
+# (rust/salpa.yaml) -- this ships alongside the CLI binaries, not on a separate
+# track, since it's still the rust/** ecosystem.
+#
+# salpa's rust recipe only signs/notarizes/bundles on macOS (a universal lipo
+# build -> hardened-runtime codesign -> dmg -> notarize -> staple); Linux and
+# Windows get a bare per-platform binary, same as the CLI's own unsigned
+# binaries. See rust/docs/RELEASING.md for the one-time secrets setup this
+# needs on macOS.
+ecosystem: rust
+product: Dorado
+tag_prefix: rust-v
+
+# No dedicated test suite for this crate yet (see rust/CLAUDE.md); clippy is
+# the correctness gate before spending a notarization run on a broken build.
+test: "cargo clippy --all-targets -- -D warnings"
+
+build:
+  bin: dorado-gui
+  bundle_id: com.alleato.dorado-gui
+  icon: packaging/AppIcon.icns
+  universal: true # both mac arches, lipo-fused into one signed dmg
+  sign: "Developer ID Application" # macOS-only; ignored on the Linux/Windows legs
+  notarize: true
+  staple: true
+  package: dmg # macOS deliverable: Dorado-<version>.dmg (signed + notarized)
+
+publish:
+  github: true # attach to the same rust-v<version> release the CLI binaries land in

@@ -141,6 +141,10 @@ cd crates/dorado-gui && cargo run --release          # the password tool
 cd crates/dorado-gyotaku-gui && cargo run --release  # the hashing tool (gyotaku-gui)
 ```
 
+Prebuilt releases are also available: a signed + notarized universal macOS dmg
+for each app, plus bare Linux/Windows binaries, attached to the `rust-v*` GitHub
+Releases (see `rust/docs/RELEASING.md` for how the release pipeline builds these).
+
 Each GUI is a separate binary that shares the same library code as its CLI, so they are for the same educational purpose and carry the same caveats. iced pulls in a large graphics stack, which is why they are their own crates.
 
 ## How it works

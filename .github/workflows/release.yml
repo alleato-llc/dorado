@@ -11,9 +11,18 @@ name: Release
 # no archive, so each CLI downloads as a single file. `salpa version`
 # computes the next semver from rust-v* tags + commit keywords (patch by
 # default; #minor/#major in the head commit bumps bigger); every artifact
-# (both binaries per platform, plus LICENSE, attached once in the `version`
-# job below) lands on the same rust-v<version> GitHub release, the point of
-# truth for downloads.
+# lands on the same rust-v<version> GitHub release, the point of truth for
+# downloads.
+#
+# The two GUI apps (dorado-gui, gyotaku-gui) ship on this SAME rust-v* track
+# (see `build-gui-macos` / `build-gui-portable` below), each driven by its own
+# plain salpa.yaml living in its own crate directory (rust/crates/dorado-gui/,
+# rust/crates/dorado-gyotaku-gui/ -- both excluded from the main Cargo
+# workspace over their `rime` path dependency, see rust/Cargo.toml). Unlike
+# the CLI, macOS gets a SIGNED + NOTARIZED universal dmg (Gatekeeper is far
+# more hostile to a double-clicked, unsigned GUI app than a terminal-launched
+# CLI binary); Linux/Windows still get bare unsigned binaries, same as the
+# CLI. Signing needs a one-time secrets setup -- see rust/docs/RELEASING.md.
 #
 # Auto-releases on every push to main touching rust/** — no manual tag push.
 # Other ports can grow their own `<port>-v*` track here later.
@@ -135,4 +144,106 @@ jobs:
           for cfg in salpa-dorado.yaml salpa-gyotaku.yaml; do
             "$SALPA" --config "$cfg" --version "${{ needs.version.outputs.version }}" build
             "$SALPA" --config "$cfg" --version "${{ needs.version.outputs.version }}" publish
+          done
+
+  # GUI: macOS leg (its own job so the Apple signing secrets are scoped HERE
+  # and nowhere else). A universal build needs BOTH Rust targets on one
+  # runner (salpa lipo-fuses them), unlike the CLI's two separate per-arch
+  # legs above -- that split doesn't apply once signing is involved, since
+  # Gatekeeper/notarization want one universal binary per app. salpa
+  # hand-bundles the release binary into a .app (icon from packaging/
+  # AppIcon.icns), hardened-runtime codesigns it, packages a dmg, then
+  # notarizes + staples. See rust/docs/RELEASING.md for the one-time secrets
+  # setup this needs.
+  #
+  # dorado-gui and dorado-gyotaku-gui are excluded from the main Cargo
+  # workspace (see rust/Cargo.toml) since each depends on the sibling `rime`
+  # repo by path, so dorado and rime are checked out as siblings here too,
+  # matching ci.yml's `gui` job and screenshots.yml.
+  build-gui-macos:
+    name: gui-macos-universal
+    needs: [version]
+    runs-on: macos-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+      P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: dorado }
+      - uses: actions/checkout@v4
+        with: { repository: alleato-llc/rime, path: rime } # public sibling; dorado-gui/dorado-gyotaku-gui depend on it by ../../../../rime/rime
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin,aarch64-apple-darwin # universal lipo
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            dorado/rust/crates/dorado-gui
+            dorado/rust/crates/dorado-gyotaku-gui
+          key: release-gui-macos
+      - uses: oras-project/setup-oras@v1
+      - name: salpa build + publish (signed, notarized)
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "${{ github.token }}" | oras login ghcr.io -u "${{ github.actor }}" --password-stdin
+          oras pull "ghcr.io/${{ github.repository_owner }}/salpa:${SALPA_VERSION}"
+          SALPA="$PWD/salpa-darwin-arm64"; chmod +x "$SALPA"
+          for app in dorado-gui dorado-gyotaku-gui; do
+            (cd "dorado/rust/crates/$app" &&
+              "$SALPA" --version "${{ needs.version.outputs.version }}" build &&
+              "$SALPA" --version "${{ needs.version.outputs.version }}" publish)
+          done
+
+  # GUI: portable Linux/Windows binaries (bare, unsigned, matching the CLI's
+  # own unsigned binaries on these platforms). Same platform scope as the
+  # CLI's build matrix above (no arm64 legs). Needs the same windowing system
+  # libraries ci.yml's `gui` job installs, since these are graphics-stack apps
+  # even to compile, not just run.
+  build-gui-portable:
+    name: gui-${{ matrix.name }}
+    needs: [version]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux-x86_64, os: ubuntu-latest, salpa: salpa-linux-amd64 }
+          - { name: windows-x86_64, os: windows-latest, salpa: salpa-windows-amd64.exe }
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: dorado }
+      - uses: actions/checkout@v4
+        with: { repository: alleato-llc/rime, path: rime } # public sibling; dorado-gui/dorado-gyotaku-gui depend on it by ../../../../rime/rime
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            dorado/rust/crates/dorado-gui
+            dorado/rust/crates/dorado-gyotaku-gui
+          key: release-gui-${{ matrix.name }}
+      - name: Linux windowing deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev \
+            libxcursor-dev libxrandr-dev libxi-dev libgl1-mesa-dev
+      - uses: oras-project/setup-oras@v1
+      - name: salpa build + publish (bare binaries)
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "${{ github.token }}" | oras login ghcr.io -u "${{ github.actor }}" --password-stdin
+          oras pull "ghcr.io/${{ github.repository_owner }}/salpa:${SALPA_VERSION}"
+          SALPA="$PWD/${{ matrix.salpa }}"; chmod +x "$SALPA" || true
+          for app in dorado-gui dorado-gyotaku-gui; do
+            (cd "dorado/rust/crates/$app" &&
+              "$SALPA" --version "${{ needs.version.outputs.version }}" build &&
+              "$SALPA" --version "${{ needs.version.outputs.version }}" publish)
           done

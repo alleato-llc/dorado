@@ -17,7 +17,7 @@ port and a bump of that integer.
 | --- | --- | --- | --- |
 | Core | 0.1.0 | [CHANGELOG.md](CHANGELOG.md) | `docs/`, `SECURITY.md`, CI, cross-port decisions |
 | Container format | v4 | [docs/spec.md](docs/spec.md) | the on-disk `.mahi` wire format (all ports) |
-| Rust port | 0.1.1 | [rust/CHANGELOG.md](rust/CHANGELOG.md) | `rust/` (the reference implementation) |
+| Rust port | 0.1.4 | [rust/CHANGELOG.md](rust/CHANGELOG.md) | `rust/` (the reference implementation) |
 | Go port | 0.1.0 | [go/CHANGELOG.md](go/CHANGELOG.md) | `go/` |
 | Java port | 0.1.0 | [java/CHANGELOG.md](java/CHANGELOG.md) | `java/` |
 | Python port | 0.1.0 | [python/CHANGELOG.md](python/CHANGELOG.md) | `python/` |
@@ -33,8 +33,13 @@ Every component but the Rust port is still at `0.1.0` and unreleased; their curr
 sits in each changelog's `Unreleased` section. When a component's first release is cut,
 the `Unreleased` entries get a dated version heading (see
 [rust/CHANGELOG.md](rust/CHANGELOG.md) for the Rust port's `0.1.1`, its first, cut via
-the salpa-driven auto-release track) and this table tracks it from there. The container
-format is at `v4` (version 3 is still read).
+the salpa-driven auto-release track) and this table tracks it from there. The Rust port
+is the only component with an actual release track today (`rust-v*` tags,
+`rust/docs/RELEASING.md`); its version here must be kept in sync by hand against
+`git tag -l "rust-v*"`, since salpa's automation creates the tag and GitHub Release
+but never touches this file — nothing currently updates this table automatically on
+release (tracked as a salpa TODO; see the `salpa` repo). The container format is at
+`v4` (version 3 is still read).
 
 ## Versioning rules
 

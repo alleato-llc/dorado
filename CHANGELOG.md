@@ -99,6 +99,16 @@ This changelog starts in 2026-06; for earlier history see the git log.
   excluded from the main workspace and CI's `gui` job checks `rime` out as a sibling of
   `dorado` itself, matching the pattern the screenshot workflow below also uses. Full
   per-crate details are in [`rust/CHANGELOG.md`](rust/CHANGELOG.md).
+- **Release pipeline (`.github/workflows/release.yml`) now ships the two GUI apps**
+  (`dorado-gui`, `gyotaku-gui`), not just the CLIs. Two new jobs, both landing on the
+  same `rust-v<version>` release the CLI jobs already create: `build-gui-macos`
+  produces a **signed + notarized universal** dmg per app (macOS Gatekeeper is far
+  more hostile to an unsigned, double-clicked GUI app than a terminal-launched CLI
+  binary, so this track diverges from the CLI's unsigned-everywhere policy on this one
+  platform), needing a one-time secrets setup (`rust/docs/RELEASING.md`, new); and
+  `build-gui-portable` produces bare unsigned Linux/Windows binaries, same convention
+  as the CLI. Per-crate packaging/icon details are in
+  [`rust/CHANGELOG.md`](rust/CHANGELOG.md).
 - **Haskell port** (`haskell/`), the ninth implementation: an SDK plus the
   `dorado`/`gyotaku` CLIs, byte-for-byte cross-compatible with the others (verified by
   decrypting the Rust CLI's `.mahi` fixtures and by Rust decrypting its output). It is

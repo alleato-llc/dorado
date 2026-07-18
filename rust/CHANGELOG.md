@@ -10,6 +10,21 @@ the Rust-specific details. Format: [Keep a Changelog](https://keepachangelog.com
 
 ### Added
 
+- **`dorado-gui` and `dorado-gyotaku-gui` now ship real release artifacts.**
+  Each gets its own `salpa.yaml` (in its own crate directory, since both are
+  excluded from the main workspace over their `rime` path dependency) driving
+  `.github/workflows/release.yml`'s two new jobs: `build-gui-macos` produces a
+  **signed + notarized universal** `Dorado-<version>.dmg` /
+  `Gyotaku-<version>.dmg` (both Apple Silicon and Intel in one dmg), while
+  `build-gui-portable` produces bare, unsigned Linux/Windows binaries, matching
+  the CLI's own unsigned binaries there. macOS signing needs a one-time
+  secrets setup — see `rust/docs/RELEASING.md` (new). Each app gets its own
+  icon: a stylized dorado (mahi-mahi) fish for `dorado-gui`, a gyotaku-style
+  fish-print/stamp motif (with a 魚 hanko seal) for `dorado-gyotaku-gui` — a
+  source SVG plus a generated `packaging/AppIcon.icns` (the macOS `.app`
+  bundle icon) in each crate directory, and a 256×256 PNG at
+  `src/assets/icon.png` (each crate's iced window/taskbar icon on Linux and
+  Windows; macOS takes its Dock icon from the `.app` bundle instead).
 - `dorado-gui` and `dorado-gyotaku-gui` each gain a permanent, env-gated
   review-screenshot harness (`src/shot.rs`), ported from soroban's own
   (`soroban/rust/gui/src/shot.rs`): inert unless `DORADO_SHOT` /

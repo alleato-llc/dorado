@@ -34,6 +34,26 @@ mod shot;
 /// The default theme, by name (see [`rime::theme::builtin_themes`]).
 const DEFAULT_THEME: &str = "Dracula";
 
+/// The embedded app icon (a dorado, in rime's gold/teal tones). Shown as the
+/// window/taskbar icon on Linux and Windows; macOS takes its Dock icon from
+/// the `.app` bundle instead (see `packaging/AppIcon.icns`).
+const APP_ICON_BYTES: &[u8] = include_bytes!("assets/icon.png");
+
+/// Decode the embedded PNG into an iced window icon. Returns `None` (no icon,
+/// never a crash) if the bytes ever fail to decode — the app still runs.
+fn app_icon() -> Option<iced::window::Icon> {
+    let mut reader = png::Decoder::new(APP_ICON_BYTES).read_info().ok()?;
+    let mut buf = vec![0; reader.output_buffer_size()];
+    let info = reader.next_frame(&mut buf).ok()?;
+    buf.truncate(info.buffer_size());
+    // The bundled asset is 8-bit RGBA; bail on any other shape rather than
+    // hand a mis-sized buffer to `from_rgba` (which would just Err anyway).
+    if info.bit_depth != png::BitDepth::Eight || info.color_type != png::ColorType::Rgba {
+        return None;
+    }
+    iced::window::icon::from_rgba(buf, info.width, info.height).ok()
+}
+
 fn main() -> iced::Result {
     // A review screenshot (src/shot.rs) needs the whole scrollable content
     // visible with nothing scrolled out of frame, so it gets a taller window;
@@ -49,6 +69,7 @@ fn main() -> iced::Result {
         .subscription(App::subscription)
         .window(iced::window::Settings {
             size: iced::Size::new(480.0, height),
+            icon: app_icon(),
             ..Default::default()
         })
         .run()

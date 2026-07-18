@@ -1,0 +1,32 @@
+# Release lifecycle for the gyotaku-gui iced app, driven by salpa
+# (github.com/alleato-llc/salpa). Runs with cwd = this directory
+# (dorado-gyotaku-gui is excluded from the main Cargo workspace over its `rime`
+# path dependency, see ../../Cargo.toml). Same rust-v* tag namespace as the CLI
+# release (rust/salpa.yaml) and dorado-gui's own config (../dorado-gui/salpa.yaml)
+# -- all three ship together on the rust/** ecosystem's one track.
+#
+# salpa's rust recipe only signs/notarizes/bundles on macOS (a universal lipo
+# build -> hardened-runtime codesign -> dmg -> notarize -> staple); Linux and
+# Windows get a bare per-platform binary, same as the CLI's own unsigned
+# binaries. See rust/docs/RELEASING.md for the one-time secrets setup this
+# needs on macOS.
+ecosystem: rust
+product: Gyotaku
+tag_prefix: rust-v
+
+# No dedicated test suite for this crate yet (see rust/CLAUDE.md); clippy is
+# the correctness gate before spending a notarization run on a broken build.
+test: "cargo clippy --all-targets -- -D warnings"
+
+build:
+  bin: gyotaku-gui
+  bundle_id: com.alleato.gyotaku-gui
+  icon: packaging/AppIcon.icns
+  universal: true # both mac arches, lipo-fused into one signed dmg
+  sign: "Developer ID Application" # macOS-only; ignored on the Linux/Windows legs
+  notarize: true
+  staple: true
+  package: dmg # macOS deliverable: Gyotaku-<version>.dmg (signed + notarized)
+
+publish:
+  github: true # attach to the same rust-v<version> release the CLI binaries land in

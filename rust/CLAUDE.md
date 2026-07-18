@@ -24,7 +24,10 @@ Dorado is a Cargo workspace of seven crates:
   offers any of rime's built-in named palettes (default Dracula); native Open/Save
   file dialogs (`rfd`) fill the input/output path fields. `src/shot.rs` is a
   permanent, env-gated (`DORADO_SHOT`) review-screenshot harness (ported from
-  soroban), inert unless set.
+  soroban), inert unless set. `packaging/AppIcon.icns` (+ source `icon.svg`) is
+  the macOS `.app` bundle icon, `src/assets/icon.png` the Linux/Windows window
+  icon; `salpa.yaml` drives its own signed macOS release leg (see
+  `rust/docs/RELEASING.md`).
 - `crates/dorado-gui-kit` — composite, dorado-flavored widgets (a segmented
   control, a labeled dropdown, a theme picker, a password field, a file-path field
   with a browse slot, a progress/status row, an output+copy panel) built on top of
@@ -41,7 +44,10 @@ Dorado is a Cargo workspace of seven crates:
   selectable output length; a native Open dialog (`rfd`) fills the input-file
   field. Depends on `dorado` + `iced` + `rime` + `dorado-gui-kit`. `src/shot.rs`
   is a permanent, env-gated (`GYOTAKU_SHOT`) review-screenshot harness (a sibling
-  of `dorado-gui`'s own), inert unless set.
+  of `dorado-gui`'s own), inert unless set. `packaging/AppIcon.icns` (+ source
+  `icon.svg`) is the macOS `.app` bundle icon, `src/assets/icon.png` the
+  Linux/Windows window icon; `salpa.yaml` drives its own signed macOS release
+  leg (see `rust/docs/RELEASING.md`).
 
 Educational and unaudited. The cipher provides confidentiality only; the engine
 adds authentication (encrypt-then-MAC) for password files.

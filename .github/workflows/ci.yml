@@ -30,6 +30,7 @@ jobs:
       zig: ${{ steps.filter.outputs.zig }}
       haskell: ${{ steps.filter.outputs.haskell }}
       cpp: ${{ steps.filter.outputs.cpp }}
+      ts: ${{ steps.filter.outputs.ts }}
       web: ${{ steps.filter.outputs.web }}
     steps:
       - uses: actions/checkout@v4

@@ -23,6 +23,9 @@ This changelog starts in 2026-06; for earlier history see the git log.
 
 ### Added
 
+- CI: a `ts` job (path-filtered like the others: `npm ci`, typecheck, vitest).
+  The TypeScript port was the only implementation with no CI coverage at all;
+  its suite ran only locally. Found during the CI speed pass.
 - **Both standard forms of key derivation are now public API in every port**, a
   cross-port decision recorded here. Each port exposes the slow password
   stretch (`derive_from_password` in its per-language spelling) and the fast
@@ -141,6 +144,21 @@ This changelog starts in 2026-06; for earlier history see the git log.
 
 ### Changed
 
+- **CI speed and reliability pass** across `.github/workflows/ci.yml`:
+  - The `zig` job now runs `zig build test --release=safe` (optimized, with
+    Zig's runtime safety checks kept, the port's own preferred release mode).
+    A Debug test build runs the from-scratch KDF/cipher math unoptimized,
+    which measured ~17x slower locally and extrapolates to multiple hours on
+    a 2-core runner; two CI attempts sat in `zig build test` for 105 and 60+
+    minutes before this change.
+  - Dependency caching everywhere it pays: `Swatinem/rust-cache` on the Rust
+    core and GUI jobs (the release workflow already used it; CI never did),
+    Gradle/pip/npm caches via each setup action, and the cabal store keyed
+    on `dorado.cabal`. Go was already cached by `setup-go`; `setup-zig@v2`
+    caches Zig's compile cache itself.
+  - The `c` job builds with `make -j"$(nproc)"`; its sanitized rerun also
+    got ~9x faster via a test-side change recorded in
+    [`c/CHANGELOG.md`](c/CHANGELOG.md).
 - **The raw-key CLI default is now uniform across every port**: all eight
   CLI-bearing ports (Rust, Go, TS/Node, Python, C, Zig, Haskell, C++; Java is
   SDK-only by design) encrypt and decrypt `--key`/`--key-file` mode

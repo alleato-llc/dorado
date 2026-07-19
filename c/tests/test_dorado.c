@@ -646,6 +646,24 @@ static uint64_t smash_rand(void) {
  * read or UB on the parse/framing path. A few inputs legitimately decrypt (e.g. an
  * untruncated copy of the valid container), so success is fine; the property under
  * test is "no crash, no leak", enforced by reaching the end and by the sanitizers. */
+/* Under the sanitizers the smash loop dominates the whole suite (measured at
+ * 99.8% of its runtime): the mutated-valid arm sometimes flips the header's
+ * PBKDF2 rounds field into the millions (still under validate's 50M bound),
+ * and each such iteration is a legitimate multi-second derivation. The PRNG
+ * is deterministic, so the sanitized run's iterations are a strict prefix of
+ * the plain run's; the sanitizers need path diversity, not raw count. */
+#if defined(__has_feature)
+#if __has_feature(address_sanitizer)
+#define SMASH_ITERS 2000
+#endif
+#endif
+#if !defined(SMASH_ITERS) && defined(__SANITIZE_ADDRESS__)
+#define SMASH_ITERS 2000
+#endif
+#ifndef SMASH_ITERS
+#define SMASH_ITERS 20000
+#endif
+
 static void test_smash(void) {
     const uint8_t *pw = (const uint8_t *)"pw-cross";
     size_t pwl = 8;
@@ -661,7 +679,7 @@ static void test_smash(void) {
 
     int ok = 1;
     uint8_t buf[512];
-    for (int iter = 0; iter < 20000 && ok; iter++) {
+    for (int iter = 0; iter < SMASH_ITERS && ok; iter++) {
         size_t n;
         int arm = iter & 3;
         if (arm == 0) {
@@ -696,7 +714,7 @@ static void test_smash(void) {
             free(out);
         }
     }
-    check(ok, "smash: decrypt 20000 random/truncated/mutated inputs without crashing");
+    check(ok, "smash: decrypt random/truncated/mutated inputs without crashing");
     free(valid);
 }
 

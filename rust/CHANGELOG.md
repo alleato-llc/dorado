@@ -8,6 +8,22 @@ the Rust-specific details. Format: [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+(No unreleased Rust-side changes yet.)
+
+## [0.2.1] - 2026-07-19
+
+### Fixed
+
+- **A flaky `gyotaku` CLI test race.** `tests/cli.rs`'s stdin helper
+  `unwrap`ped its write to the child, but a child that rejects its arguments
+  (the bad `--bits` case) can exit before reading stdin, so the write
+  intermittently died with `BrokenPipe` and failed the suite (first seen on
+  a CI runner; timing-dependent, so usually green locally). The helper now
+  accepts `BrokenPipe` specifically, since an early exit is exactly what
+  that test asserts. Test-only; the binaries are unchanged.
+
+## [0.2.0] - 2026-07-19
+
 ### Added
 
 - **`dorado-engine`'s `kdf` module is now public, with both standard forms
@@ -37,21 +53,30 @@ the Rust-specific details. Format: [Keep a Changelog](https://keepachangelog.com
   BLAKE3 variant requires a 32-byte key. API surface only; the container,
   CLI, and wire format are untouched. Consumer: tty's per-cipher history
   key hierarchy.
-
-### Fixed
-
-- **A flaky `gyotaku` CLI test race.** `tests/cli.rs`'s stdin helper
-  `unwrap`ped its write to the child, but a child that rejects its arguments
-  (the bad `--bits` case) can exit before reading stdin, so the write
-  intermittently died with `BrokenPipe` and failed the suite (first seen on
-  a CI runner; timing-dependent, so usually green locally). The helper now
-  accepts `BrokenPipe` specifically, since an early exit is exactly what
-  that test asserts. Test-only; the binaries are unchanged.
-- **`kdf::validate` now rejects `rounds: 0` for PBKDF2.** Zero rounds would
-  "derive" an all-zero key without error; a crafted or corrupted header
-  carrying it now fails cleanly at validation instead. (Decryption already
-  failed authentication in that case, so this closes an oddity, not a
-  vulnerability.)
+- **Raw-key mode gains an authenticated construction**
+  (`dorado-engine::{encrypt,decrypt}_raw_authenticated_stream` / `*_bytes`),
+  encrypt-then-MAC over the caller-supplied key with no password or KDF,
+  reusing the password container's chunk/frame machinery. See the
+  [Core CHANGELOG](../CHANGELOG.md) for the cross-port rationale and
+  [docs/spec.md](../docs/spec.md)'s "Raw-key modes" section for the byte-level
+  construction (key-splitting via domain-separated Skein-512, the frame AAD).
+  Bare `raw_ctr_stream` is unchanged and still exists, reachable via the CLI's
+  `--unauthenticated` (see Changed, below) or directly as a library call.
+- **`dorado-gui` and `dorado-gyotaku-gui` now ship real release artifacts.**
+  Each gets its own `salpa.yaml` (in its own crate directory, since both are
+  excluded from the main workspace over their `rime` path dependency) driving
+  `.github/workflows/release.yml`'s two new jobs: `build-gui-macos` produces a
+  **signed + notarized universal** `Dorado-<version>.dmg` /
+  `Gyotaku-<version>.dmg` (both Apple Silicon and Intel in one dmg), while
+  `build-gui-portable` produces bare, unsigned Linux/Windows binaries, matching
+  the CLI's own unsigned binaries there. macOS signing needs a one-time
+  secrets setup — see `rust/docs/RELEASING.md` (new). Each app gets its own
+  icon: a stylized dorado (mahi-mahi) fish for `dorado-gui`, a gyotaku-style
+  fish-print/stamp motif (with a 魚 hanko seal) for `dorado-gyotaku-gui` — a
+  source SVG plus a generated `packaging/AppIcon.icns` (the macOS `.app`
+  bundle icon) in each crate directory, and a 256×256 PNG at
+  `src/assets/icon.png` (each crate's iced window/taskbar icon on Linux and
+  Windows; macOS takes its Dock icon from the `.app` bundle instead).
 
 ### Changed
 
@@ -73,32 +98,18 @@ the Rust-specific details. Format: [Keep a Changelog](https://keepachangelog.com
   discouraged counterexample) and `--unauthenticated`'s own `--help` text for
   why the opt-out still exists.
 
+### Fixed
+
+- **`kdf::validate` now rejects `rounds: 0` for PBKDF2.** Zero rounds would
+  "derive" an all-zero key without error; a crafted or corrupted header
+  carrying it now fails cleanly at validation instead. (Decryption already
+  failed authentication in that case, so this closes an oddity, not a
+  vulnerability.)
+
+## [0.1.5] - 2026-07-19
+
 ### Added
 
-- **Raw-key mode gains an authenticated construction**
-  (`dorado-engine::{encrypt,decrypt}_raw_authenticated_stream` / `*_bytes`),
-  encrypt-then-MAC over the caller-supplied key with no password or KDF,
-  reusing the password container's chunk/frame machinery. See the
-  [Core CHANGELOG](../CHANGELOG.md) for the cross-port rationale and
-  [docs/spec.md](../docs/spec.md)'s "Raw-key modes" section for the byte-level
-  construction (key-splitting via domain-separated Skein-512, the frame AAD).
-  Bare `raw_ctr_stream` is unchanged and still exists, reachable via the CLI's
-  `--unauthenticated` (see Changed, above) or directly as a library call.
-- **`dorado-gui` and `dorado-gyotaku-gui` now ship real release artifacts.**
-  Each gets its own `salpa.yaml` (in its own crate directory, since both are
-  excluded from the main workspace over their `rime` path dependency) driving
-  `.github/workflows/release.yml`'s two new jobs: `build-gui-macos` produces a
-  **signed + notarized universal** `Dorado-<version>.dmg` /
-  `Gyotaku-<version>.dmg` (both Apple Silicon and Intel in one dmg), while
-  `build-gui-portable` produces bare, unsigned Linux/Windows binaries, matching
-  the CLI's own unsigned binaries there. macOS signing needs a one-time
-  secrets setup — see `rust/docs/RELEASING.md` (new). Each app gets its own
-  icon: a stylized dorado (mahi-mahi) fish for `dorado-gui`, a gyotaku-style
-  fish-print/stamp motif (with a 魚 hanko seal) for `dorado-gyotaku-gui` — a
-  source SVG plus a generated `packaging/AppIcon.icns` (the macOS `.app`
-  bundle icon) in each crate directory, and a 256×256 PNG at
-  `src/assets/icon.png` (each crate's iced window/taskbar icon on Linux and
-  Windows; macOS takes its Dock icon from the `.app` bundle instead).
 - `dorado-gui` and `dorado-gyotaku-gui` each gain a permanent, env-gated
   review-screenshot harness (`src/shot.rs`), ported from soroban's own
   (`soroban/rust/gui/src/shot.rs`): inert unless `DORADO_SHOT` /
@@ -115,7 +126,6 @@ the Rust-specific details. Format: [Keep a Changelog](https://keepachangelog.com
   "0.17"` to `dorado-gyotaku-gui`'s `Cargo.toml` (already present in
   `dorado-gui`'s from the iced 0.14 migration). Feeds a later automated
   screenshot gallery.
-
 - New crate `dorado-gui-kit`: composite, dorado-flavored widgets (a segmented
   control, a labeled dropdown, a theme picker, a password field, a file-path
   field with a browse slot, a progress/status row, an output+copy panel) built
@@ -146,6 +156,15 @@ the Rust-specific details. Format: [Keep a Changelog](https://keepachangelog.com
   migration (unused at the time); it is now used by both GUIs' screenshot
   harness (see Added, above).
 
+## [0.1.4] - 2026-07-07
+
+No Rust-side changes to record (a C++-port-focused merge); version cut by
+the auto-release track.
+
+## [0.1.3] - 2026-07-07
+
+### Changed
+
 - **Release packaging: no more archives.** `rust/salpa.yaml` now drives only the shared
   `test`/`version` stages; `build`/`publish` instead run against two new configs,
   `rust/salpa-dorado.yaml` and `rust/salpa-gyotaku.yaml` (one `bin:` each, no
@@ -155,6 +174,11 @@ the Rust-specific details. Format: [Keep a Changelog](https://keepachangelog.com
   release once (workflow-level) instead of duplicated inside every platform archive.
   Matches soroban's convention for its portable (non-macOS) binaries. See the Core
   changelog for the workflow-level change.
+
+## [0.1.2] - 2026-07-07
+
+No Rust-side changes to record (a release-workflow fix); version cut by the
+auto-release track.
 
 ## [0.1.1] - 2026-07-07
 

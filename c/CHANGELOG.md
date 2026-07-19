@@ -61,6 +61,19 @@ the master table.
   used `CRYPTO_memcmp`, salt/IV `getentropy`, and keys are wiped with `OPENSSL_cleanse`,
   so no change there.)
 
+### Changed
+
+- The smash test runs 2,000 of its 20,000 iterations under the sanitizers
+  (`SMASH_ITERS`, keyed off `__SANITIZE_ADDRESS__` / `__has_feature`).
+  Measured under ASan/UBSan the smash loop was 99.8% of the whole suite's
+  runtime (1049s of 1051s in a Linux container; ~55 minutes on a CI runner):
+  the mutated-valid arm sometimes flips the header's PBKDF2 rounds field into
+  the millions, still under `validate`'s 50M bound, making single iterations
+  legitimate multi-second derivations. The PRNG is deterministic, so the
+  sanitized run's inputs are a strict prefix of the plain run's 20,000; the
+  sanitizers need code-path diversity, not raw count. Plain `make test` is
+  unchanged.
+
 ### Fixed
 
 - **The in-memory APIs crashed on Linux glibc builds** (`dorado_encrypt` /

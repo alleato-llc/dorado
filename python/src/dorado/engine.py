@@ -92,7 +92,7 @@ def encrypt_password_stream(password: bytes, opts: PasswordOptions, reader: Bina
         raise InvalidParams(f"chunk size must be a positive multiple of {bl}")
     salt = os.urandom(16)
     iv = os.urandom(bl)
-    keymat = kdf_mod.derive(opts.kdf, password, salt, fmt.key_len(v) + fmt.MAC_KEY_LEN)
+    keymat = kdf_mod.derive_from_password(opts.kdf, password, salt, fmt.key_len(v) + fmt.MAC_KEY_LEN)
     enc_key, mac_key = keymat[: fmt.key_len(v)], keymat[fmt.key_len(v):]
     # Best-effort zeroization is fundamentally limited in Python: keymat and the key
     # slices are immutable bytes and cannot be wiped, and the KDF and slicing make
@@ -157,7 +157,7 @@ def decrypt_password_stream(
         raise MalformedContainer(f"invalid chunk size {h.chunk_size} in header")
     kdf_mod.validate(h.kdf)
 
-    keymat = kdf_mod.derive(h.kdf, password, h.salt, fmt.key_len(h.variant) + fmt.MAC_KEY_LEN)
+    keymat = kdf_mod.derive_from_password(h.kdf, password, h.salt, fmt.key_len(h.variant) + fmt.MAC_KEY_LEN)
     enc_key, mac_key = keymat[: fmt.key_len(h.variant)], keymat[fmt.key_len(h.variant):]
     # See the note in encrypt_password_stream: these keys are immutable bytes and
     # cannot be reliably wiped from memory in Python. Best-effort zeroization is not

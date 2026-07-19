@@ -22,7 +22,12 @@ def _dehex(s: str) -> bytes:
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="dorado", description="Threefish encryption (educational, unaudited).")
+    p = argparse.ArgumentParser(
+        prog="dorado",
+        description="Threefish encryption (educational, unaudited). Password mode and raw-key mode "
+        "(--key/--key-file) are both authenticated by default (encrypt-then-MAC, per --mac and "
+        "--chunk-kib); add --unauthenticated for bare CTR with no authentication, an expert opt-out.",
+    )
     # --version short-circuits before the required positional is validated.
     p.add_argument("--version", action="version", version=f"dorado {_pkg_version('dorado')}")
     p.add_argument("command", choices=["encrypt", "decrypt", "inspect"])
@@ -32,6 +37,15 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--tweak", default="00" * 16)
     p.add_argument("--password", action="store_true")
     p.add_argument("--password-stdin", action="store_true")
+    p.add_argument(
+        "--unauthenticated",
+        action="store_true",
+        help="opt out of authentication (encrypt-then-MAC, using --mac) for raw-key mode, falling "
+        "back to bare CTR: confidentiality only, no tamper/corruption detection -- a corrupted or "
+        "tampered byte silently decrypts to a flipped plaintext byte with no error. Raw-key mode "
+        "is authenticated by default; this is a deliberate, expert opt-out. Not used in password "
+        "mode, which is always authenticated.",
+    )
     p.add_argument("--variant", default="256", choices=list(_VARIANTS))
     p.add_argument("--kdf", default="argon2id", choices=["argon2id", "scrypt", "pbkdf2"])
     p.add_argument("--mac", default="skein", choices=list(_MACS))
@@ -95,12 +109,22 @@ def _crypt(a: argparse.Namespace, encrypt: bool) -> None:
             raise DoradoError(f"key must be 32, 64, or 128 bytes, got {len(key)}")
         if not a.iv:
             raise DoradoError("--iv is required with --key/--key-file")
+        tweak, iv = _dehex(a.tweak), _dehex(a.iv)
+        # Encrypt-then-MAC by default; bare CTR only behind the explicit opt-out
+        # (which is symmetric, so it ignores the direction).
         with _open_in(a) as r, _open_out(a) as w:
-            engine.raw_ctr_stream(variant, key, _dehex(a.tweak), _dehex(a.iv), r, w)
+            if a.unauthenticated:
+                engine.raw_ctr_stream(variant, key, tweak, iv, r, w)
+            elif encrypt:
+                engine.encrypt_raw_authenticated_stream(variant, key, tweak, iv, _MACS[a.mac], a.chunk_kib * 1024, r, w)
+            else:
+                engine.decrypt_raw_authenticated_stream(variant, key, tweak, iv, _MACS[a.mac], a.chunk_kib * 1024, r, w)
         return
 
     if a.iv:
         raise DoradoError("--iv is not used in password mode; the IV is generated and stored")
+    if a.unauthenticated:
+        raise DoradoError("--unauthenticated is not used in password mode, which is always authenticated")
     if a.password_stdin and not a.in_path:
         raise DoradoError("with --password-stdin, pass the data via --in")
 

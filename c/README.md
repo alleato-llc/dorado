@@ -17,7 +17,9 @@ from **OpenSSL**, both found via `pkg-config`. Educational and unaudited.
   `engine.h`.
 - `src/threefish.c`, `skein.c`, `blake3.c` — the from-scratch primitives.
 - `src/format.c`, `kdf.c`, `mac.c`, `engine.c` — the construction: the container
-  header, the KDFs (libargon2 + OpenSSL), the MAC menu, and the streaming password
+  header, the KDFs (the password KDFs via libargon2 + OpenSSL, plus the fast
+  key-based `dorado_kdf_derive_from_key`/`_with` over the from-scratch
+  Skein-512/BLAKE3), the MAC menu, and the streaming password
   container, raw CTR (bare and authenticated), and inspect. Functions return `NULL` on success or a static
   error string; the three failure classes are exposed as stable sentinels
   (`dorado_err_auth`, `dorado_err_malformed`, `dorado_err_params`) a caller can
@@ -55,6 +57,12 @@ const char *err = dorado_encrypt_password(pw, pw_len, &opts, pt, pt_len, &ct, &c
 
 /* or stream in constant memory: */
 dorado_encrypt_password_stream(pw, pw_len, &opts, stdin, stdout);
+
+/* fan an already high-entropy master key out into independent per-purpose
+ * subkeys (fast, one domain-separated Skein-512 keyed hash; never pass a
+ * password here — a password goes through the slow password KDF above): */
+uint8_t subkey[32];
+dorado_kdf_derive_from_key(master, 32, "myapp/index", subkey, 32);
 ```
 
 CLI:
@@ -63,6 +71,12 @@ CLI:
 dorado encrypt --password-stdin --in notes.txt --out notes.txt.mahi
 gyotaku --bits 256 notes.txt
 ```
+
+Raw-key mode (`--key`/`--key-file`, with `--iv`) is authenticated
+(encrypt-then-MAC, honoring `--mac` and `--chunk-kib`) by default, matching the
+Rust reference CLI; `--unauthenticated` opts back into bare CTR (confidentiality
+only, no tamper detection — a corrupted byte silently decrypts to a flipped
+plaintext byte). Password mode is always authenticated and rejects the flag.
 
 ## Testing
 

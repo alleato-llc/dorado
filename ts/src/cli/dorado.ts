@@ -14,6 +14,7 @@ const options = {
   key: { type: "string" },
   "key-file": { type: "string" },
   iv: { type: "string" },
+  unauthenticated: { type: "boolean", default: false },
   tweak: { type: "string", default: "00".repeat(16) },
   password: { type: "boolean", default: false },
   "password-stdin": { type: "boolean", default: false },
@@ -38,12 +39,20 @@ const options = {
 
 const USAGE = `usage: dorado <encrypt|decrypt|inspect> [flags]
 
-Apply Threefish in CTR mode: raw-key (--key/--key-file, unauthenticated) or a
-password-derived authenticated container (--password/--password-stdin).
+Apply Threefish in CTR mode, authenticated (encrypt-then-MAC) by default:
+raw-key (--key/--key-file) or a password-derived authenticated container
+(--password/--password-stdin). Raw-key mode splits the key into independent
+encryption and MAC subkeys, so a tampered, corrupted, or wrong-key stream is
+rejected on decrypt; add --unauthenticated to fall back to bare CTR instead
+(no authentication, output length equals input length exactly) — a
+deliberate, expert opt-out, since a corrupted or tampered byte in that mode
+silently decrypts to a flipped plaintext byte with no error of any kind.
 
   --variant 256|512|1024     block size (password mode)
   --kdf argon2id|scrypt|pbkdf2   key derivation
-  --mac skein|hmac-sha256|blake3 authentication
+  --mac skein|hmac-sha256|blake3 authentication (password and raw-key modes)
+  --unauthenticated          raw-key mode: bare CTR, no tamper detection
+  --chunk-kib N              authenticated chunk size (password and raw-key modes)
   --label / --expect-label   bind/require a non-secret label
   --in FILE / --out FILE      default stdin/stdout
   --version                  print version and exit
@@ -141,7 +150,20 @@ async function cmdCrypt(o: Opts, encrypt: boolean): Promise<void> {
     if (variant === undefined) throw new Error(`key must be 32, 64, or 128 bytes, got ${key.length}`);
     if (!o.iv) throw new Error("--iv is required with --key/--key-file");
     try {
-      const out = engine.rawCTR(variant, key, dehex(str(o.tweak)), dehex(str(o.iv)), readInput(o), wasmBackend);
+      const tweak = dehex(str(o.tweak));
+      const iv = dehex(str(o.iv));
+      let out: Uint8Array;
+      if (o.unauthenticated) {
+        // Bare CTR: symmetric, so encrypt and decrypt are the same operation.
+        out = engine.rawCTR(variant, key, tweak, iv, readInput(o), wasmBackend);
+      } else {
+        // Authenticated (the default): encrypt-then-MAC is not symmetric, so
+        // the subcommand selects the direction.
+        const chunkSize = int(str(o["chunk-kib"])) * 1024;
+        out = encrypt
+          ? await engine.encryptRawAuthenticatedBytes(variant, key, tweak, iv, macOf(o), chunkSize, readInput(o), wasmBackend)
+          : await engine.decryptRawAuthenticatedBytes(variant, key, tweak, iv, macOf(o), chunkSize, readInput(o), wasmBackend);
+      }
       writeOutput(o, out);
     } finally {
       wipe(key);
@@ -149,6 +171,7 @@ async function cmdCrypt(o: Opts, encrypt: boolean): Promise<void> {
     return;
   }
   if (o.iv) throw new Error("--iv is not used in password mode; the IV is generated and stored");
+  if (o.unauthenticated) throw new Error("--unauthenticated is not used in password mode, which is always authenticated");
   if (o["password-stdin"] && !o.in) throw new Error("with --password-stdin, pass the data via --in");
 
   const password = await readPassword(o, encrypt);

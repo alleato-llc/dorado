@@ -12,6 +12,7 @@
 #include <ostream>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "dorado/kdf.hpp"
@@ -37,6 +38,25 @@ using Result = std::expected<T, std::string>;
 
 // Random bytes from the system CSPRNG (OpenSSL RAND_bytes).
 void random_bytes(std::span<std::uint8_t> out);
+
+// Hard ceiling on the accepted chunk size (1 GiB): no override can raise the
+// cap past this.
+inline constexpr std::uint32_t kMaxChunkBytes = 1u << 30;
+// Default cap on the accepted chunk size (64 MiB) when DORADO_MAX_CHUNK_BYTES
+// is not set: far above the 64 KiB default chunk, far below an allocation bomb.
+inline constexpr std::uint32_t kDefaultMaxChunkBytes = 64u * 1024 * 1024;
+
+// The effective cap on an accepted chunk size: kDefaultMaxChunkBytes unless the
+// DORADO_MAX_CHUNK_BYTES env var overrides it. Any override is clamped into
+// (0, kMaxChunkBytes], so it can only tighten the bound, never weaken it past
+// the hard ceiling; unparseable values fall back to the default. The decrypt
+// paths bound the header's chunk size (and with it every frame's length) by
+// this before allocating and before deriving any key.
+std::uint32_t max_chunk_bytes();
+
+// Pure resolution of the chunk-size cap from an optional override string
+// (value in, cap out), so the clamping is unit-tested without env state.
+std::uint32_t chunk_cap_from(std::optional<std::string_view> override_opt);
 
 // --- streaming (constant memory) ---
 void encrypt_password_stream(const Options& opts, Span salt, Span tweak, Span iv, Span password,

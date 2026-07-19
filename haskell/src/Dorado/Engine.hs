@@ -19,6 +19,10 @@ module Dorado.Engine
   , decryptPasswordExpecting
   , ContainerInfo (..)
   , inspect
+  , defaultMaxChunkBytes
+  , hardMaxChunkBytes
+  , chunkCapFrom
+  , maxChunkBytes
   , rawCtr
   , variantFromKeyLen
   , encryptPasswordStream
@@ -128,11 +132,27 @@ encryptPassword password opts tweak plaintext = do
   iv <- getRandomBytes (TF.blockSize (optVariant opts))
   pure (encryptPasswordWith opts salt tweak iv password plaintext)
 
+-- | Bound an untrusted header's resource demands before deriving any key: the
+-- chunk size must be positive, a multiple of the block size, and at most
+-- @cap@, and the KDF cost parameters must pass 'Kdf.validate'. Without this a
+-- crafted header could demand gigabytes of memory or a multi-minute
+-- derivation before the (inevitable) authentication failure.
+checkHeaderBounds :: Word32 -> Header -> Either String ()
+checkHeaderBounds cap header = do
+  let cs = hChunkSize header
+  unless (cs /= 0 && cs <= cap && fromIntegral cs `mod` TF.blockSize (hVariant header) == (0 :: Int))
+    (Left ("invalid chunk size " ++ show cs ++ " in header"))
+  Kdf.validate (hKdf header)
+
 -- | Verify and decrypt a container. A wrong password, tampering, truncation, or a
--- malformed header all yield 'Left'.
+-- malformed header all yield 'Left'. The header's KDF costs and chunk size are
+-- bounded ('checkHeaderBounds') before any key is derived; this pure form uses
+-- the fixed 'defaultMaxChunkBytes' cap (only the streaming form, being in
+-- 'IO', can honor a @DORADO_MAX_CHUNK_BYTES@ tightening).
 decryptPassword :: ByteString -> ByteString -> Either String ByteString
 decryptPassword password container = do
   (header, rest) <- parseHeader container
+  checkHeaderBounds defaultMaxChunkBytes header
   let headerBytes = BS.take (BS.length container - BS.length rest) container
       variant = hVariant header
       keyLen = TF.keySize variant
@@ -301,6 +321,15 @@ validateRawAuthParams variant iv chunkSize
         )
   | otherwise = Right ()
 
+-- | Bound the accepted chunk size on the raw-authenticated decrypt paths (the
+-- encrypt path takes whatever the caller asked for, matching the Rust
+-- reference; decrypt is where an attacker-controlled stream would otherwise
+-- drive the allocation).
+checkRawChunkCap :: Word32 -> Word32 -> Either String ()
+checkRawChunkCap cap chunkSize =
+  unless (chunkSize <= cap)
+    (Left ("chunk size " ++ show chunkSize ++ " exceeds the accepted maximum"))
+
 -- | Encrypt with a caller-supplied raw key: encrypt-then-MAC, no password, no
 -- KDF (see 'splitRawKey'). Data is framed into fixed-size authenticated
 -- chunks, reusing the same frame construction as the password container
@@ -331,6 +360,10 @@ decryptRawAuthenticated
   :: TF.Variant -> ByteString -> ByteString -> ByteString -> Mac.Mac -> Word32 -> ByteString -> Either String ByteString
 decryptRawAuthenticated variant key tweak iv macv chunkSize dat = do
   validateRawAuthParams variant iv chunkSize
+  -- This pure form uses the fixed 'defaultMaxChunkBytes' cap; only the
+  -- streaming form, being in 'IO', can honor a DORADO_MAX_CHUNK_BYTES
+  -- tightening.
+  checkRawChunkCap defaultMaxChunkBytes chunkSize
   (encKey, macKey) <- splitRawKey variant key
   cts <- readRawFrames macv macKey tweak iv chunkSize dat
   let tf = TF.newThreefish variant encKey tweak
@@ -409,11 +442,14 @@ encryptPasswordStream opts salt tweak iv password hin hout = do
 decryptPasswordStream :: ByteString -> Maybe ByteString -> Handle -> Handle -> IO (Either String ())
 decryptPasswordStream password expect hin hout = do
   src <- newSrc hin
+  cap <- maxChunkBytes
   hr <- readHeaderSrc src
   case hr of
     Left e -> pure (Left e)
     Right (header, headerBytes)
       | maybe False (/= hLabel header) expect -> pure (Left "label mismatch")
+      -- Bound the untrusted header's chunk size and KDF cost before deriving.
+      | Left e <- checkHeaderBounds cap header -> pure (Left e)
       | otherwise ->
           frames src tf macKey (hMac header) headerBytes (hChunkSize header) bpc 0 (hIv header)
       where
@@ -511,8 +547,11 @@ encryptRawAuthenticatedStream variant key tweak iv macv chunkSize hin hout =
 -- untrusted.
 decryptRawAuthenticatedStream
   :: TF.Variant -> ByteString -> ByteString -> ByteString -> Mac.Mac -> Word32 -> Handle -> Handle -> IO (Either String ())
-decryptRawAuthenticatedStream variant key tweak iv macv chunkSize hin hout =
-  case validateRawAuthParams variant iv chunkSize >> splitRawKey variant key of
+decryptRawAuthenticatedStream variant key tweak iv macv chunkSize hin hout = do
+  cap <- maxChunkBytes
+  case validateRawAuthParams variant iv chunkSize
+         >> checkRawChunkCap cap chunkSize
+         >> splitRawKey variant key of
     Left e -> pure (Left e)
     Right (encKey, macKey) -> do
       src <- newSrc hin

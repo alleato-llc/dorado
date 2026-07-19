@@ -9,9 +9,9 @@ Like the Rust reference, it **streams** over a small Reader/Writer callback
 interface in constant memory (the CLIs wire it to `std.Io.File`), so inputs larger
 than RAM are fine; in-memory slice wrappers are provided. Zig's native `u64` with
 wrapping operators (`+%`) makes the Threefish ARX direct. Unlike the other ports,
-**no external library is needed**: the KDFs come from Zig's standard library
-(`std.crypto.pwhash` for Argon2id/scrypt/PBKDF2, `std.crypto.auth.hmac` for HMAC).
-Educational and unaudited; for real data prefer a vetted library.
+**no external library is needed**: the password KDFs come from Zig's standard
+library (`std.crypto.pwhash` for Argon2id/scrypt/PBKDF2, `std.crypto.auth.hmac`
+for HMAC). Educational and unaudited; for real data prefer a vetted library.
 
 ## Layout
 
@@ -19,8 +19,10 @@ Educational and unaudited; for real data prefer a vetted library.
   (Threefish 256/512/1024 + CTR, Skein-512, BLAKE3), verified against the same
   vectors as the Rust reference.
 - `src/format.zig`, `kdf.zig`, `mac.zig`, `engine.zig` — the construction: the
-  container header, the KDFs (Zig stdlib), the MAC menu, and the streaming password
-  container, raw CTR (bare and authenticated), and inspect. `engine.Error` is the error set for a bad
+  container header, the KDFs (the password KDFs from the Zig stdlib, plus the
+  fast key-based `deriveFromKey`/`deriveFromKeyWith` fan-out over the port's own
+  Skein-512/BLAKE3), the MAC menu, and the streaming password container, raw CTR
+  (bare and authenticated), and inspect. `engine.Error` is the error set for a bad
   container.
 - `src/root.zig` — the library module root (the SDK surface).
 - `src/cli_dorado.zig`, `src/cli_gyotaku.zig` — the two CLIs.
@@ -51,6 +53,13 @@ defer gpa.free(ct);
 const pt = try dorado.engine.decrypt(gpa, io, password, null, ct);
 defer gpa.free(pt);
 // or stream over Reader/Writer callbacks: encryptStream / decryptStream.
+
+// Fan an already high-entropy master key out into independent per-purpose
+// keys (fast, one keyed hash; never pass a password here -- that is the
+// password KDF's job):
+var index_key: [32]u8 = undefined;
+dorado.kdf.deriveFromKey(&master, "myapp/index", &index_key);
+// or pick the PRF: try dorado.kdf.deriveFromKeyWith(.blake3, &master, "myapp/data", &data_key);
 ```
 
 CLI:
@@ -59,6 +68,13 @@ CLI:
 ./zig-out/bin/dorado encrypt --password-stdin --in notes.txt --out notes.txt.mahi
 ./zig-out/bin/gyotaku --bits 256 notes.txt
 ```
+
+Raw-key mode (`--key`/`--key-file` plus `--iv`) is authenticated by default:
+encrypt-then-MAC in fixed-size chunks (`--mac` and `--chunk-kib` apply), so a
+tampered, corrupted, or wrong-key stream is rejected on decrypt. Add
+`--unauthenticated` for bare CTR with no authentication (output length equals
+input length exactly), a deliberate, expert opt-out; password mode is always
+authenticated and rejects the flag.
 
 ## Testing
 

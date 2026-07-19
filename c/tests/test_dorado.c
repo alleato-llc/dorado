@@ -18,6 +18,11 @@ uint32_t dorado_chunk_cap_from(const char *s);
 #define TEST_DEFAULT_MAX_CHUNK (64u * 1024 * 1024)
 #define TEST_HARD_MAX_CHUNK (1u << 30)
 
+/* Internal KDF cost-parameter validation, declared in the internal src/kdf.h (not
+ * a public header); declared here so the test can exercise it without -Isrc. Kept
+ * in sync with kdf.h. */
+const char *dorado_kdf_validate(const dorado_kdf_params *p);
+
 static int g_pass = 0, g_fail = 0;
 
 static int hv(int c) {
@@ -438,6 +443,128 @@ static void test_raw_authenticated_security(void) {
     free(back);
 }
 
+/* Key-based derivation (dorado_kdf_derive_from_key): known-answer vectors from
+ * docs/fixtures/derive-from-key.md, generated from the Rust reference
+ * (dorado-engine's kdf::derive_from_key_with). The construction is one
+ * domain-separated keyed hash: out = PRF(key, out_len, "DRDOkdrv" || domain).
+ * Library API only; nothing here touches the on-disk container format. */
+typedef struct {
+    const char *name;
+    int prf;
+    const char *key_hex;
+    const char *domain;
+    size_t out_len;
+    const char *out_hex;
+} derive_key_vector;
+
+static const derive_key_vector DERIVE_KEY_VECTORS[] = {
+    {"skein_32key_enc_32out", DORADO_KDF_PRF_SKEIN512,
+     "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f", "dorado/fixture/enc", 32,
+     "b638c503342dbd51bdfa8906b1cc6b18d7e54252b95e460c522ab3cd939802c6"},
+    {"skein_32key_mac_64out", DORADO_KDF_PRF_SKEIN512,
+     "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f", "dorado/fixture/mac", 64,
+     "6ae3f6f7518e9a4c8a7be8269deb848186beb64b5b43f0bafef81bce4b27d40e"
+     "f227e2064b941069cc6225cad0a39fcc22aba08fb87f3ba8aacdf4b70b100da6"},
+    {"skein_16key_enc_32out", DORADO_KDF_PRF_SKEIN512, "a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5", "dorado/fixture/enc", 32,
+     "3990e038c7235e62480afe99712203225194afb93910df4101447098e630d0e4"},
+    {"skein_32key_empty_domain_32out", DORADO_KDF_PRF_SKEIN512,
+     "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f", "", 32,
+     "5bba4214745b3932c1fc620c660b60a4058613ff2bd9d80224d472cd810f7a99"},
+    {"blake3_32key_enc_32out", DORADO_KDF_PRF_BLAKE3,
+     "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f", "dorado/fixture/enc", 32,
+     "8266bd0cfb0d73715aa841fe008c311a44d6b36e0aa01b94f13a90783fe62e1d"},
+    {"blake3_32key_mac_64out", DORADO_KDF_PRF_BLAKE3,
+     "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f", "dorado/fixture/mac", 64,
+     "ea38a1780192707518d15003262a66c245680a579762a7d863cc33078f2f6eaa"
+     "9a5086f70d00eb7c6cd12fdc7872e5a2023e63c28087631ce835d7e9c7264290"},
+};
+#define DERIVE_KEY_VECTOR_COUNT (sizeof DERIVE_KEY_VECTORS / sizeof DERIVE_KEY_VECTORS[0])
+
+static void test_derive_from_key_kat(void) {
+    for (size_t i = 0; i < DERIVE_KEY_VECTOR_COUNT; i++) {
+        const derive_key_vector *v = &DERIVE_KEY_VECTORS[i];
+        uint8_t key[64], out[64];
+        size_t key_len = unhex(v->key_hex, key);
+        char name[128];
+        const char *e = dorado_kdf_derive_from_key_with(v->prf, key, key_len, v->domain, out, v->out_len);
+        snprintf(name, sizeof name, "derive-from-key KAT %s", v->name);
+        check(!e && hash_eq(out, v->out_len, v->out_hex), name);
+        if (v->prf == DORADO_KDF_PRF_SKEIN512) {
+            /* The default, PRF-less form is defined as the Skein-512 case and
+             * must match the same vectors byte-for-byte. */
+            uint8_t out2[64];
+            e = dorado_kdf_derive_from_key(key, key_len, v->domain, out2, v->out_len);
+            snprintf(name, sizeof name, "derive-from-key KAT %s (default form)", v->name);
+            check(!e && memcmp(out2, out, v->out_len) == 0, name);
+        }
+    }
+}
+
+/* Determinism, domain separation, output-length binding, and the BLAKE3 key-length
+ * requirement, mirroring the Rust reference's kdf tests. */
+static void test_derive_from_key_properties(void) {
+    uint8_t master[32], other[32];
+    memset(master, 0x42, sizeof master);
+    memset(other, 0x43, sizeof other);
+
+    uint8_t a[32], b[32], c[32], d[32];
+    check(!dorado_kdf_derive_from_key(master, 32, "myapp/index", a, 32) &&
+              !dorado_kdf_derive_from_key(master, 32, "myapp/index", b, 32) && memcmp(a, b, 32) == 0,
+          "derive-from-key: same key + domain -> same bytes");
+    check(!dorado_kdf_derive_from_key(master, 32, "myapp/data", c, 32) && memcmp(a, c, 32) != 0,
+          "derive-from-key: different domain -> different key");
+    check(!dorado_kdf_derive_from_key(other, 32, "myapp/index", d, 32) && memcmp(a, d, 32) != 0,
+          "derive-from-key: different master -> different key");
+    check(memcmp(a, master, 32) != 0 && memcmp(c, master, 32) != 0, "derive-from-key: children never equal master");
+
+    /* Skein's output length is part of its config block, so a longer output is a
+     * different configuration, not a prefix extension of the shorter one. */
+    uint8_t longer[128];
+    check(!dorado_kdf_derive_from_key(master, 32, "myapp/index", longer, 128) && memcmp(a, longer, 32) != 0,
+          "derive-from-key: skein output length is bound, not a truncation");
+
+    /* BLAKE3 PRF: deterministic, domain separated, and an independent function
+     * from the Skein fan-out (same key/domain must not coincide). */
+    uint8_t ba[32], bb[32], bc[32];
+    check(!dorado_kdf_derive_from_key_with(DORADO_KDF_PRF_BLAKE3, master, 32, "myapp/index", ba, 32) &&
+              !dorado_kdf_derive_from_key_with(DORADO_KDF_PRF_BLAKE3, master, 32, "myapp/index", bb, 32) &&
+              memcmp(ba, bb, 32) == 0,
+          "derive-from-key blake3: same key + domain -> same bytes");
+    check(!dorado_kdf_derive_from_key_with(DORADO_KDF_PRF_BLAKE3, master, 32, "myapp/data", bc, 32) &&
+              memcmp(ba, bc, 32) != 0,
+          "derive-from-key blake3: different domain -> different key");
+    check(memcmp(ba, master, 32) != 0, "derive-from-key blake3: child never equals master");
+    check(memcmp(ba, a, 32) != 0, "derive-from-key: blake3 and skein fan-outs differ");
+
+    /* BLAKE3 is an XOF: a shorter output is the prefix of a longer one. */
+    uint8_t blong[128];
+    check(!dorado_kdf_derive_from_key_with(DORADO_KDF_PRF_BLAKE3, master, 32, "myapp/index", blong, 128) &&
+              memcmp(ba, blong, 32) == 0,
+          "derive-from-key blake3: XOF prefix property");
+
+    /* BLAKE3's keyed mode is defined only for a 32-byte key; other lengths are
+     * the params class. So is an unknown PRF. */
+    uint8_t out[32];
+    check(dorado_kdf_derive_from_key_with(DORADO_KDF_PRF_BLAKE3, master, 16, "myapp/index", out, 32) ==
+              dorado_err_params,
+          "derive-from-key blake3: non-32-byte key -> dorado_err_params");
+    check(dorado_kdf_derive_from_key_with(99, master, 32, "myapp/index", out, 32) == dorado_err_params,
+          "derive-from-key: unknown prf -> dorado_err_params");
+}
+
+/* KDF cost-parameter validation bounds (the pbkdf2 rounds bounds; the other knobs
+ * are exercised implicitly by decrypting crafted headers in the smash test). */
+static void test_kdf_validate(void) {
+    dorado_kdf_params ok = dorado_kdf_pbkdf2(600000);
+    check(dorado_kdf_validate(&ok) == NULL, "kdf validate: sane pbkdf2 rounds accepted");
+    /* Zero rounds would "derive" an all-zero key without error. */
+    dorado_kdf_params zero = dorado_kdf_pbkdf2(0);
+    check(dorado_kdf_validate(&zero) == dorado_err_params, "kdf validate: pbkdf2 rounds 0 -> dorado_err_params");
+    dorado_kdf_params huge = dorado_kdf_pbkdf2(0xffffffffu);
+    check(dorado_kdf_validate(&huge) == dorado_err_params,
+          "kdf validate: pbkdf2 rounds too large -> dorado_err_params");
+}
+
 static uint8_t *read_file(const char *path, size_t *len) {
     FILE *f = fopen(path, "rb");
     if (!f) return NULL;
@@ -578,6 +705,9 @@ int main(void) {
     test_raw_authenticated_kat();
     test_raw_authenticated_matrix();
     test_raw_authenticated_security();
+    test_derive_from_key_kat();
+    test_derive_from_key_properties();
+    test_kdf_validate();
     test_chunk_cap();
     test_smash();
     test_crosscompat();

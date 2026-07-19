@@ -43,4 +43,41 @@ is the master table.
   [docs/spec.md](../docs/spec.md)'s "Raw-key modes" section for the byte-level
   construction. Verified against all six known-answer vectors in
   `docs/fixtures/raw-authenticated.md` in both directions. Bare `raw_ctr_stream` is
-  unchanged and remains the default.
+  unchanged.
+- **Key-based KDF** (`dorado::kdf::derive_from_key` / `derive_from_key_with`): the fast
+  derivation form for an already high-entropy key, one domain-separated keyed hash
+  (`PRF(key, "DRDOkdrv" || domain)`), no salt and no cost parameters because there is
+  nothing to stretch. The PRF is selectable via `kdf::KdfPrf`: `Skein512` (the default,
+  any key length) or `Blake3` (requires a 32-byte key; other lengths are an error).
+  Built on the port's own from-scratch Skein-512/BLAKE3 (OpenSSL stays confined to the
+  password KDFs). The names are the guardrail: a password must never take the fast
+  path, a key never needs the slow one. Verified against all six known-answer vectors
+  in `docs/fixtures/derive-from-key.md`. See the [Core CHANGELOG](../CHANGELOG.md) for
+  the cross-port rationale.
+- **CLI raw-key mode is authenticated by default**: `dorado` with `--key`/`--key-file`
+  now uses the raw-authenticated construction (encrypt-then-MAC), so a tampered,
+  corrupted, or wrong-key stream is rejected on decrypt instead of silently producing
+  garbage; `--mac` and `--chunk-kib` apply to it. A new `--unauthenticated` flag opts
+  back into bare CTR (an expert opt-out), and is rejected in password mode, which is
+  always authenticated. Matches the Rust CLI's semantics; see the
+  [Core CHANGELOG](../CHANGELOG.md) for the cross-port rationale.
+
+### Fixed
+
+- **KDF cost validation on decrypt** (hardening catch-up: these bounds were previously
+  absent in this port, alone among the implementations): `dorado::kdf::validate` bounds
+  the cost parameters read from the untrusted file header before any key is derived
+  (Argon2id `m_cost` <= 2^21 KiB, `t_cost` <= 64, `p_cost` <= 16; scrypt `log_n` <= 21,
+  `r` <= 32, `p` <= 16; PBKDF2 `rounds` in [1, 50 000 000]), so a crafted file can no
+  longer demand gigabytes of memory or a multi-minute derivation (a denial of service).
+  Same limits as the Rust reference and the other ports. Wrong-password and tampering
+  stay merged into the one "authentication failed" error.
+- **Chunk-size cap on decrypt** (hardening catch-up, likewise previously absent in this
+  port): the header's chunk size, and with it every frame's `ct_len`, is bounded before
+  any allocation and before any key derivation, on both the password-container and
+  raw-authenticated decrypt paths. The accepted cap is 64 MiB by default
+  (`engine::kDefaultMaxChunkBytes`) with a 1 GiB hard ceiling (`engine::kMaxChunkBytes`);
+  the `DORADO_MAX_CHUNK_BYTES` env var override is clamped into (0, 1 GiB] so it can
+  only tighten the bound (`engine::max_chunk_bytes`, with the pure
+  `engine::chunk_cap_from` helper unit-tested without env state). Mirrors the Rust
+  reference's `MAX_CHUNK_BYTES` machinery.

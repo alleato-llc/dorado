@@ -1,6 +1,7 @@
 // dorado: password/raw-key encryption CLI. Password mode derives a key and writes
-// an authenticated container; raw-key mode is bare CTR. `inspect` prints the
-// non-secret header. Streams over file/std handles in constant memory.
+// an authenticated container; raw-key mode is authenticated (encrypt-then-MAC)
+// by default, with --unauthenticated opting back into bare CTR. `inspect` prints
+// the non-secret header. Streams over file/std handles in constant memory.
 #include <sys/mman.h>
 #include <unistd.h>
 
@@ -97,12 +98,19 @@ const char* kUsage =
     "Usage:\n"
     "  dorado encrypt --password-stdin --in <f> --out <f> [--kdf K --mac M --variant V\n"
     "                 --chunk-kib N --label L --tweak HEX + KDF cost flags]\n"
-    "  dorado encrypt --key HEX|--key-file F --iv HEX [--tweak HEX] --in <f> --out <f>\n"
+    "  dorado encrypt --key HEX|--key-file F --iv HEX [--tweak HEX --mac M --chunk-kib N\n"
+    "                 --unauthenticated] --in <f> --out <f>\n"
     "  dorado decrypt --password-stdin [--expect-label L] --in <f> --out <f>\n"
-    "  dorado decrypt --key HEX|--key-file F --iv HEX [--tweak HEX] --in <f> --out <f>\n"
+    "  dorado decrypt --key HEX|--key-file F --iv HEX [--tweak HEX --mac M --chunk-kib N\n"
+    "                 --unauthenticated] --in <f> --out <f>\n"
     "  dorado inspect --in <f>\n\n"
     "  --kdf argon2id|scrypt|pbkdf2   --mac skein|hmac-sha256|blake3   --variant 256|512|1024\n"
-    "  cost: --argon2-mem-mib --argon2-time --argon2-par --scrypt-logn --scrypt-r --scrypt-p --pbkdf2-rounds\n"
+    "  cost: --argon2-mem-mib --argon2-time --argon2-par --scrypt-logn --scrypt-r --scrypt-p --pbkdf2-rounds\n\n"
+    "Raw-key mode (--key/--key-file) is authenticated (encrypt-then-MAC) by default;\n"
+    "--mac and --chunk-kib select its MAC and chunk size. --unauthenticated opts back\n"
+    "into bare CTR (no container, no authentication: a corrupted or tampered byte\n"
+    "silently decrypts to a flipped plaintext byte), an expert opt-out. Password mode\n"
+    "is always authenticated.\n"
     "  -h, --help    -V, --version\n";
 
 int die(const std::string& m) {
@@ -190,6 +198,16 @@ std::optional<Bytes> parse_tweak(const Flags& f) {
   return t;
 }
 
+// Parse --mac (default skein). Shared by password mode and raw authenticated mode.
+std::optional<dorado::mac::Mac> parse_mac(const Flags& f) {
+  std::string m = f.get_or("--mac", "skein");
+  if (m == "skein") return dorado::mac::Mac::Skein512;
+  if (m == "hmac-sha256") return dorado::mac::Mac::HmacSha256;
+  if (m == "blake3") return dorado::mac::Mac::Blake3Keyed;
+  std::cerr << "dorado: unknown mac " << m << "\n";
+  return std::nullopt;
+}
+
 std::optional<Options> build_options(const Flags& f) {
   Options o;
   std::string var = f.get_or("--variant", "256");
@@ -198,11 +216,9 @@ std::optional<Options> build_options(const Flags& f) {
   else if (var == "1024") o.variant = dorado::Variant::TF1024;
   else { std::cerr << "dorado: unknown variant " << var << "\n"; return std::nullopt; }
 
-  std::string m = f.get_or("--mac", "skein");
-  if (m == "skein") o.mac = dorado::mac::Mac::Skein512;
-  else if (m == "hmac-sha256") o.mac = dorado::mac::Mac::HmacSha256;
-  else if (m == "blake3") o.mac = dorado::mac::Mac::Blake3Keyed;
-  else { std::cerr << "dorado: unknown mac " << m << "\n"; return std::nullopt; }
+  auto m = parse_mac(f);
+  if (!m) return std::nullopt;
+  o.mac = *m;
 
   std::string k = f.get_or("--kdf", "argon2id");
   if (k == "argon2id")
@@ -233,30 +249,14 @@ std::optional<Bytes> resolve_key(const Flags& f) {
   return std::nullopt;
 }
 
-int run_encrypt(const Flags& f) {
-  auto tweak = parse_tweak(f);
-  if (!tweak) return 1;
-  if (password_mode(f)) {
-    auto in_path = f.get("--in");
-    if (!in_path) return die("password mode needs --in (stdin carries the password)");
-    std::ifstream in(*in_path, std::ios::binary);
-    if (!in) return die("cannot open " + *in_path);
-    auto opts = build_options(f);
-    if (!opts) return 1;
-    SecureBuffer pw;
-    pw.read_all_from(std::cin);
-    pw.pop_trailing_newline();
-    Bytes salt(16), iv(block_size(opts->variant));
-    dorado::engine::random_bytes(salt);
-    dorado::engine::random_bytes(iv);
-    std::ofstream fout;
-    std::ostream* out = &std::cout;
-    if (auto p = f.get("--out")) { fout.open(*p, std::ios::binary); if (!fout) return die("cannot open " + *p); out = &fout; }
-    dorado::engine::encrypt_password_stream(*opts, salt, *tweak, iv, pw.span(), in, *out);
-    return 0;
-  }
+// Run raw-key mode in either direction. Encrypt-then-MAC (the default) is not
+// symmetric, so `decrypt_pass` selects the direction; bare CTR
+// (--unauthenticated) is symmetric and ignores it.
+int run_raw(const Flags& f, bool decrypt_pass) {
   auto key = resolve_key(f);
   if (!key) return 1;
+  auto tweak = parse_tweak(f);
+  if (!tweak) return 1;
   auto iv_hex = f.get("--iv");
   if (!iv_hex) return die("raw-key mode needs --iv");
   auto iv = parse_hex(*iv_hex);
@@ -267,45 +267,74 @@ int run_encrypt(const Flags& f) {
   std::ofstream fout;
   std::ostream* out = &std::cout;
   if (auto p = f.get("--out")) { fout.open(*p, std::ios::binary); if (!fout) return die("cannot open " + *p); out = &fout; }
-  auto r = dorado::engine::raw_ctr_stream(*key, *tweak, *iv, *in, *out);
+
+  if (f.has("--unauthenticated")) {
+    auto r = dorado::engine::raw_ctr_stream(*key, *tweak, *iv, *in, *out);
+    if (!r) return die(r.error());
+    return 0;
+  }
+  dorado::Variant v;
+  switch (key->size()) {
+    case 32: v = dorado::Variant::TF256; break;
+    case 64: v = dorado::Variant::TF512; break;
+    case 128: v = dorado::Variant::TF1024; break;
+    default: return die("key length must be 32, 64, or 128 bytes");
+  }
+  auto m = parse_mac(f);
+  if (!m) return 1;
+  std::uint32_t chunk = std::uint32_t(f.get_int("--chunk-kib", 64)) * 1024;
+  auto r = decrypt_pass
+               ? dorado::engine::decrypt_raw_authenticated_stream(v, *key, *tweak, *iv, *m,
+                                                                 chunk, *in, *out)
+               : dorado::engine::encrypt_raw_authenticated_stream(v, *key, *tweak, *iv, *m,
+                                                                 chunk, *in, *out);
   if (!r) return die(r.error());
   return 0;
 }
 
-int run_decrypt(const Flags& f) {
-  if (password_mode(f)) {
-    auto in_path = f.get("--in");
-    if (!in_path) return die("password mode needs --in (stdin carries the password)");
-    std::ifstream in(*in_path, std::ios::binary);
-    if (!in) return die("cannot open " + *in_path);
-    SecureBuffer pw;
-    pw.read_all_from(std::cin);
-    pw.pop_trailing_newline();
-    std::ofstream fout;
-    std::ostream* out = &std::cout;
-    if (auto p = f.get("--out")) { fout.open(*p, std::ios::binary); if (!fout) return die("cannot open " + *p); out = &fout; }
-    std::optional<Bytes> label;
-    std::optional<dorado::engine::Span> expect;
-    if (auto l = f.get("--expect-label")) { label = to_bytes(*l); expect = *label; }
-    auto r = dorado::engine::decrypt_password_stream(pw.span(), expect, in, *out);
-    if (!r) return die(r.error());
-    return 0;
-  }
-  auto key = resolve_key(f);
-  if (!key) return 1;
+int run_encrypt(const Flags& f) {
+  if (!password_mode(f)) return run_raw(f, false);
+  if (f.has("--unauthenticated"))
+    return die("--unauthenticated is not used in password mode, which is always authenticated");
   auto tweak = parse_tweak(f);
   if (!tweak) return 1;
-  auto iv_hex = f.get("--iv");
-  if (!iv_hex) return die("raw-key mode needs --iv");
-  auto iv = parse_hex(*iv_hex);
-  if (!iv) return die("invalid --iv hex");
-  std::ifstream fin;
-  std::istream* in = &std::cin;
-  if (auto p = f.get("--in")) { fin.open(*p, std::ios::binary); if (!fin) return die("cannot open " + *p); in = &fin; }
+  auto in_path = f.get("--in");
+  if (!in_path) return die("password mode needs --in (stdin carries the password)");
+  std::ifstream in(*in_path, std::ios::binary);
+  if (!in) return die("cannot open " + *in_path);
+  auto opts = build_options(f);
+  if (!opts) return 1;
+  SecureBuffer pw;
+  pw.read_all_from(std::cin);
+  pw.pop_trailing_newline();
+  Bytes salt(16), iv(block_size(opts->variant));
+  dorado::engine::random_bytes(salt);
+  dorado::engine::random_bytes(iv);
   std::ofstream fout;
   std::ostream* out = &std::cout;
   if (auto p = f.get("--out")) { fout.open(*p, std::ios::binary); if (!fout) return die("cannot open " + *p); out = &fout; }
-  auto r = dorado::engine::raw_ctr_stream(*key, *tweak, *iv, *in, *out);
+  dorado::engine::encrypt_password_stream(*opts, salt, *tweak, iv, pw.span(), in, *out);
+  return 0;
+}
+
+int run_decrypt(const Flags& f) {
+  if (!password_mode(f)) return run_raw(f, true);
+  if (f.has("--unauthenticated"))
+    return die("--unauthenticated is not used in password mode, which is always authenticated");
+  auto in_path = f.get("--in");
+  if (!in_path) return die("password mode needs --in (stdin carries the password)");
+  std::ifstream in(*in_path, std::ios::binary);
+  if (!in) return die("cannot open " + *in_path);
+  SecureBuffer pw;
+  pw.read_all_from(std::cin);
+  pw.pop_trailing_newline();
+  std::ofstream fout;
+  std::ostream* out = &std::cout;
+  if (auto p = f.get("--out")) { fout.open(*p, std::ios::binary); if (!fout) return die("cannot open " + *p); out = &fout; }
+  std::optional<Bytes> label;
+  std::optional<dorado::engine::Span> expect;
+  if (auto l = f.get("--expect-label")) { label = to_bytes(*l); expect = *label; }
+  auto r = dorado::engine::decrypt_password_stream(pw.span(), expect, in, *out);
   if (!r) return die(r.error());
   return 0;
 }

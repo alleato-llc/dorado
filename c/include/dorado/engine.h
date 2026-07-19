@@ -58,6 +58,38 @@ dorado_kdf_params dorado_kdf_argon2id(uint32_t m_cost_kib, uint32_t t_cost, uint
 dorado_kdf_params dorado_kdf_scrypt(uint8_t log_n, uint32_t r, uint32_t p);
 dorado_kdf_params dorado_kdf_pbkdf2(uint32_t rounds);
 
+/* PRFs for dorado_kdf_derive_from_key_with. Library API only, never stored on
+ * disk. Both are secure PRFs and yield equally strong children; the choice is
+ * about matching the surrounding cipher family (Skein for Threefish, BLAKE3 for
+ * a ChaCha-family cipher), not security. */
+enum {
+    DORADO_KDF_PRF_SKEIN512 = 1,
+    DORADO_KDF_PRF_BLAKE3 = 2,
+};
+
+/* Key-based derivation (the fast form): derive out_len bytes from an already
+ * high-entropy key, separated by the NUL-terminated UTF-8 domain string — one
+ * domain-separated Skein-512 keyed hash over "DRDOkdrv" || domain, no salt and
+ * no cost parameters, because a strong key has nothing to stretch.
+ * Deterministic: the same key and domain always yield the same bytes, and
+ * different domains yield computationally unrelated ones, so a caller can fan
+ * one master key out into independent per-purpose keys
+ * (dorado_kdf_derive_from_key(master, 32, "myapp/index", ..),
+ * ..."myapp/data"...). The names are the guardrail: a password must never take
+ * this fast path (there is no stretching, so a guessable input stays guessable
+ * — that is the password KDF's job), and a key never needs the slow one.
+ * Accepts a key of any length. Returns NULL on success. */
+const char *dorado_kdf_derive_from_key(const uint8_t *key, size_t key_len, const char *domain, uint8_t *out,
+                                       size_t out_len);
+/* dorado_kdf_derive_from_key with a caller-chosen PRF: DORADO_KDF_PRF_SKEIN512
+ * (any key length; byte-for-byte identical to dorado_kdf_derive_from_key) or
+ * DORADO_KDF_PRF_BLAKE3 (BLAKE3 keyed hash; key_len must be exactly 32 —
+ * BLAKE3's keyed mode is defined only for a 256-bit key — other lengths return
+ * dorado_err_params). The domain separation, determinism, and "never pass a
+ * password" contract are exactly the same; only the keyed hash changes. */
+const char *dorado_kdf_derive_from_key_with(int prf, const uint8_t *key, size_t key_len, const char *domain,
+                                            uint8_t *out, size_t out_len);
+
 typedef struct {
     int variant;
     dorado_kdf_params kdf;

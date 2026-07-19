@@ -162,7 +162,7 @@ func EncryptPasswordStream(password []byte, opts PasswordOptions, r io.Reader, w
 		return err
 	}
 
-	keymat, err := derive(opts.KDF, password, salt, v.KeyLen()+macKeyLen)
+	keymat, err := DeriveFromPassword(opts.KDF, password, salt, v.KeyLen()+macKeyLen)
 	if err != nil {
 		return err
 	}
@@ -250,7 +250,7 @@ func DecryptPasswordStreamExpecting(password, expectedLabel []byte, r io.Reader,
 		return err
 	}
 
-	keymat, err := derive(h.KDF, password, h.Salt, h.Variant.KeyLen()+macKeyLen)
+	keymat, err := DeriveFromPassword(h.KDF, password, h.Salt, h.Variant.KeyLen()+macKeyLen)
 	if err != nil {
 		return err
 	}

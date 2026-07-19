@@ -10,6 +10,18 @@ the master table.
 
 ### Added
 
+- `zig/src/kdf.zig`: key-based derivation (`deriveFromKey` / `deriveFromKeyWith`
+  with a `KdfPrf` enum: `.skein512`, the default, or `.blake3`), the fast
+  domain-separated fan-out of an already high-entropy key into independent
+  per-purpose children, alongside the existing password KDFs. One keyed hash
+  (`out = PRF(key, "DRDOkdrv" ++ domain)`), no salt, no cost parameters; built
+  on the port's own from-scratch Skein-512/BLAKE3, not `std.crypto`. The BLAKE3
+  PRF requires a 32-byte key (`error.BadKeyLength` otherwise). The names are
+  the guardrail: a password must never take the fast path, a key never needs
+  the slow one. Ports the Rust reference construction; see the
+  [Core CHANGELOG](../CHANGELOG.md) for the cross-port rationale. Verified
+  against the six cross-language known-answer vectors in
+  [docs/fixtures/derive-from-key.md](../docs/fixtures/derive-from-key.md).
 - `zig/src/engine.zig`: raw-key authenticated mode
   (`encryptRawAuthenticatedStream` / `decryptRawAuthenticatedStream` / the
   `encryptRawAuthenticated` / `decryptRawAuthenticated` slice wrappers),
@@ -20,7 +32,7 @@ the master table.
   the byte-level construction. Verified against the six cross-language
   known-answer vectors in
   [docs/fixtures/raw-authenticated.md](../docs/fixtures/raw-authenticated.md).
-  `rawCtrStream` (bare, unauthenticated) is unchanged and remains the default.
+  `rawCtrStream` (bare, unauthenticated) is unchanged and remains available.
 - CLI parity: `dorado` and `gyotaku` now support `--help`/`-h` (usage to stdout,
   exit 0) and `--version` (`<name> 0.1.0`); previously both printed the error-usage and
   `gyotaku --help` tried to open `--help` as a file. See [Core](../CHANGELOG.md).
@@ -30,6 +42,17 @@ the master table.
 
 ### Changed
 
+- `dorado` CLI: raw-key mode (`--key`/`--key-file`) is now authenticated by
+  default, streaming encrypt-then-MAC via the raw authenticated construction
+  (`--mac` and `--chunk-kib` apply to it), with a new `--unauthenticated` flag
+  opting back into bare CTR (confidentiality only, no tamper detection; a
+  deliberate, expert opt-out). `--unauthenticated` with a password is an error
+  (password mode is always authenticated). Mirrors the Rust CLI; see
+  [Core](../CHANGELOG.md).
+- `kdf.validate` also rejects `rounds == 0` for PBKDF2 (zero rounds would
+  "derive" an all-zero key without error), reported as `error.HostileCost` like
+  the other out-of-bounds header parameters, matching the Rust reference's
+  `InvalidParams` bound.
 - Applied the chunk-size cap policy (64 MiB default, 1 GiB hard ceiling); the
   `DORADO_MAX_CHUNK_BYTES` override is resolved at the CLI boundary, since the libc-free
   SDK module cannot call `getenv`. See [Core](../CHANGELOG.md). (The error set already

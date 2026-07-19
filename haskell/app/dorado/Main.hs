@@ -1,11 +1,15 @@
 -- | dorado: the password/raw-key encryption CLI. Password mode derives a key with
--- a KDF and writes an authenticated, self-describing container; raw-key mode is
--- bare, unauthenticated CTR. `inspect` prints a container's non-secret header.
+-- a KDF and writes an authenticated, self-describing container. Raw-key mode
+-- (--key/--key-file) is authenticated by default too (encrypt-then-MAC over
+-- caller-supplied key bytes; --mac and --chunk-kib apply); `--unauthenticated`
+-- opts back into bare CTR, a deliberate, expert opt-out with no tamper or
+-- corruption detection. `inspect` prints a container's non-secret header.
 -- Cross-compatible with the other ports' `dorado` CLIs.
 module Main (main) where
 
-import Control.Monad (unless)
+import Control.Monad (unless, when)
 import Data.Char (digitToInt, isHexDigit, isSpace)
+import Data.Word (Word32)
 import System.Environment (getArgs)
 import System.Exit (exitFailure)
 import System.IO
@@ -32,13 +36,21 @@ usageText =
     , "Usage:"
     , "  dorado encrypt --password-stdin --in <f> --out <f> [--kdf K --mac M --variant V"
     , "                 --chunk-kib N --label L --tweak HEX + KDF cost flags]"
-    , "  dorado encrypt --key HEX|--key-file F --iv HEX [--tweak HEX] --in <f> --out <f>"
+    , "  dorado encrypt --key HEX|--key-file F --iv HEX [--tweak HEX --mac M --chunk-kib N]"
+    , "                 [--unauthenticated] --in <f> --out <f>"
     , "  dorado decrypt --password-stdin [--expect-label L] --in <f> --out <f>"
-    , "  dorado decrypt --key HEX|--key-file F --iv HEX [--tweak HEX] --in <f> --out <f>"
+    , "  dorado decrypt --key HEX|--key-file F --iv HEX [--tweak HEX --mac M --chunk-kib N]"
+    , "                 [--unauthenticated] --in <f> --out <f>"
     , "  dorado inspect --in <f>"
     , ""
     , "  --kdf argon2id|scrypt|pbkdf2   --mac skein|hmac-sha256|blake3   --variant 256|512|1024"
     , "  cost: --argon2-mem-mib --argon2-time --argon2-par --scrypt-logn --scrypt-r --scrypt-p --pbkdf2-rounds"
+    , ""
+    , "Raw-key mode is authenticated by default (encrypt-then-MAC; --mac and --chunk-kib"
+    , "apply). --unauthenticated opts out to bare CTR: no tamper or corruption detection,"
+    , "a flipped ciphertext byte silently decrypts to a flipped plaintext byte. It is a"
+    , "deliberate, expert opt-out, and is not used in password mode, which is always"
+    , "authenticated."
     , "  -h, --help    -V, --version"
     ]
 
@@ -103,32 +115,55 @@ runEncrypt f = do
   tweak <- orDie (parseTweak (val f "--tweak"))
   if isPasswordMode f
     then do
+      rejectUnauthenticated f
       inP <- requireIn f
       password <- readPassword
-      opts <- orDie (buildOptions f)
+      chunkSize <- chunkBytesFlag f
+      opts <- orDie (buildOptions f chunkSize)
+      orDie (Kdf.validate (E.optKdf opts))
       salt <- E.randomBytes 16
       iv <- E.randomBytes (TF.blockSize (E.optVariant opts))
       withIn (Just inP) $ \hin -> withOut (val f "--out") $ \hout ->
         E.encryptPasswordStream opts salt tweak iv password hin hout
-    else do
-      (key, iv) <- rawKeyIv f
-      withIn (val f "--in") $ \hin -> withOut (val f "--out") $ \hout ->
-        E.rawCtrStream key tweak iv hin hout >>= orDie_
+    else runRaw f tweak False
 
 runDecrypt :: Flags -> IO ()
 runDecrypt f =
   if isPasswordMode f
     then do
+      rejectUnauthenticated f
       inP <- requireIn f
       password <- readPassword
       let expect = fmap C8.pack (val f "--expect-label")
       withIn (Just inP) $ \hin -> withOut (val f "--out") $ \hout ->
         E.decryptPasswordStream password expect hin hout >>= orDie_
     else do
-      (key, iv) <- rawKeyIv f
       tweak <- orDie (parseTweak (val f "--tweak"))
+      runRaw f tweak True
+
+-- Raw-key mode in either direction. Encrypt-then-MAC (the default) is not
+-- symmetric, so @decryptPass@ selects the direction; bare CTR
+-- (--unauthenticated) is symmetric and ignores it.
+runRaw :: Flags -> ByteString -> Bool -> IO ()
+runRaw f tweak decryptPass = do
+  (key, iv) <- rawKeyIv f
+  if has f "--unauthenticated"
+    then withIn (val f "--in") $ \hin -> withOut (val f "--out") $ \hout ->
+           E.rawCtrStream key tweak iv hin hout >>= orDie_
+    else do
+      variant <- orDie (E.variantFromKeyLen (BS.length key))
+      macv <- orDie (parseMacFlag f)
+      chunkSize <- chunkBytesFlag f
+      let go = if decryptPass then E.decryptRawAuthenticatedStream else E.encryptRawAuthenticatedStream
       withIn (val f "--in") $ \hin -> withOut (val f "--out") $ \hout ->
-        E.rawCtrStream key tweak iv hin hout >>= orDie_
+        go variant key tweak iv macv chunkSize hin hout >>= orDie_
+
+-- Password mode is always authenticated; the opt-out only means something in
+-- raw-key mode (mirroring the Rust CLI).
+rejectUnauthenticated :: Flags -> IO ()
+rejectUnauthenticated f =
+  when (has f "--unauthenticated") $
+    die "--unauthenticated is not used in password mode, which is always authenticated"
 
 -- In password mode, stdin carries the password, so the data must come from --in.
 requireIn :: Flags -> IO FilePath
@@ -165,18 +200,14 @@ runInspect f = do
 -- Options, keys, helpers
 -- ---------------------------------------------------------------------------
 
-buildOptions :: Flags -> Either String E.Options
-buildOptions f = do
+buildOptions :: Flags -> Word32 -> Either String E.Options
+buildOptions f chunkSize = do
   variant <- case maybe "256" id (val f "--variant") of
     "256" -> Right TF.TF256
     "512" -> Right TF.TF512
     "1024" -> Right TF.TF1024
     v -> Left ("unknown variant " ++ v)
-  mac <- case maybe "skein" id (val f "--mac") of
-    "skein" -> Right Mac.Skein512
-    "hmac-sha256" -> Right Mac.HmacSha256
-    "blake3" -> Right Mac.Blake3Keyed
-    m -> Left ("unknown mac " ++ m)
+  mac <- parseMacFlag f
   kdf <- case maybe "argon2id" id (val f "--kdf") of
     "argon2id" -> Right (Kdf.Argon2id (intFlag f "--argon2-mem-mib" 64 * 1024)
                                       (intFlag f "--argon2-time" 3)
@@ -191,9 +222,30 @@ buildOptions f = do
       { E.optVariant = variant
       , E.optKdf = kdf
       , E.optMac = mac
-      , E.optChunkSize = intFlag f "--chunk-kib" 64 * 1024
+      , E.optChunkSize = chunkSize
       , E.optLabel = maybe BS.empty C8.pack (val f "--label")
       }
+
+parseMacFlag :: Flags -> Either String Mac.Mac
+parseMacFlag f = case maybe "skein" id (val f "--mac") of
+  "skein" -> Right Mac.Skein512
+  "hmac-sha256" -> Right Mac.HmacSha256
+  "blake3" -> Right Mac.Blake3Keyed
+  m -> Left ("unknown mac " ++ m)
+
+-- Resolve --chunk-kib (default 64) to bytes, bounded by the accepted cap
+-- (mirroring the Rust CLI, so encryption cannot produce a file the decrypt
+-- path would refuse).
+chunkBytesFlag :: Flags -> IO Word32
+chunkBytesFlag f = do
+  cap <- E.maxChunkBytes
+  kib <- case val f "--chunk-kib" of
+    Nothing -> pure 64
+    Just s -> maybe (die ("invalid --chunk-kib " ++ s)) pure (readMaybeInt s)
+  let bytes = kib * 1024
+  when (bytes < 1 || bytes > toInteger cap) $
+    die ("--chunk-kib must be between 1 and " ++ show (toInteger cap `div` 1024))
+  pure (fromInteger bytes)
 
 intFlag :: Num a => Flags -> String -> a -> a
 intFlag f name def = case val f name >>= readMaybeInt of

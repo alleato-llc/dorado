@@ -17,7 +17,10 @@ data prefer a vetted library.
   the from-scratch primitives (Threefish 256/512/1024 + CTR, Skein-512, BLAKE3),
   verified against the same vectors as the Rust reference.
 - `src/main/java/com/alleato/dorado/engine/` — the construction: `Format` (the
-  container header), `Kdf` (Argon2id, scrypt, PBKDF2 via Bouncy Castle), `Mac` (the
+  container header), `Kdf` (both forms of key derivation: `deriveFromPassword`, the
+  slow password stretch via Bouncy Castle's Argon2id/scrypt/PBKDF2, and
+  `deriveFromKey`/`deriveFromKeyWith`, the fast domain-separated fan-out of an
+  already-strong key using the from-scratch Skein-512 or BLAKE3), `Mac` (the
   MAC menu; HMAC-SHA256 from the JDK), and `Engine` (the streaming password
   container, raw CTR (bare and authenticated), and inspect). `DoradoException` marks a bad or
   failed-authentication container.
@@ -47,6 +50,10 @@ byte[] recovered = Engine.decryptPassword(password, container);
 // Or stream in constant memory:
 Engine.encryptPasswordStream(password, opts, inputStream, outputStream);
 Engine.decryptPasswordStream(password, inputStream, outputStream);
+
+// Fan an already-strong key out into per-purpose subkeys (fast, no stretching;
+// never pass a password here, that is deriveFromPassword's job):
+byte[] indexKey = com.alleato.dorado.engine.Kdf.deriveFromKey(masterKey, "myapp/index", 32);
 ```
 
 ## Testing

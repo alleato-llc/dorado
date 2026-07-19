@@ -15,9 +15,13 @@ Module path: `github.com/alleato-llc/dorado/go`. Educational and unaudited.
 - `skein/`, `blake3/` — the hashers, implementing `hash.Hash`. BLAKE3 uses the
   streaming chunk-stack algorithm and is differential-tested against
   `lukechampine.com/blake3`.
-- `engine/` — the construction: KDFs (`golang.org/x/crypto` argon2/scrypt, stdlib
-  pbkdf2), the chunked authenticated container over `io.Reader`/`io.Writer`, the
-  MAC menu, v4 label binding, raw CTR (bare and authenticated), and inspect.
+- `engine/` — the construction: both standard forms of key derivation
+  (`DeriveFromPassword`, the slow password stretch over `golang.org/x/crypto`
+  argon2/scrypt and stdlib pbkdf2, and `DeriveFromKey`/`DeriveFromKeyWith`, the
+  fast domain-separated fan-out of an already-strong key, Skein-512 by default or
+  keyed BLAKE3 via `KDFPrf`), the chunked authenticated container over
+  `io.Reader`/`io.Writer`, the MAC menu, v4 label binding, raw CTR (bare and
+  authenticated), and inspect.
 - `cmd/dorado`, `cmd/gyotaku` — the two CLIs.
 
 ## Build
@@ -48,6 +52,14 @@ CLI:
 ./dorado encrypt --password-stdin --in notes.txt --out notes.txt.mahi
 ./gyotaku --bits 256 notes.txt
 ```
+
+Raw-key mode (`--key`/`--key-file` with `--iv`) is authenticated by default,
+matching the Rust CLI: encrypt-then-MAC output (larger than the input by the
+per-chunk framing and tag; `--mac` and `--chunk-kib` apply), rejected on decrypt
+if tampered, corrupted, or decrypted with the wrong key. `--unauthenticated`
+opts back into bare CTR (output length exactly equals input length, no tamper
+detection), an expert opt-out for interop and composition. Password mode is
+always authenticated and rejects the flag.
 
 ## Testing
 

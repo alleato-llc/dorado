@@ -1,5 +1,14 @@
 //! The dorado CLI: encrypt/decrypt/inspect, raw-key and password modes, streaming
 //! over std.Io.File. A port of the Rust/Go CLIs (no GUI).
+//!
+//! Both key modes are authenticated (encrypt-then-MAC) by default: password mode
+//! always, and raw-key mode (--key/--key-file) via the raw authenticated
+//! construction, so a tampered, corrupted, or wrong-key stream is rejected on
+//! decrypt rather than silently producing garbage. --unauthenticated opts raw-key
+//! mode back into bare CTR (no container, no authentication, output length equals
+//! input length exactly) -- a deliberate, expert opt-out, not the default, since
+//! a corrupted or tampered byte in that mode silently decrypts to a flipped
+//! plaintext byte with no error of any kind.
 
 const std = @import("std");
 const dorado = @import("dorado");
@@ -43,7 +52,8 @@ const VERSION = "0.1.0";
 
 const USAGE =
     \\dorado 0.1.0
-    \\Threefish in CTR mode (educational, unaudited).
+    \\Threefish in CTR mode, authenticated (encrypt-then-MAC) by default
+    \\(educational, unaudited).
     \\
     \\Usage: dorado <encrypt|decrypt|inspect> [flags]
     \\
@@ -60,11 +70,19 @@ const USAGE =
     \\
     \\Common flags:
     \\  --iv <hex>            IV for raw-key mode (must match the block size).
+    \\  --unauthenticated    Opt out of authentication for raw-key mode, falling
+    \\                       back to bare CTR: confidentiality only, no tamper or
+    \\                       corruption detection (a flipped ciphertext byte
+    \\                       silently flips a plaintext byte). A deliberate,
+    \\                       expert opt-out; not used in password mode, which is
+    \\                       always authenticated.
     \\  --tweak <hex>         16-byte tweak (default all zero).
     \\  --variant <256|512|1024>   Threefish variant for password mode (default 256).
     \\  --kdf <argon2id|scrypt|pbkdf2>   KDF for password mode (default argon2id).
-    \\  --mac <skein|hmac-sha256|blake3> Container MAC (default skein).
-    \\  --chunk-kib <n>      Chunk size in KiB (default 64).
+    \\  --mac <skein|hmac-sha256|blake3> MAC for password mode, or for raw-key
+    \\                       mode unless --unauthenticated (default skein).
+    \\  --chunk-kib <n>      Authenticated chunk size in KiB, for password mode and
+    \\                       raw-key mode unless --unauthenticated (default 64).
     \\  --label <text>       Bind a non-secret label into the container.
     \\  --expect-label <text>   Require this label when decrypting.
     \\  --in <path>          Input file (default stdin).
@@ -103,6 +121,7 @@ const Args = struct {
     tweak: []const u8 = "00000000000000000000000000000000",
     password: bool = false,
     password_stdin: bool = false,
+    unauthenticated: bool = false,
     variant: []const u8 = "256",
     kdf: []const u8 = "argon2id",
     mac: []const u8 = "skein",
@@ -192,6 +211,8 @@ pub fn main(init: std.process.Init) !void {
             args.password = true;
         } else if (std.mem.eql(u8, arg, "--password-stdin")) {
             args.password_stdin = true;
+        } else if (std.mem.eql(u8, arg, "--unauthenticated")) {
+            args.unauthenticated = true;
         } else if (std.mem.eql(u8, arg, "--variant")) {
             args.variant = nextArg(&i, argv);
         } else if (std.mem.eql(u8, arg, "--kdf")) {
@@ -287,11 +308,25 @@ fn crypt(a: std.mem.Allocator, io: std.Io, args: *const Args, enc: bool, r: engi
         var iv: [128]u8 = undefined;
         const iv_len = parseHex(128, args.iv.?, &iv) catch die("invalid iv hex", .{});
         if (iv_len != variant.keyLen()) die("--iv length must match the variant block size", .{});
-        engine.rawCtrStream(variant, key[0..key_len], &tweak_buf, iv[0..iv_len], a, r, w) catch |e| die("{s}", .{@errorName(e)});
+        if (args.unauthenticated) {
+            // The explicit opt-out: bare CTR, symmetric, no tamper detection.
+            engine.rawCtrStream(variant, key[0..key_len], &tweak_buf, iv[0..iv_len], a, r, w) catch |e| die("{s}", .{@errorName(e)});
+            return;
+        }
+        // The default: encrypt-then-MAC over the caller's key (the raw
+        // authenticated construction), honoring --mac and --chunk-kib.
+        const mac_id = macOf(args.mac);
+        const chunk_size = args.chunk_kib * 1024;
+        if (enc) {
+            engine.encryptRawAuthenticatedStream(variant, key[0..key_len], &tweak_buf, iv[0..iv_len], mac_id, chunk_size, a, r, w) catch |e| die("{s}", .{@errorName(e)});
+        } else {
+            engine.decryptRawAuthenticatedStream(variant, key[0..key_len], &tweak_buf, iv[0..iv_len], mac_id, chunk_size, a, r, w) catch |e| die("{s}", .{@errorName(e)});
+        }
         return;
     }
 
     if (args.iv != null) die("--iv is not used in password mode; the IV is generated and stored", .{});
+    if (args.unauthenticated) die("--unauthenticated is not used in password mode, which is always authenticated", .{});
     if (args.password_stdin and args.in_path == null) die("with --password-stdin, pass the data via --in", .{});
 
     // Hold the password in a page-aligned, mlock'd buffer (kept out of swap), wiped

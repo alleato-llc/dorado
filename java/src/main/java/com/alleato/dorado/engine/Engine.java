@@ -127,7 +127,7 @@ public final class Engine {
         RNG.nextBytes(salt);
         RNG.nextBytes(iv);
 
-        byte[] keymat = Kdf.derive(opts.kdf, password, salt, Format.keyLen(v) + Format.MAC_KEY_LEN);
+        byte[] keymat = Kdf.deriveFromPassword(opts.kdf, password, salt, Format.keyLen(v) + Format.MAC_KEY_LEN);
         byte[] encKey = Arrays.copyOfRange(keymat, 0, Format.keyLen(v));
         byte[] macKey = Arrays.copyOfRange(keymat, Format.keyLen(v), keymat.length);
 
@@ -225,7 +225,7 @@ public final class Engine {
         }
         Kdf.validate(h.kdf);
 
-        byte[] keymat = Kdf.derive(h.kdf, password, h.salt, Format.keyLen(h.variant) + Format.MAC_KEY_LEN);
+        byte[] keymat = Kdf.deriveFromPassword(h.kdf, password, h.salt, Format.keyLen(h.variant) + Format.MAC_KEY_LEN);
         byte[] encKey = Arrays.copyOfRange(keymat, 0, Format.keyLen(h.variant));
         byte[] macKey = Arrays.copyOfRange(keymat, Format.keyLen(h.variant), keymat.length);
 

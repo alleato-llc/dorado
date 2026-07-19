@@ -20,9 +20,11 @@ the three password KDFs (Argon2id, scrypt, PBKDF2) are delegated, to OpenSSL's
 - `src/threefish.cpp`, `skein.cpp`, `blake3.cpp`, `sha256.cpp` — the from-scratch
   primitives (incremental Skein/BLAKE3 hashers included for streaming).
 - `src/mac.cpp`, `kdf.cpp`, `format.cpp`, `engine.cpp` — the construction: the MAC
-  menu, the OpenSSL-delegated KDFs, the container header, and the streaming password
-  container, raw CTR (bare and authenticated), and inspect. Engine results are `std::expected<T, std::string>`;
-  the KDF layer throws `std::runtime_error`.
+  menu, the KDF layer (the OpenSSL-delegated password KDFs plus the from-scratch
+  key-based `derive_from_key`, with `kdf::validate` bounding untrusted costs), the
+  container header, and the streaming password container, raw CTR (bare and
+  authenticated), and inspect. Engine results are `std::expected<T, std::string>`;
+  the password-KDF `derive` throws `std::runtime_error` on an OpenSSL failure.
 - `src/cli_dorado.cpp`, `src/cli_gyotaku.cpp` — the two CLIs.
 
 ## Build
@@ -55,7 +57,18 @@ std::expected<std::vector<std::uint8_t>, std::string> pt =
 
 // or stream in constant memory:
 engine::encrypt_password_stream(opts, salt, tweak, iv, password, in, out);
+
+// Fan an already high-entropy key out into independent per-purpose subkeys
+// (fast, one keyed hash, no stretching -- never pass a password here):
+std::vector<std::uint8_t> sub = kdf::derive_from_key(master, "myapp/index", 32);
+// or pick the PRF (Skein-512 is the default; BLAKE3 needs a 32-byte key):
+auto sub2 = kdf::derive_from_key_with(kdf::KdfPrf::Blake3, master, "myapp/index", 32);
 ```
+
+Decryption treats the file header as untrusted: the KDF cost parameters are bounded
+(`kdf::validate`) before any derivation, and the chunk size is capped before any
+allocation: 64 MiB by default, 1 GiB hard ceiling, with the `DORADO_MAX_CHUNK_BYTES`
+env var able only to tighten the cap (`engine::max_chunk_bytes`).
 
 CLI:
 
@@ -63,6 +76,12 @@ CLI:
 dorado encrypt --password-stdin --in notes.txt --out notes.txt.mahi
 gyotaku --bits 256 notes.txt
 ```
+
+Raw-key mode (`--key`/`--key-file` with `--iv`) is authenticated (encrypt-then-MAC)
+by default, so a tampered, corrupted, or wrong-key stream is rejected on decrypt;
+`--mac` and `--chunk-kib` select its MAC and chunk size. `--unauthenticated` opts
+back into bare CTR (no authentication, output length equals input length), an expert
+opt-out. Password mode is always authenticated, and rejects `--unauthenticated`.
 
 ## Testing
 
@@ -74,8 +93,11 @@ The suite covers the primitive KATs (the Crypto++ Threefish vectors, RFC 8439/FI
 SHA-256, RFC 4231 HMAC, RFC 7914 scrypt, PBKDF2), every MAC and variant, the
 incremental hashers, and cross-compat fixtures produced by the Rust CLI (every
 KDF/MAC/variant plus a labeled and a multi-frame file), with wrong-password and
-tamper rejection and round-trips across variants/MACs/chunk sizes/empty input. The
-test runs from the source dir so the committed fixtures resolve.
+tamper rejection and round-trips across variants/MACs/chunk sizes/empty input. It
+also covers the untrusted-header bounds (hostile KDF costs and chunk sizes rejected
+before any derivation or allocation, plus the pure chunk-cap resolution) and the
+`derive_from_key` known-answer vectors from `../docs/fixtures/derive-from-key.md`.
+The test runs from the source dir so the committed fixtures resolve.
 
 ## Cross-compatibility
 

@@ -20,14 +20,25 @@ vetted library.
   verified against the same vectors as the Rust reference. Unlike the other ports,
   SHA-256/HMAC-SHA256 are also implemented from scratch here rather than taken from a
   standard library.
-- `src/Dorado/Kdf.hs`, `Mac.hs`, `Format.hs`, `Engine.hs` — the construction: the KDFs
-  (delegated to `crypton`), the MAC menu, the v4 container header, and the streaming
-  password container, raw CTR (bare and authenticated), inspect, and label binding. The engine returns
-  `Either String` for malformed/auth failures.
+- `src/Dorado/Kdf.hs`, `Mac.hs`, `Format.hs`, `Engine.hs` — the construction: key
+  derivation in both standard forms (the password KDFs delegated to `crypton`, with
+  `validate` bounding untrusted cost parameters; the fast key-based
+  `deriveFromKey`/`deriveFromKeyWith` fan-out built on the port's own Skein-512 and
+  BLAKE3), the MAC menu, the v4 container header and the chunk-size cap, and the
+  streaming password container, raw CTR (bare and authenticated), inspect, and label
+  binding. The engine returns `Either String` for malformed/auth failures.
 - `app/dorado/`, `app/gyotaku/` — the two CLIs.
 
-The cipher and the Skein/BLAKE3/SHA-256 hashes are from scratch; only the KDFs are a
-dependency (`crypton`), matching the other ports' use of a KDF library.
+The cipher and the Skein/BLAKE3/SHA-256 hashes are from scratch; only the password
+KDFs are a dependency (`crypton`), matching the other ports' use of a KDF library.
+
+Decryption treats the container header as untrusted input: the KDF cost parameters
+are bounded (`Dorado.Kdf.validate`) and the chunk size is capped (64 MiB by default,
+1 GiB hard ceiling) before any allocation or key derivation, so a crafted file
+cannot demand gigabytes of memory or a multi-minute derivation. The
+`DORADO_MAX_CHUNK_BYTES` environment variable can tighten the cap, never raise it
+past the ceiling; the pure in-memory decrypt functions use the fixed 64 MiB default
+(only the streaming `IO` forms can read the environment).
 
 ## Build
 
@@ -52,14 +63,26 @@ let recovered = E.decryptPassword password container           -- Either String 
 -- or stream over Handles in constant memory:
 --   E.encryptPasswordStream opts salt tweak iv password hIn hOut
 --   E.decryptPasswordStream password expectedLabel hIn hOut
+
+-- fan an already-strong key out into independent per-purpose subkeys
+-- (fast, deterministic; never pass a password here, it is not stretched):
+import qualified Dorado.Kdf as Kdf
+let indexKey = Kdf.deriveFromKey master "myapp/index" 32
 ```
 
 CLI:
 
 ```
 cabal run dorado -- encrypt --password-stdin --in notes.txt --out notes.txt.mahi
+cabal run dorado -- encrypt --key <hex> --iv <hex> --in notes.txt --out notes.txt.enc
 cabal run gyotaku -- --bits 256 notes.txt
 ```
+
+Raw-key mode (`--key`/`--key-file`) is authenticated by default: encrypt-then-MAC,
+with `--mac` and `--chunk-kib` applying, so a tampered, corrupted, or wrong-key
+stream is rejected on decrypt. Pass `--unauthenticated` for bare CTR (output length
+equals input length, no tamper or corruption detection), a deliberate, expert
+opt-out. Password mode is always authenticated.
 
 ## Testing
 

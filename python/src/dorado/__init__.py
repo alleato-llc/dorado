@@ -26,6 +26,7 @@ from .engine import (
     raw_ctr_stream,
 )
 from .errors import AuthError, DoradoError, InvalidParams, MalformedContainer
+from .kdf import KdfPrf, derive_from_key, derive_from_key_with, derive_from_password
 from .format import (
     KDF_ARGON2ID,
     KDF_PBKDF2,
@@ -63,6 +64,10 @@ __all__ = [
     "encrypt_raw_authenticated_stream",
     "decrypt_raw_authenticated_stream",
     "inspect_stream",
+    "KdfPrf",
+    "derive_from_password",
+    "derive_from_key",
+    "derive_from_key_with",
     "T256",
     "T512",
     "T1024",

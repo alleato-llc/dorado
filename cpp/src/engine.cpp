@@ -4,6 +4,9 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
+#include <charconv>
+#include <cstdlib>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
@@ -156,6 +159,22 @@ void random_bytes(std::span<std::uint8_t> out) {
   if (RAND_bytes(out.data(), int(out.size())) != 1) throw std::runtime_error("RAND_bytes failed");
 }
 
+std::uint32_t max_chunk_bytes() {
+  const char* s = std::getenv("DORADO_MAX_CHUNK_BYTES");
+  return chunk_cap_from(s ? std::optional<std::string_view>(s) : std::nullopt);
+}
+
+std::uint32_t chunk_cap_from(std::optional<std::string_view> override_opt) {
+  if (!override_opt) return kDefaultMaxChunkBytes;
+  std::string_view s = *override_opt;
+  while (!s.empty() && std::isspace(static_cast<unsigned char>(s.front()))) s.remove_prefix(1);
+  while (!s.empty() && std::isspace(static_cast<unsigned char>(s.back()))) s.remove_suffix(1);
+  std::uint32_t v = 0;
+  auto [end, ec] = std::from_chars(s.data(), s.data() + s.size(), v);
+  if (ec != std::errc() || end != s.data() + s.size()) return kDefaultMaxChunkBytes;
+  return std::clamp(v, std::uint32_t(1), kMaxChunkBytes);
+}
+
 void encrypt_password_stream(const Options& opts, Span salt, Span tweak, Span iv, Span password,
                              std::istream& in, std::ostream& out) {
   int key_len = key_size(opts.variant);
@@ -226,6 +245,17 @@ Result<void> decrypt_password_stream(Span password, std::optional<Span> expect, 
 
   if (expect && !std::equal(expect->begin(), expect->end(), header.label.begin(), header.label.end()))
     return std::unexpected("label mismatch");
+
+  // Bound the header's chunk size (which bounds every frame allocation) and the
+  // KDF cost before deriving any key: both come from an untrusted header, so
+  // without these a crafted file could demand a huge allocation or a
+  // multi-minute, multi-gigabyte derivation (a denial of service).
+  int bs = block_size(header.variant);
+  if (header.chunk_size == 0 || header.chunk_size > max_chunk_bytes() ||
+      header.chunk_size % std::uint32_t(bs) != 0)
+    return std::unexpected("invalid chunk size " + std::to_string(header.chunk_size) +
+                           " in header");
+  if (auto v = kdf::validate(header.kdf); !v) return std::unexpected(v.error());
 
   int key_len = key_size(header.variant);
   Keys keys = derive_keys(header.kdf, password, header.salt, key_len);
@@ -341,6 +371,11 @@ Result<void> decrypt_raw_authenticated_stream(Variant variant, Span key, Span tw
                                               mac::Mac m, std::uint32_t chunk_size,
                                               std::istream& in, std::ostream& out) {
   if (auto v = validate_raw_auth_params(variant, iv, chunk_size); !v) return std::unexpected(v.error());
+  // Bound the chunk size (which bounds every frame allocation) before deriving
+  // any key; on decrypt it may be relayed from an untrusted source.
+  if (chunk_size > max_chunk_bytes())
+    return std::unexpected("chunk size " + std::to_string(chunk_size) +
+                           " exceeds the accepted maximum");
   auto keys_r = split_raw_key(variant, key);
   if (!keys_r) return std::unexpected(keys_r.error());
   Keys keys = std::move(*keys_r);

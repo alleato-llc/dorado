@@ -23,6 +23,22 @@ This changelog starts in 2026-06; for earlier history see the git log.
 
 ### Added
 
+- **Both standard forms of key derivation are now public API in every port**, a
+  cross-port decision recorded here. Each port exposes the slow password
+  stretch (`derive_from_password` in its per-language spelling) and the fast
+  key-based fan-out (`derive_from_key`: one keyed hash over the fixed
+  `DRDOkdrv` domain prefix plus a caller domain string, splitting an already
+  high-entropy key into independent per-purpose children, with a selectable
+  PRF, Skein-512 by default or BLAKE3 keyed, the latter requiring a 32-byte
+  key). The parallel names are the guardrail: a password must never take the
+  fast path (nothing stretches it), a key never needs the slow one. The
+  feature originated in Rust (see [`rust/CHANGELOG.md`](rust/CHANGELOG.md)
+  for the rationale and its first consumer) and is now ported to all nine
+  code ports with idiomatic naming; every port verifies the six shared
+  known-answer vectors in
+  [`docs/fixtures/derive-from-key.md`](docs/fixtures/derive-from-key.md),
+  generated from and pinned by the Rust reference. Library API only: the
+  on-disk container format is untouched.
 - **Raw-key mode gains an authenticated construction** (encrypt-then-MAC), a
   cross-port decision recorded here and being ported to every language
   (Rust is the reference; see [`rust/CHANGELOG.md`](rust/CHANGELOG.md) for the
@@ -124,6 +140,31 @@ This changelog starts in 2026-06; for earlier history see the git log.
   [`cpp/CHANGELOG.md`](cpp/CHANGELOG.md).
 
 ### Changed
+
+- **The raw-key CLI default is now uniform across every port**: all eight
+  CLI-bearing ports (Rust, Go, TS/Node, Python, C, Zig, Haskell, C++; Java is
+  SDK-only by design) encrypt and decrypt `--key`/`--key-file` mode
+  authenticated by default, with the same `--unauthenticated` opt-out to bare
+  CTR and the same rejection of that flag in password mode. This completes
+  the rollout of the CLI-default decision recorded under the raw-key
+  authenticated entry above, which initially shipped in the Rust CLI only.
+  Per-port details and breakage notes are in each port's changelog.
+
+### Fixed
+
+- **PBKDF2 `rounds: 0` is now rejected as invalid parameters in every port**
+  (the fix first landed in Rust). Zero rounds would "derive" an all-zero key
+  without error; decryption already failed authentication in that case, so
+  this closes an oddity, not a vulnerability.
+- **Haskell and C++ caught up to the untrusted-header hardening policy** the
+  other seven implementations already followed: both were missing KDF cost
+  validation entirely (a crafted header could demand gigabytes of Argon2
+  memory or a multi-minute derivation) and the accepted-chunk-size cap with
+  its `DORADO_MAX_CHUNK_BYTES` override (64 MiB default, 1 GiB hard ceiling,
+  the knob can only tighten). Both now bound headers identically to the other
+  ports, before any key derivation. Details in
+  [`haskell/CHANGELOG.md`](haskell/CHANGELOG.md) and
+  [`cpp/CHANGELOG.md`](cpp/CHANGELOG.md).
 
 - CI (`.github/workflows/ci.yml`) gains soroban-style hardening: a least-privilege
   top-level `permissions: contents: read` (the RustSec audit job widens its own token to

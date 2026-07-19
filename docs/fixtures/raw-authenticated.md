@@ -1,8 +1,9 @@
 # Raw-key authenticated mode: cross-language known-answer vectors
 
-Generated from the Rust reference implementation (`dorado-cli`,
-`--authenticated`), which is the baseline for these vectors per the top-level
-`CLAUDE.md`. Every other port's test suite should hardcode these as
+Generated from the Rust reference implementation (`dorado-cli`; raw-key mode
+is authenticated by default, these vectors were generated when the mode was
+still behind an `--authenticated` opt-in flag), which is the baseline for
+these vectors per the top-level `CLAUDE.md`. Every other port's test suite should hardcode these as
 known-answer tests: derive the subkeys, encrypt the given plaintext with the
 given key/tweak/iv/mac/chunk_size, and confirm the ciphertext matches
 byte-for-byte; then decrypt the given ciphertext and confirm the plaintext
@@ -16,9 +17,12 @@ The construction itself is specified in [`../spec.md`](../spec.md) under "Raw-ke
 modes". All values below are hex-encoded, generated with a command of the shape:
 
 ```
-dorado encrypt --key <key> --iv <iv> --tweak <tweak> --authenticated \
+dorado encrypt --key <key> --iv <iv> --tweak <tweak> \
   --mac <mac> --chunk-kib <chunk_kib> --in plaintext.bin --out ciphertext.bin
 ```
+
+(authenticated is the default for raw-key mode; `--unauthenticated` selects
+bare CTR instead)
 
 ## Vector: t256_skein_single
 

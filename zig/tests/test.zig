@@ -9,6 +9,7 @@ const threefish = dorado.threefish;
 const skein = dorado.skein;
 const blake3 = dorado.blake3;
 const fmt = dorado.format;
+const kdf = dorado.kdf;
 const engine = dorado.engine;
 
 fn hexEql(got: []const u8, expect_hex: []const u8) !void {
@@ -228,6 +229,125 @@ test "cross-compat with Rust fixtures" {
     defer a.free(mc);
     try testing.expectEqual(@as(usize, 5000), mc.len);
     for (mc) |b| try testing.expectEqual(@as(u8, 'x'), b);
+}
+
+// ---------------------------------------------------------------------------
+// Key-based derivation (deriveFromKey / deriveFromKeyWith): the six
+// cross-language known-answer vectors from docs/fixtures/derive-from-key.md
+// (generated from and verified against the Rust reference), plus the
+// determinism and domain-separation properties. Library API only; nothing here
+// touches the on-disk container format.
+// ---------------------------------------------------------------------------
+
+test "derive-from-key: six KAT vectors match byte-for-byte" {
+    const key32 = seq(32); // 000102...1f
+    const key16 = [_]u8{0xa5} ** 16;
+    var out32: [32]u8 = undefined;
+    var out64: [64]u8 = undefined;
+
+    // skein_32key_enc_32out
+    try kdf.deriveFromKeyWith(.skein512, &key32, "dorado/fixture/enc", &out32);
+    try hexEql(&out32, "b638c503342dbd51bdfa8906b1cc6b18d7e54252b95e460c522ab3cd939802c6");
+    // The default, PRF-less form is defined as the Skein-512 case and must
+    // match the same vector byte-for-byte.
+    kdf.deriveFromKey(&key32, "dorado/fixture/enc", &out32);
+    try hexEql(&out32, "b638c503342dbd51bdfa8906b1cc6b18d7e54252b95e460c522ab3cd939802c6");
+
+    // skein_32key_mac_64out
+    try kdf.deriveFromKeyWith(.skein512, &key32, "dorado/fixture/mac", &out64);
+    try hexEql(&out64, "6ae3f6f7518e9a4c8a7be8269deb848186beb64b5b43f0bafef81bce4b27d40e" ++
+        "f227e2064b941069cc6225cad0a39fcc22aba08fb87f3ba8aacdf4b70b100da6");
+
+    // skein_16key_enc_32out (the Skein-512 PRF accepts a key of any length)
+    try kdf.deriveFromKeyWith(.skein512, &key16, "dorado/fixture/enc", &out32);
+    try hexEql(&out32, "3990e038c7235e62480afe99712203225194afb93910df4101447098e630d0e4");
+
+    // skein_32key_empty_domain_32out (the DRDOkdrv prefix alone is the message)
+    try kdf.deriveFromKeyWith(.skein512, &key32, "", &out32);
+    try hexEql(&out32, "5bba4214745b3932c1fc620c660b60a4058613ff2bd9d80224d472cd810f7a99");
+
+    // blake3_32key_enc_32out
+    try kdf.deriveFromKeyWith(.blake3, &key32, "dorado/fixture/enc", &out32);
+    try hexEql(&out32, "8266bd0cfb0d73715aa841fe008c311a44d6b36e0aa01b94f13a90783fe62e1d");
+
+    // blake3_32key_mac_64out
+    try kdf.deriveFromKeyWith(.blake3, &key32, "dorado/fixture/mac", &out64);
+    try hexEql(&out64, "ea38a1780192707518d15003262a66c245680a579762a7d863cc33078f2f6eaa" ++
+        "9a5086f70d00eb7c6cd12fdc7872e5a2023e63c28087631ce835d7e9c7264290");
+}
+
+test "derive-from-key: deterministic and domain-separated" {
+    const master = [_]u8{0x42} ** 32;
+    var a: [32]u8 = undefined;
+    var b: [32]u8 = undefined;
+    kdf.deriveFromKey(&master, "myapp/index", &a);
+    kdf.deriveFromKey(&master, "myapp/index", &b);
+    try testing.expectEqualSlices(u8, &a, &b); // same key + domain, same bytes
+
+    var c: [32]u8 = undefined;
+    kdf.deriveFromKey(&master, "myapp/data", &c);
+    try testing.expect(!std.mem.eql(u8, &a, &c)); // different domain, different key
+
+    const other = [_]u8{0x43} ** 32;
+    var d: [32]u8 = undefined;
+    kdf.deriveFromKey(&other, "myapp/index", &d);
+    try testing.expect(!std.mem.eql(u8, &a, &d)); // different master, different key
+
+    // Children reveal nothing about each other or the master: at minimum,
+    // none of them may equal the master.
+    try testing.expect(!std.mem.eql(u8, &a, &master));
+    try testing.expect(!std.mem.eql(u8, &c, &master));
+}
+
+test "derive-from-key: output length is bound into Skein, not a truncation" {
+    // The 1024-bit variant's raw mode needs 128-byte keys; Skein's output
+    // length is free, so longer outputs must work and must not merely
+    // prefix-extend shorter ones (the length is part of Skein's config block).
+    const master = [_]u8{0x42} ** 32;
+    var short: [32]u8 = undefined;
+    var long: [128]u8 = undefined;
+    kdf.deriveFromKey(&master, "myapp/index", &short);
+    kdf.deriveFromKey(&master, "myapp/index", &long);
+    try testing.expect(!std.mem.eql(u8, &short, long[0..32]));
+}
+
+test "derive-from-key: blake3 PRF is deterministic, domain-separated, and distinct from skein" {
+    const master = [_]u8{0x42} ** 32;
+    var a: [32]u8 = undefined;
+    var b: [32]u8 = undefined;
+    try kdf.deriveFromKeyWith(.blake3, &master, "myapp/index", &a);
+    try kdf.deriveFromKeyWith(.blake3, &master, "myapp/index", &b);
+    try testing.expectEqualSlices(u8, &a, &b);
+
+    var c: [32]u8 = undefined;
+    try kdf.deriveFromKeyWith(.blake3, &master, "myapp/data", &c);
+    try testing.expect(!std.mem.eql(u8, &a, &c));
+    try testing.expect(!std.mem.eql(u8, &a, &master));
+
+    // The two PRFs are independent functions: the same key/domain under Skein
+    // and under BLAKE3 must not coincide.
+    var sk: [32]u8 = undefined;
+    try kdf.deriveFromKeyWith(.skein512, &master, "myapp/index", &sk);
+    try testing.expect(!std.mem.eql(u8, &a, &sk));
+
+    // BLAKE3 is an XOF: a shorter output is the prefix of a longer one (unlike
+    // Skein, where the length is bound into the hash).
+    var long: [128]u8 = undefined;
+    try kdf.deriveFromKeyWith(.blake3, &master, "myapp/index", &long);
+    try testing.expectEqualSlices(u8, &a, long[0..32]);
+}
+
+test "derive-from-key: blake3 PRF rejects a non-32-byte key" {
+    var out: [32]u8 = undefined;
+    const short_key = [_]u8{0} ** 16;
+    try testing.expectError(kdf.Error.BadKeyLength, kdf.deriveFromKeyWith(.blake3, &short_key, "myapp/index", &out));
+}
+
+test "kdf validate: zero pbkdf2 rounds are rejected, like an oversized count" {
+    try kdf.validate(fmt.Kdf.mkPbkdf2(600_000));
+    // Zero rounds would "derive" an all-zero key without error.
+    try testing.expectError(kdf.Error.HostileCost, kdf.validate(fmt.Kdf.mkPbkdf2(0)));
+    try testing.expectError(kdf.Error.HostileCost, kdf.validate(fmt.Kdf.mkPbkdf2(0xffff_ffff)));
 }
 
 // ---------------------------------------------------------------------------
@@ -473,6 +593,7 @@ fn assertEngineErrorOrOk(result: engine.Error![]u8, a: std.mem.Allocator) !void 
         error.Rng,
         error.KdfFailed,
         error.HostileCost,
+        error.BadKeyLength,
         error.BadMagic,
         error.UnsupportedVersion,
         error.UnknownVariant,

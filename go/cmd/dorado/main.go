@@ -1,6 +1,22 @@
 // Command dorado applies Threefish in CTR mode over files or stdin, streaming in
-// constant memory: bare raw-key CTR, or a password-derived authenticated
-// container. This is the Go port of the dorado CLI (GUI excluded).
+// constant memory, authenticated (encrypt-then-MAC) by default. There are two
+// ways to supply the key:
+//
+//   - Raw key (--key/--key-file): you provide the exact key bytes as hex and
+//     the IV with --iv. By default this is encrypt-then-MAC (see
+//     engine.EncryptRawAuthenticatedStream): the key is split into independent
+//     encryption and MAC subkeys, and a tampered, corrupted, or wrong-key
+//     stream is rejected on decrypt rather than silently producing garbage.
+//     Add --unauthenticated to fall back to bare CTR ciphertext instead (no
+//     container, no authentication, output length equals input length
+//     exactly), a deliberate, expert opt-out, not the default, since a
+//     corrupted or tampered byte in that mode silently decrypts to a flipped
+//     plaintext byte with no error of any kind.
+//   - Password (--password/--password-stdin): a KDF stretches the password
+//     into encryption and MAC keys, and the output is an authenticated
+//     chunked container (see the engine package).
+//
+// This is the Go port of the dorado CLI (GUI excluded).
 package main
 
 import (
@@ -55,7 +71,8 @@ Commands:
   decrypt   decrypt input (the same operation as encrypt)
   inspect   print a password file's non-secret parameters
 
-Supply the key directly with --key/--key-file (raw, unauthenticated CTR), or
+Supply the key directly with --key/--key-file (authenticated by default; add
+--unauthenticated for bare CTR with no authentication, an expert opt-out), or
 derive it from a password with --password/--password-stdin (authenticated
 container). Run "dorado encrypt -h" for the full flag list.
 
@@ -73,6 +90,7 @@ func usage() {
 type opts struct {
 	key, keyFile, iv, tweak      string
 	password, passwordStdin      bool
+	unauthenticated              bool
 	variant, kdf, mac            string
 	argonMem, argonTime, argonP  uint
 	scryptLogN, scryptR, scryptP uint
@@ -90,9 +108,10 @@ func parse(argv []string) (*opts, error) {
 	fs.StringVar(&o.tweak, "tweak", strings.Repeat("00", 16), "tweak as hex, 16 bytes")
 	fs.BoolVar(&o.password, "password", false, "derive the key from an interactive password")
 	fs.BoolVar(&o.passwordStdin, "password-stdin", false, "read the password from stdin (data from --in)")
+	fs.BoolVar(&o.unauthenticated, "unauthenticated", false, "opt out of authentication (encrypt-then-MAC, using --mac) for raw-key mode, falling back to bare CTR: confidentiality only, no tamper/corruption detection (a corrupted or tampered byte silently decrypts to a flipped plaintext byte with no error); raw-key mode is authenticated by default, and this is a deliberate, expert opt-out; not used in password mode, which is always authenticated")
 	fs.StringVar(&o.variant, "variant", "256", "256|512|1024 (password mode)")
 	fs.StringVar(&o.kdf, "kdf", "argon2id", "argon2id|scrypt|pbkdf2")
-	fs.StringVar(&o.mac, "mac", "skein", "skein|hmac-sha256|blake3")
+	fs.StringVar(&o.mac, "mac", "skein", "skein|hmac-sha256|blake3; password mode, or raw-key mode (unless --unauthenticated)")
 	fs.UintVar(&o.argonMem, "argon2-mem-mib", 64, "Argon2id memory cost in MiB")
 	fs.UintVar(&o.argonTime, "argon2-time", 3, "Argon2id iterations")
 	fs.UintVar(&o.argonP, "argon2-par", 1, "Argon2id lanes")
@@ -100,7 +119,7 @@ func parse(argv []string) (*opts, error) {
 	fs.UintVar(&o.scryptR, "scrypt-r", 8, "scrypt r")
 	fs.UintVar(&o.scryptP, "scrypt-p", 1, "scrypt p")
 	fs.UintVar(&o.pbkdf2Rounds, "pbkdf2-rounds", 600000, "PBKDF2 iterations")
-	fs.UintVar(&o.chunkKiB, "chunk-kib", 64, "authenticated chunk size in KiB")
+	fs.UintVar(&o.chunkKiB, "chunk-kib", 64, "authenticated chunk size in KiB; password mode, or raw-key mode (unless --unauthenticated)")
 	fs.StringVar(&o.label, "label", "", "label to bind into the file (encrypt)")
 	fs.StringVar(&o.expectLabel, "expect-label", "", "require this label on decrypt")
 	fs.StringVar(&o.in, "in", "", "input file (stdin if omitted)")
@@ -164,10 +183,13 @@ func cmdCrypt(argv []string, encrypt bool) error {
 		return fmt.Errorf("provide exactly one of --key, --key-file, --password, --password-stdin")
 	}
 	if !o.passwordMode() {
-		return runRaw(o)
+		return runRaw(o, encrypt)
 	}
 	if o.iv != "" {
 		return fmt.Errorf("--iv is not used in password mode; the IV is generated and stored")
+	}
+	if o.unauthenticated {
+		return fmt.Errorf("--unauthenticated is not used in password mode, which is always authenticated")
 	}
 	if o.passwordStdin && o.in == "" {
 		return fmt.Errorf("with --password-stdin, pass the data via --in")
@@ -227,7 +249,10 @@ func cmdCrypt(argv []string, encrypt bool) error {
 	return engine.DecryptPasswordStreamExpecting(password, expect, in, out)
 }
 
-func runRaw(o *opts) error {
+// runRaw runs raw-key mode in either direction. Encrypt-then-MAC (the default)
+// is not symmetric, so encrypt selects the direction; bare CTR
+// (--unauthenticated) is symmetric and ignores it.
+func runRaw(o *opts, encrypt bool) error {
 	keyHex := o.key
 	if keyHex == "" {
 		data, err := os.ReadFile(o.keyFile)
@@ -273,7 +298,21 @@ func runRaw(o *opts) error {
 		return err
 	}
 	defer closeOut()
-	return engine.RawCTRStream(variant, key, tweak[:], iv, in, out)
+	if o.unauthenticated {
+		return engine.RawCTRStream(variant, key, tweak[:], iv, in, out)
+	}
+	mac, err := o.macValue()
+	if err != nil {
+		return err
+	}
+	if o.chunkKiB == 0 || uint64(o.chunkKiB)*1024 > uint64(engine.MaxChunkBytes()) {
+		return fmt.Errorf("--chunk-kib must be between 1 and %d", engine.MaxChunkBytes()/1024)
+	}
+	chunkSize := uint32(o.chunkKiB) * 1024
+	if encrypt {
+		return engine.EncryptRawAuthenticatedStream(variant, key, tweak, iv, mac, chunkSize, in, out)
+	}
+	return engine.DecryptRawAuthenticatedStream(variant, key, tweak, iv, mac, chunkSize, in, out)
 }
 
 func cmdInspect(argv []string) error {

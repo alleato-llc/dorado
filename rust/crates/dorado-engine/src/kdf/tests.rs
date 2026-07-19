@@ -240,3 +240,65 @@ fn prf_id_code_round_trips() {
     );
     assert!(PrfId::from_code(7).is_err());
 }
+
+/// The cross-language known-answer vectors in
+/// `docs/fixtures/derive-from-key.md`, which every port pins. Rust generated
+/// them, so this test is what keeps the fixture file honest against the
+/// reference implementation.
+#[test]
+fn derive_from_key_matches_cross_language_vectors() {
+    fn unhex(s: &str) -> Vec<u8> {
+        (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+            .collect()
+    }
+    let key32: Vec<u8> = (0u8..32).collect();
+    let key16 = vec![0xa5u8; 16];
+    let cases: [(&KdfPrf, &[u8], &str, &str); 6] = [
+        (
+            &KdfPrf::Skein512,
+            &key32,
+            "dorado/fixture/enc",
+            "b638c503342dbd51bdfa8906b1cc6b18d7e54252b95e460c522ab3cd939802c6",
+        ),
+        (
+            &KdfPrf::Skein512,
+            &key32,
+            "dorado/fixture/mac",
+            "6ae3f6f7518e9a4c8a7be8269deb848186beb64b5b43f0bafef81bce4b27d40e\
+             f227e2064b941069cc6225cad0a39fcc22aba08fb87f3ba8aacdf4b70b100da6",
+        ),
+        (
+            &KdfPrf::Skein512,
+            &key16,
+            "dorado/fixture/enc",
+            "3990e038c7235e62480afe99712203225194afb93910df4101447098e630d0e4",
+        ),
+        (
+            &KdfPrf::Skein512,
+            &key32,
+            "",
+            "5bba4214745b3932c1fc620c660b60a4058613ff2bd9d80224d472cd810f7a99",
+        ),
+        (
+            &KdfPrf::Blake3,
+            &key32,
+            "dorado/fixture/enc",
+            "8266bd0cfb0d73715aa841fe008c311a44d6b36e0aa01b94f13a90783fe62e1d",
+        ),
+        (
+            &KdfPrf::Blake3,
+            &key32,
+            "dorado/fixture/mac",
+            "ea38a1780192707518d15003262a66c245680a579762a7d863cc33078f2f6eaa\
+             9a5086f70d00eb7c6cd12fdc7872e5a2023e63c28087631ce835d7e9c7264290",
+        ),
+    ];
+    for (prf, key, domain, want_hex) in cases {
+        let want = unhex(&want_hex.replace(char::is_whitespace, ""));
+        let mut out = vec![0u8; want.len()];
+        derive_from_key_with(*prf, key, domain, &mut out);
+        assert_eq!(out, want, "prf {prf:?}, domain {domain:?}");
+    }
+}

@@ -15,8 +15,10 @@ use it for real secrets.
 
 - `src/threefish.ts`, `skein.ts`, `blake3.ts` — the primitives, verified against
   the same vectors (BLAKE3 differential-tested against `@noble/hashes`).
-- `src/engine/` — the container: KDFs via `hash-wasm` (WASM Argon2id/scrypt/
-  PBKDF2, isomorphic), HMAC via Web Crypto, the MAC menu, v4 label binding,
+- `src/engine/` — the container: both forms of key derivation (the password
+  KDFs via `hash-wasm` — WASM Argon2id/scrypt/PBKDF2, isomorphic — and the
+  fast key-based `deriveFromKey`/`deriveFromKeyWith` over the from-scratch
+  Skein-512/BLAKE3), HMAC via Web Crypto, the MAC menu, v4 label binding,
   raw CTR (bare and authenticated), inspect.
 - `src/cli/dorado.ts`, `src/cli/gyotaku.ts` — the Node CLIs.
 
@@ -42,12 +44,25 @@ const ct = await encryptPasswordBytes(password, opts, plaintext);
 const pt = await decryptPasswordBytes(password, ct);
 ```
 
+Embedders with an already-strong key can fan it out into independent
+per-purpose keys with `deriveFromKey(master, "myapp/index", 32)` (one
+domain-separated Skein-512 keyed hash; `deriveFromKeyWith` selects BLAKE3
+instead). Never pass a password there — it does no stretching; that is
+`deriveFromPassword`'s job.
+
 CLI:
 
 ```
 npm run dorado -- encrypt --password-stdin --in notes.txt --out notes.txt.mahi
 npm run gyotaku -- --bits 256 notes.txt
 ```
+
+Raw-key mode (`--key`/`--key-file` with `--iv`) is authenticated
+(encrypt-then-MAC) by default, like the Rust CLI: `--mac` and `--chunk-kib`
+apply, and a tampered, corrupted, or wrong-key stream is rejected on decrypt.
+Add `--unauthenticated` to fall back to bare CTR (no authentication, output
+length equals input length) — an expert opt-out, since bare CTR silently
+decrypts a corrupted byte to a flipped plaintext byte with no error.
 
 ## Testing
 

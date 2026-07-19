@@ -14,6 +14,7 @@ pub const engine = @import("engine.zig");
 
 pub const Variant = threefish.Variant;
 pub const Kdf = format.Kdf;
+pub const KdfPrf = kdf.KdfPrf;
 pub const Mac = format.Mac;
 pub const Options = engine.Options;
 pub const ContainerInfo = engine.ContainerInfo;

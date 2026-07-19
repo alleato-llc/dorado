@@ -18,12 +18,21 @@ layout, with the tweak and IV bound into frame 0's authenticated data since
 raw mode has no header to bind them into. See
 [`spec.md`](spec.md#raw-key-modes) for the byte-level construction and
 [`fixtures/raw-authenticated.md`](fixtures/raw-authenticated.md) for the
-cross-language known-answer vectors every port is verified against. The
-CLI-level default differs by port: only the Rust CLI currently exposes this
-(authenticated by default, `--unauthenticated` opts out to bare CTR); the
-other ports' CLIs are unchanged and still only offer bare raw-key CTR, with
-the new authenticated construction reachable as a library/SDK call but not
-yet wired to a flag.
+cross-language known-answer vectors every port is verified against. Every
+port with a CLI (all but Java, which is SDK-only) exposes it the same way:
+raw-key mode is authenticated by default, and `--unauthenticated` opts out to
+bare CTR. Every port also exposes both standard forms of key derivation as
+public API: the slow password stretch (`derive_from_password` and its
+per-language spellings) and the fast key-based fan-out (`derive_from_key`,
+one domain-separated keyed hash under a selectable PRF, Skein-512 by default
+or BLAKE3), verified against the shared vectors in
+[`fixtures/derive-from-key.md`](fixtures/derive-from-key.md). Untrusted
+container headers are bounded identically everywhere: KDF cost parameters are
+validated before any derivation, and the accepted chunk size is capped
+(64 MiB default, 1 GiB hard ceiling, `DORADO_MAX_CHUNK_BYTES` tightens it).
+The one Rust-only knob is `DORADO_RNG`, which selects between Rust's two
+CSPRNG sources; the other languages each have a single canonical CSPRNG, so
+there is nothing for such a knob to choose.
 
 The eight native ports (Rust, Go, C, C++, Zig, Java, Python, Haskell) run their own
 compiled cipher and stream in constant memory. The TypeScript port is one codebase run two ways:

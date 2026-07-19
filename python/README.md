@@ -16,9 +16,12 @@ explicit mask. Educational and unaudited; for real data prefer a vetted library.
   (Threefish 256/512/1024 + CTR, Skein-512, BLAKE3), verified against the same
   vectors as the Rust reference.
 - `src/dorado/format.py`, `kdf.py`, `mac.py`, `engine.py` — the construction: the
-  container header, the KDFs (Argon2id via `argon2-cffi`; scrypt and PBKDF2 from
-  `hashlib`), the MAC menu (HMAC-SHA256 from `hmac`), and the streaming password
-  container, raw CTR (bare and authenticated), and inspect. `DoradoError` marks a bad container.
+  container header, both forms of key derivation (`derive_from_password`, the slow
+  password KDFs: Argon2id via `argon2-cffi`, scrypt and PBKDF2 from `hashlib`; and
+  `derive_from_key`/`derive_from_key_with`, the fast key-based fan-out over the
+  from-scratch Skein-512 or BLAKE3 keyed hash, selected by `KdfPrf`), the MAC menu
+  (HMAC-SHA256 from `hmac`), and the streaming password container, raw CTR (bare
+  and authenticated), and inspect. `DoradoError` marks a bad container.
 - `src/dorado/cli/dorado.py`, `cli/gyotaku.py` — the two CLIs.
 
 The cipher and hashes are from-scratch; only Argon2id is a dependency
@@ -45,12 +48,27 @@ recovered = decrypt_password(b"correct horse", container)
 #   decrypt_password_stream(password, reader, writer)
 ```
 
+Fan a strong key out into per-purpose subkeys (fast, no stretching; never pass a
+password here, that is `derive_from_password`'s job):
+
+```python
+from dorado import derive_from_key
+
+index_key = derive_from_key(master, "myapp/index", 32)
+data_key = derive_from_key(master, "myapp/data", 32)
+```
+
 CLI:
 
 ```
 dorado encrypt --password-stdin --in notes.txt --out notes.txt.mahi
 gyotaku --bits 256 notes.txt
 ```
+
+Raw-key mode (`--key`/`--key-file` + `--iv`) is authenticated by default
+(encrypt-then-MAC, per `--mac` and `--chunk-kib`); add `--unauthenticated` to
+opt into bare CTR (output length equals input length, no tamper detection).
+Password mode is always authenticated.
 
 ## Testing
 

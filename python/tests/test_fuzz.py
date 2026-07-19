@@ -39,7 +39,7 @@ def _fast_kdf(monkeypatch):
 
     # engine refers to this module as kdf_mod, so patching the module attribute here
     # covers both the kdf module and the engine's reference to it (same object).
-    monkeypatch.setattr("dorado.kdf.derive", _cheap)
+    monkeypatch.setattr("dorado.kdf.derive_from_password", _cheap)
 
 
 # Anything outside this set is a bug: the parsers must categorize every input as a

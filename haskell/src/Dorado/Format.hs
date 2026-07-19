@@ -7,6 +7,10 @@ module Dorado.Format
   , parseHeader
   , variantCode
   , variantFromCode
+  , defaultMaxChunkBytes
+  , hardMaxChunkBytes
+  , chunkCapFrom
+  , maxChunkBytes
   , be16
   , be32
   , be64
@@ -17,7 +21,10 @@ import Data.Bits (shiftL, shiftR, (.|.))
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as C8
+import Data.Char (digitToInt, isDigit, isSpace)
+import Data.List (dropWhileEnd)
 import Data.Word (Word16, Word32, Word64, Word8)
+import System.Environment (lookupEnv)
 
 import qualified Dorado.Kdf as Kdf
 import qualified Dorado.Mac as Mac
@@ -48,6 +55,44 @@ variantFromCode 0 = Right TF.TF256
 variantFromCode 1 = Right TF.TF512
 variantFromCode 2 = Right TF.TF1024
 variantFromCode n = Left ("unknown variant code " ++ show n)
+
+-- ---------------------------------------------------------------------------
+-- Accepted chunk-size cap. The header's chunk-size field is untrusted input:
+-- the decrypt paths bound it (and, through it, each frame's ct_len) against
+-- this cap before allocating a buffer and before deriving any key, so a
+-- crafted file cannot demand an absurd allocation.
+-- ---------------------------------------------------------------------------
+
+-- | Hard ceiling on the accepted chunk size (1 GiB), regardless of any
+-- @DORADO_MAX_CHUNK_BYTES@ override.
+hardMaxChunkBytes :: Word32
+hardMaxChunkBytes = 1024 * 1024 * 1024
+
+-- | Cap on the header's chunk-size field when @DORADO_MAX_CHUNK_BYTES@ is not
+-- set: 64 MiB, well above the 64 KiB default chunk size.
+defaultMaxChunkBytes :: Word32
+defaultMaxChunkBytes = 64 * 1024 * 1024
+
+-- | The effective cap on an accepted chunk size: 'defaultMaxChunkBytes' unless
+-- @DORADO_MAX_CHUNK_BYTES@ overrides it. Any override is clamped into
+-- @(0, 'hardMaxChunkBytes']@, so it can only tighten the bound, never weaken
+-- it past the ceiling. Exposed so the CLI can cap encryption to match.
+maxChunkBytes :: IO Word32
+maxChunkBytes = chunkCapFrom <$> lookupEnv "DORADO_MAX_CHUNK_BYTES"
+
+-- | Pure resolution of the chunk-size cap from an optional override string, so
+-- the clamping is unit-tested without touching the environment. Unparseable
+-- values (anything not a decimal number fitting 32 bits) fall back to the
+-- default, matching the other ports.
+chunkCapFrom :: Maybe String -> Word32
+chunkCapFrom Nothing = defaultMaxChunkBytes
+chunkCapFrom (Just s)
+  | null t || not (all isDigit t) = defaultMaxChunkBytes
+  | v > toInteger (maxBound :: Word32) = defaultMaxChunkBytes
+  | otherwise = fromInteger (max 1 (min v (toInteger hardMaxChunkBytes)))
+  where
+    t = dropWhileEnd isSpace (dropWhile isSpace s)
+    v = foldl' (\acc c -> acc * 10 + toInteger (digitToInt c)) 0 t
 
 -- ---------------------------------------------------------------------------
 -- Big-endian integer encoding.

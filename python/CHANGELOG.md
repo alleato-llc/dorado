@@ -10,6 +10,19 @@ the master table.
 
 ### Added
 
+- **The `kdf` module gains key-based derivation, the fast form.**
+  `derive_from_key(key, domain, out_len)` fans an already high-entropy key out
+  into independent, domain-separated children with one Skein-512 keyed hash (its
+  own `DRDOkdrv` domain prefix, built on the port's from-scratch primitives, not
+  the KDF libraries); `derive_from_key_with(prf, ...)` selects the PRF via the
+  new `KdfPrf` enum (`SKEIN512`, the default; `BLAKE3`, which requires a 32-byte
+  key and raises `ValueError` otherwise). The former `kdf.derive` is renamed
+  `derive_from_password`, and both forms plus `KdfPrf` are exported from the
+  package: the parallel names are the guardrail (a password must never take the
+  fast path, a key never needs the slow one). Matches the Rust reference's
+  `kdf::derive_from_key`/`derive_from_key_with`; known-answer vectors are
+  hardcoded from [docs/fixtures/derive-from-key.md](../docs/fixtures/derive-from-key.md).
+  API surface only: the container wire format is unchanged.
 - **Raw-key mode gains an authenticated construction** (encrypt-then-MAC):
   `encrypt_raw_authenticated`/`decrypt_raw_authenticated` and their `_stream`
   variants in `dorado.engine`, exported from the package. Caller-supplied key,
@@ -30,9 +43,26 @@ the master table.
 
 ### Changed
 
+- **Raw-key mode (`--key`/`--key-file`) is now authenticated by default in the
+  CLI.** `dorado encrypt --key ... --iv ...` produces encrypt-then-MAC output
+  (per `--mac` and `--chunk-kib`, larger than the input by framing and per-chunk
+  tags) unless the new `--unauthenticated` flag opts back into the old bare CTR
+  behavior (output length equal to input length, no tamper detection); passing
+  `--unauthenticated` in password mode is an error, password mode being always
+  authenticated. This breaks scripts that assumed raw-key mode's old output
+  shape unless they add `--unauthenticated` on both ends. See the
+  [Core CHANGELOG](../CHANGELOG.md) for the cross-port rationale (authenticated
+  as the default, libsodium/age style; bare CTR as an expert opt-out).
 - Applied the chunk-size cap policy (64 MiB default, 1 GiB hard ceiling,
   `DORADO_MAX_CHUNK_BYTES`); see [Core](../CHANGELOG.md). (MAC verify already used
   `hmac.compare_digest` and salt/IV already `os.urandom`, so no change there.)
+
+### Fixed
+
+- `kdf.validate` now rejects `rounds == 0` for PBKDF2 (`MalformedContainer`,
+  "pbkdf2 rounds must be nonzero"), matching the Rust reference: zero rounds
+  would "derive" an all-zero key without error. (Decryption already failed
+  authentication in that case, so this closes an oddity, not a vulnerability.)
 
 ### Notes
 

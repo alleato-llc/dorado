@@ -4,7 +4,7 @@
 
 import { concat, equalBytes, utf8 } from "../bytes";
 import { AuthError, InvalidParamsError, MalformedContainerError } from "./errors";
-import { derive, validate } from "./kdf";
+import { deriveFromPassword, validate } from "./kdf";
 import { macTag, macVerify } from "./mac";
 import { type CipherBackend, tsBackend } from "./backend";
 import {
@@ -30,6 +30,11 @@ import {
 // Re-export the typed error hierarchy so consumers of the engine can branch on
 // failures with instanceof without reaching into a second module.
 export { DoradoError, AuthError, MalformedContainerError, InvalidParamsError } from "./errors";
+
+// Re-export both standard forms of key derivation, so embedders of the raw-key
+// modes can stretch a password (or fetch a strong key) once and fan it out into
+// per-purpose keys without reaching into the kdf module.
+export { deriveFromPassword, deriveFromKey, deriveFromKeyWith, type KdfPrf } from "./kdf";
 
 const FRAME_DOMAIN = "DRDOchnk";
 
@@ -83,7 +88,7 @@ export async function encryptPasswordBytes(
   const v = opts.variant;
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const iv = crypto.getRandomValues(new Uint8Array(blockLen(v)));
-  const keymat = await derive(opts.kdf, password, salt, keyLen(v) + MAC_KEY_LEN);
+  const keymat = await deriveFromPassword(opts.kdf, password, salt, keyLen(v) + MAC_KEY_LEN);
   const encKey = keymat.subarray(0, keyLen(v));
   const macKey = keymat.subarray(keyLen(v));
 
@@ -130,7 +135,7 @@ export async function decryptPasswordBytes(
     throw new MalformedContainerError(`invalid chunk size ${header.chunkSize} in header`);
   }
   validate(header.kdf);
-  const keymat = await derive(header.kdf, password, header.salt, keyLen(header.variant) + MAC_KEY_LEN);
+  const keymat = await deriveFromPassword(header.kdf, password, header.salt, keyLen(header.variant) + MAC_KEY_LEN);
   const encKey = keymat.subarray(0, keyLen(header.variant));
   const macKey = keymat.subarray(keyLen(header.variant));
 

@@ -24,7 +24,8 @@ static void print_usage(FILE *f) {
             "  inspect   Show a password container's non-secret parameters\n"
             "\n"
             "Credentials (choose exactly one for encrypt/decrypt):\n"
-            "  --key <hex>            Raw key as hex (requires --iv)\n"
+            "  --key <hex>            Raw key as hex (requires --iv). Authenticated\n"
+            "                         (encrypt-then-MAC) by default; see --unauthenticated\n"
             "  --key-file <FILE>      Read the raw key hex from a file (requires --iv)\n"
             "  --password             Derive the key from a prompted password\n"
             "  --password-stdin       Read the password from stdin (pass data via --in)\n"
@@ -33,13 +34,21 @@ static void print_usage(FILE *f) {
             "  --in <FILE>            Input file (default: stdin)\n"
             "  --out <FILE>           Output file (default: stdout)\n"
             "  --iv <hex>             IV for raw-key mode (block-size length)\n"
+            "  --unauthenticated      Raw-key mode: opt out of authentication\n"
+            "                         (encrypt-then-MAC, using --mac), falling back to bare\n"
+            "                         CTR: confidentiality only, a corrupted or tampered\n"
+            "                         byte silently decrypts to a flipped plaintext byte\n"
+            "                         with no error. A deliberate, expert opt-out. Not used\n"
+            "                         in password mode, which is always authenticated\n"
             "  --tweak <hex>          16-byte tweak (default: all zero)\n"
             "  --variant <256|512|1024>   Threefish variant (default: 256)\n"
             "  --kdf <argon2id|scrypt|pbkdf2>   Password KDF (default: argon2id)\n"
-            "  --mac <skein|hmac-sha256|blake3> Container MAC (default: skein)\n"
+            "  --mac <skein|hmac-sha256|blake3> MAC for password mode, or for raw-key\n"
+            "                         mode unless --unauthenticated (default: skein)\n"
             "  --label <text>         Bind a non-secret label (encrypt)\n"
             "  --expect-label <text>  Require a label match (decrypt)\n"
-            "  --chunk-kib <N>        Chunk size in KiB (default: 64)\n"
+            "  --chunk-kib <N>        Chunk size in KiB for password mode, or for raw-key\n"
+            "                         mode unless --unauthenticated (default: 64)\n"
             "\n"
             "KDF cost flags:\n"
             "  --argon2-mem-mib <N> --argon2-time <N> --argon2-par <N>\n"
@@ -122,7 +131,7 @@ static int mac_from_str(const char *s) {
 
 struct opts_t {
     const char *key, *key_file, *iv, *tweak;
-    int password, password_stdin;
+    int password, password_stdin, unauthenticated;
     const char *variant, *kdf, *mac;
     long argon2_mem, argon2_time, argon2_par, scrypt_logn, scrypt_r, scrypt_p, pbkdf2_rounds, chunk_kib;
     const char *label, *expect_label, *in_path, *out_path;
@@ -179,12 +188,13 @@ int main(int argc, char **argv) {
     o.chunk_kib = 64;
 
     enum {
-        K = 1000, KF, IV, TW, PW, PWS, VAR, KDF, MAC, AM, AT, AP, SL, SR, SP, PR, CK, LB, EL, IN, OUT
+        K = 1000, KF, IV, TW, PW, PWS, UNAUTH, VAR, KDF, MAC, AM, AT, AP, SL, SR, SP, PR, CK, LB, EL, IN, OUT
     };
     static const struct option longs[] = {
         {"key", required_argument, 0, K},          {"key-file", required_argument, 0, KF},
         {"iv", required_argument, 0, IV},          {"tweak", required_argument, 0, TW},
         {"password", no_argument, 0, PW},          {"password-stdin", no_argument, 0, PWS},
+        {"unauthenticated", no_argument, 0, UNAUTH},
         {"variant", required_argument, 0, VAR},    {"kdf", required_argument, 0, KDF},
         {"mac", required_argument, 0, MAC},        {"argon2-mem-mib", required_argument, 0, AM},
         {"argon2-time", required_argument, 0, AT}, {"argon2-par", required_argument, 0, AP},
@@ -204,6 +214,7 @@ int main(int argc, char **argv) {
             case TW: o.tweak = optarg; break;
             case PW: o.password = 1; break;
             case PWS: o.password_stdin = 1; break;
+            case UNAUTH: o.unauthenticated = 1; break;
             case VAR: o.variant = optarg; break;
             case KDF: o.kdf = optarg; break;
             case MAC: o.mac = optarg; break;
@@ -306,11 +317,33 @@ int main(int argc, char **argv) {
                 rc = fail("--iv length must match the variant block size");
                 goto done;
             }
-            err = dorado_raw_ctr_stream(variant, key, tweak, iv, in, out);
+            if (o.unauthenticated) {
+                /* Bare CTR (symmetric, so encrypt and decrypt are the same
+                 * operation): confidentiality only, no tamper detection. */
+                err = dorado_raw_ctr_stream(variant, key, tweak, iv, in, out);
+            } else {
+                /* Raw-key mode is authenticated (encrypt-then-MAC) by default,
+                 * matching the password path; --unauthenticated opts out. */
+                int mac = mac_from_str(o.mac);
+                if (mac < 0) {
+                    OPENSSL_cleanse(key, sizeof key);
+                    rc = fail("unknown --mac");
+                    goto done;
+                }
+                uint32_t chunk_size = (uint32_t)(o.chunk_kib * 1024);
+                err = encrypt ? dorado_encrypt_raw_authenticated_stream(variant, key, tweak, iv, mac, chunk_size,
+                                                                        in, out)
+                              : dorado_decrypt_raw_authenticated_stream(variant, key, tweak, iv, mac, chunk_size,
+                                                                        in, out);
+            }
             OPENSSL_cleanse(key, sizeof key);
         } else {
             if (o.iv) {
                 rc = fail("--iv is not used in password mode; the IV is generated and stored");
+                goto done;
+            }
+            if (o.unauthenticated) {
+                rc = fail("--unauthenticated is not used in password mode, which is always authenticated");
                 goto done;
             }
             if (o.password_stdin && !o.in_path) {

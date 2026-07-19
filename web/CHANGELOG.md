@@ -7,6 +7,14 @@ Cross-cutting changes live in the [Core CHANGELOG](../CHANGELOG.md);
 
 ## [Unreleased]
 
+### Changed
+
+- The `dorado`/`gyotaku` tool cards caught up to reality: the CLIs are ported
+  to eight languages (Rust, Go, TypeScript, Python, C, Zig, Haskell, C++),
+  not three, and raw-key mode is authenticated by default with bare CTR as an
+  explicit opt-out (see the Core changelog's raw-key and parity entries), so
+  the card no longer describes raw mode as bare CTR.
+
 ### Added
 
 - `public/screenshots/`: a committed set of `dorado-gui`/`dorado-gyotaku-gui`

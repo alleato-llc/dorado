@@ -78,7 +78,12 @@ describe("fuzz", () => {
     }
   });
 
-  it("mutated real containers either round-trip or throw a DoradoError", async () => {
+  // Explicit timeout: a mutation landing in the header's PBKDF2 rounds field
+  // can request a multi-million-round derivation that still passes validate's
+  // 50M bound; that iteration is then legitimately slow (observed 60s+ for
+  // the whole loop on a 2-core CI runner), not stuck. Same phenomenon as the
+  // C port's sanitized smash-test cap.
+  it("mutated real containers either round-trip or throw a DoradoError", { timeout: 180_000 }, async () => {
     const rng = mulberry32(0xdeadbeef);
     const pw = utf8("correct horse");
     const o = fastOpts();

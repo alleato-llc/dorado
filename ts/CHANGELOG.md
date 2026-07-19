@@ -66,6 +66,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- The mutation fuzz test (`src/engine/fuzz.test.ts`) gets an explicit 180s
+  timeout: a mutation landing in the header's PBKDF2 rounds field can request
+  a multi-million-round derivation that still passes `validate`'s 50M bound,
+  so the loop is legitimately slow on a weak machine (observed 60s+ on a
+  2-core CI runner, timing out vitest's 5s default on the suite's first CI
+  outing). Test-only; same phenomenon as the C port's sanitized smash cap.
 - `validate` (`src/engine/kdf.ts`) now rejects PBKDF2 `rounds: 0`
   ("pbkdf2 rounds must be nonzero") in addition to the too-large bound. Zero
   rounds would "derive" an all-zero key without error; a crafted or corrupted

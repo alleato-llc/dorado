@@ -40,6 +40,13 @@ the Rust-specific details. Format: [Keep a Changelog](https://keepachangelog.com
 
 ### Fixed
 
+- **A flaky `gyotaku` CLI test race.** `tests/cli.rs`'s stdin helper
+  `unwrap`ped its write to the child, but a child that rejects its arguments
+  (the bad `--bits` case) can exit before reading stdin, so the write
+  intermittently died with `BrokenPipe` and failed the suite (first seen on
+  a CI runner; timing-dependent, so usually green locally). The helper now
+  accepts `BrokenPipe` specifically, since an early exit is exactly what
+  that test asserts. Test-only; the binaries are unchanged.
 - **`kdf::validate` now rejects `rounds: 0` for PBKDF2.** Zero rounds would
   "derive" an all-zero key without error; a crafted or corrupted header
   carrying it now fails cleanly at validation instead. (Decryption already

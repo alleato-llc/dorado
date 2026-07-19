@@ -22,7 +22,12 @@ fn run_stdin(args: &[&str], input: &[u8]) -> std::process::Output {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    child.stdin.take().unwrap().write_all(input).unwrap();
+    // A child that rejects its arguments (the bad --bits test) may exit
+    // before reading stdin, surfacing the race as BrokenPipe here; that is
+    // not a failure, the caller asserts on status and output.
+    if let Err(e) = child.stdin.take().unwrap().write_all(input) {
+        assert_eq!(e.kind(), std::io::ErrorKind::BrokenPipe, "{e}");
+    }
     child.wait_with_output().unwrap()
 }
 

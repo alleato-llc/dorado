@@ -157,6 +157,11 @@ This changelog starts in 2026-06; for earlier history see the git log.
   were not installed; `libasan`/`libubsan` are now part of the job's package
   install. (The C port's own Linux crash uncovered by the same CI run is a
   real bug with its own entry in [`c/CHANGELOG.md`](c/CHANGELOG.md).)
+- CI: the `zig` job's toolchain install (`mlugg/setup-zig`) is bumped v1 to
+  v2. v1's mirror fallback ends at `ziglang.org/builds`, which serves only
+  dev snapshots, so installing the pinned tagged release (0.16.0) failed
+  with a 404 whenever the community mirrors did; v2 resolves tagged
+  releases properly.
 - **PBKDF2 `rounds: 0` is now rejected as invalid parameters in every port**
   (the fix first landed in Rust). Zero rounds would "derive" an all-zero key
   without error; decryption already failed authentication in that case, so

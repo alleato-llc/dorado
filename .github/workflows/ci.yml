@@ -254,7 +254,10 @@ jobs:
         working-directory: zig
     steps:
       - uses: actions/checkout@v4
-      - uses: mlugg/setup-zig@v1
+      # v1's mirror fallback ends at ziglang.org/builds, which only serves dev
+      # snapshots, so a tagged release 404s there whenever the community
+      # mirrors fail; v2 resolves tagged releases properly.
+      - uses: mlugg/setup-zig@v2
         with:
           version: "0.16.0"
       - run: zig build

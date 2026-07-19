@@ -143,6 +143,8 @@ static void test_engine(void) {
     dorado_encrypt_password(pw, pwl, &o, (const uint8_t *)"", 0, &ct, &ctl);
     const char *e = dorado_decrypt_password(pw, pwl, NULL, 0, ct, ctl, &back, &bl);
     check(!e && bl == 0, "empty plaintext round-trip");
+    free(back); /* an empty output still hands the caller a (1-byte) buffer */
+    back = NULL;
 
     /* wrong password: classifies as auth by pointer identity */
     check(dorado_decrypt_password((const uint8_t *)"wrong", 5, NULL, 0, ct, ctl, &back, &bl) == dorado_err_auth,

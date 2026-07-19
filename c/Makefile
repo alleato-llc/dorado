@@ -6,7 +6,14 @@
 
 CC ?= cc
 CFLAGS ?= -std=c17 -O2 -Wall -Wextra
-CFLAGS += -Iinclude
+# glibc hides the POSIX/GNU declarations this port uses (fmemopen,
+# open_memstream, getrandom) under strict -std=c17; _DEFAULT_SOURCE restores
+# them (a no-op on macOS, which exposes everything by default). Without it the
+# functions are implicitly declared as returning int, which truncates the
+# returned FILE * and crashes at run time on Linux. The -Werror pair makes any
+# future missed declaration a compile error instead of that silent crash.
+CFLAGS += -Iinclude -D_DEFAULT_SOURCE \
+  -Werror=implicit-function-declaration -Werror=int-conversion
 
 # On macOS the Homebrew .pc files are not on the default pkg-config path.
 UNAME := $(shell uname -s)

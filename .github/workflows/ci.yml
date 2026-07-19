@@ -296,7 +296,9 @@ jobs:
         working-directory: cpp
     steps:
       # Runs before checkout (so cpp/ does not exist yet) and installs git for it.
-      - run: dnf install -y gcc-c++ cmake openssl-devel git
+      # libasan/libubsan are the GCC sanitizer runtimes for the -DSANITIZE=ON
+      # build below; without them its executables fail to link.
+      - run: dnf install -y gcc-c++ cmake openssl-devel git libasan libubsan
         working-directory: ${{ github.workspace }}
       - uses: actions/checkout@v4
       - run: cmake -S . -B build

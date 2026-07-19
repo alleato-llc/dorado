@@ -63,6 +63,23 @@ the master table.
 
 ### Fixed
 
+- **The in-memory APIs crashed on Linux glibc builds** (`dorado_encrypt` /
+  `dorado_decrypt` / `dorado_inspect` and the raw in-memory wrappers): glibc
+  hides `fmemopen` / `open_memstream` (and `getrandom`) under strict `-std=c17`
+  with no feature-test macro, so they were implicitly declared as returning
+  `int`, truncating the returned `FILE *` and segfaulting once the heap sat
+  above 4 GiB. The compiler had been warning about exactly this
+  (`-Wint-conversion`) all along. The Makefile now defines `_DEFAULT_SOURCE`
+  (a no-op on macOS, which is why local builds never crashed) and promotes
+  `-Werror=implicit-function-declaration -Werror=int-conversion` so a missed
+  declaration is a compile error, not a runtime crash. Verified on Ubuntu
+  24.04 (glibc): the suite segfaulted before the fix and passes after, plain
+  and under ASan/UBSan.
+- The test suite leaked the buffer from the empty-plaintext round-trip (an
+  empty output still hands the caller a 1-byte buffer, which the test never
+  freed), failing LeakSanitizer on Linux once the crash above was fixed and
+  the suite actually ran there. Test-only; the library's own paths were
+  already leak-free.
 - `dorado_kdf_validate` now rejects PBKDF2 `rounds == 0` (as `dorado_err_params`,
   like the other bounds), matching the Rust reference's `kdf::validate`. Zero rounds
   would "derive" an all-zero key without error; a crafted or corrupted header

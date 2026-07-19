@@ -152,6 +152,11 @@ This changelog starts in 2026-06; for earlier history see the git log.
 
 ### Fixed
 
+- CI: the `cpp` job's sanitized build (`-DSANITIZE=ON`) could not link its
+  executables in the `fedora:41` container because the GCC sanitizer runtimes
+  were not installed; `libasan`/`libubsan` are now part of the job's package
+  install. (The C port's own Linux crash uncovered by the same CI run is a
+  real bug with its own entry in [`c/CHANGELOG.md`](c/CHANGELOG.md).)
 - **PBKDF2 `rounds: 0` is now rejected as invalid parameters in every port**
   (the fix first landed in Rust). Zero rounds would "derive" an all-zero key
   without error; decryption already failed authentication in that case, so

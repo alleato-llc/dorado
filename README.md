@@ -43,7 +43,8 @@ This repository is a modular monorepo:
 - **[`cpp/`](cpp/)** — a C++ port (C++23, CMake): the same primitives and format,
   streaming over `std::istream`/`std::ostream` in constant memory, with an SDK and the
   `dorado`/`gyotaku` CLIs. SHA-256/HMAC are from scratch alongside the cipher; only the
-  password KDFs are delegated, to OpenSSL's `EVP_KDF`. See [`cpp/README.md`](cpp/README.md).
+  password KDFs and the CSPRNG are delegated, to OpenSSL (`EVP_KDF` and `RAND_bytes`).
+  See [`cpp/README.md`](cpp/README.md).
 - **[`rust/wasm/`](rust/wasm/)** — the verified Rust cipher compiled to WebAssembly
   via `wasm-bindgen`. The same `.wasm` is the cipher backend for the `ts/` Node CLI
   and the browser demo, so the secret arithmetic runs in WASM linear memory rather
@@ -58,9 +59,11 @@ This repository is a modular monorepo:
   [Gota](https://github.com/alleato-llc/gota), a standalone micro-benchmark reference
   that `bench/` consumes. See [`bench/README.md`](bench/README.md).
 
-The ten implementations share one on-disk format and are byte-for-byte
-cross-compatible: each can decrypt the others' `.mahi` files, verified across every
-KDF, MAC, and cipher variant. They differ in what their runtime allows (frontends,
+The nine implementations share one on-disk format and are byte-for-byte
+cross-compatible: each can decrypt the others' `.mahi` files, verified in committed
+tests in both directions through the Rust reference (every port decrypts fixtures
+produced by the Rust CLI, and the Rust suite decrypts a container encrypted by each
+of the other eight ports), across every KDF, MAC, and cipher variant. They differ in what their runtime allows (frontends,
 streaming, `no_std`, secret-memory protection); [`docs/implementations.md`](docs/implementations.md)
 compares them side by side. The project-wide docs live in [`docs/`](docs/): the
 shared wire format ([`spec.md`](docs/spec.md)), a [`glossary.md`](docs/glossary.md),

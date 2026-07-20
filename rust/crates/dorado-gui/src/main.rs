@@ -28,6 +28,7 @@ use dorado_gui_kit::{
 };
 use rime::theme;
 use rime::widgets::{button, card, labeled, slider, text_field};
+use zeroize::Zeroizing;
 
 mod shot;
 
@@ -201,7 +202,12 @@ enum Message {
 struct App {
     direction: Direction,
     source: Source,
-    password: String,
+    /// Best-effort hygiene: the app-owned password heap allocation is zeroized
+    /// when replaced or dropped. iced's `text_input` widget keeps its own
+    /// internal copies of the typed value (and `Message::PasswordChanged`
+    /// carries plain `String`s), so this wipes the app-owned copies only; it is
+    /// not the CLI's mlock'd, fully-wiped handling.
+    password: Zeroizing<String>,
     text: String,
     in_path: String,
     out_path: String,
@@ -233,7 +239,7 @@ impl Default for App {
         App {
             direction: Direction::Encrypt,
             source: Source::Text,
-            password: String::new(),
+            password: Zeroizing::new(String::new()),
             text: String::new(),
             in_path: String::new(),
             out_path: String::new(),
@@ -310,7 +316,9 @@ struct Job {
     direction: Direction,
     source: Source,
     opts: engine::PasswordOptions,
-    password: String,
+    /// The worker's own copy of the password, zeroized when the job is dropped
+    /// at the end of `run`.
+    password: Zeroizing<String>,
     text: String,
     in_path: String,
     out_path: String,
@@ -396,7 +404,7 @@ impl App {
         match message {
             Message::DirectionSelected(d) => self.direction = d,
             Message::SourceSelected(s) => self.source = s,
-            Message::PasswordChanged(v) => self.password = v,
+            Message::PasswordChanged(v) => self.password = Zeroizing::new(v),
             Message::TextChanged(v) => self.text = v,
             Message::InPathChanged(v) => self.in_path = v,
             Message::OutPathChanged(v) => self.out_path = v,

@@ -73,11 +73,12 @@ CI additionally runs `go test -race` and `govulncheck` on Go 1.25.
 
 ## Cross-compatibility
 
-The container bytes are identical to the Rust/TypeScript/Java/Python/C/Zig ports:
-each can decrypt the others' `.mahi` files. The byte-for-byte match is verified by
-decrypting output produced by the Rust CLI during development, across every KDF,
-MAC, and variant. (Unlike the Java/Python/C/Zig ports, the Go suite does not yet
-embed committed Rust fixtures.)
+The container bytes are identical to the other eight implementations: each can
+decrypt the others' `.mahi` files. The suite decrypts committed fixtures produced
+by the Rust reference (in `engine/testdata/`) covering every KDF, MAC, and variant
+plus a labeled and a multi-frame file; the reverse direction is covered by a
+committed fixture in the Rust suite (the Rust CLI decrypts a container encrypted
+by this port).
 
 ## Secret handling
 

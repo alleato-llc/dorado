@@ -39,7 +39,7 @@ const tools = [
 // in the lead text). Kept in sync with docs/implementations.md.
 const cmpCols = ["Role / frontends", "Cipher engine", "Key derivation", "Streaming", "Secret memory"];
 const cmpRows = [
-  { name: "Rust", ref: true, cells: ["Reference; CLIs + 2 GUIs", "native", "argon2 / scrypt / pbkdf2 crates", "Yes", "zeroize wipe + mlock'd password"] },
+  { name: "Rust", ref: true, cells: ["Reference; CLIs + 2 GUIs", "native", "argon2 / scrypt / pbkdf2 crates", "Yes", "zeroize wipe; CLI mlocks password; GUIs best-effort wipe"] },
   { name: "Go", cells: ["Port; CLIs", "native", "x/crypto + stdlib", "Yes", "wipes keys; mlocks password (off-heap)"] },
   { name: "C", cells: ["Port; CLIs", "native", "libargon2 + OpenSSL", "Yes", "wipes keys; mlocks password"] },
   { name: "C++", cells: ["Port; CLIs", "native", "OpenSSL EVP_KDF", "Yes", "wipes keys; mlocks password"] },
@@ -47,7 +47,7 @@ const cmpRows = [
   { name: "Java", cells: ["Port; SDK only", "native", "Bouncy Castle", "Yes", "caller-managed"] },
   { name: "Python", cells: ["Port; CLIs", "native", "argon2-cffi + hashlib", "Yes", "caller-managed"] },
   { name: "Haskell", cells: ["Port; CLIs", "native", "crypton", "Yes", "caller-managed"] },
-  { name: "TypeScript · Node", cells: ["Port; CLIs", "WASM (Rust core)", "hash-wasm", "No (in-memory)", "locked off-heap buffers"] },
+  { name: "TypeScript · Node", cells: ["Port; CLIs", "WASM (Rust core)", "hash-wasm", "No (in-memory)", "locked off-heap buffers (fail-closed; --insecure-memory opts out)"] },
   { name: "TypeScript · Browser", cells: ["In-page demo", "WASM (Rust core)", "hash-wasm", "No (in-memory)", "none (demo)"] },
 ];
 
@@ -67,15 +67,15 @@ const primitives = [
   },
   {
     name: "MAC menu",
-    badge: "3 from scratch",
-    body: "Authentication via Skein-512 (default), HMAC-SHA256, or keyed BLAKE3. All produce 32-byte tags and are bound into the header.",
+    badge: "3 choices",
+    body: "Authentication via Skein-512 (default), HMAC-SHA256, or keyed BLAKE3. Skein-512 and keyed BLAKE3 are from scratch in every implementation; HMAC-SHA256 comes from each ecosystem's standard library (Haskell and C++ build it from scratch too). All produce 32-byte tags and are bound into the header.",
   },
 ];
 ---
 
 <Layout
   title="dorado — Threefish, from scratch"
-  description="An educational, from-scratch implementation of Threefish (the cipher behind Skein), with a small honest tool stack: CTR, an authenticated password container, and a Skein hash tool, implemented ten ways in Rust, Go, C, C++, Zig, Java, Python, Haskell, and TypeScript."
+  description="An educational, from-scratch implementation of Threefish (the cipher behind Skein), with a small honest tool stack: CTR, an authenticated password container, and a Skein hash tool. One cipher, nine implementations: Rust, Go, C, C++, Zig, Java, Python, Haskell, and TypeScript (which runs in Node and the browser)."
 >
   <section class="hero">
     <div class="wrap">
@@ -86,8 +86,10 @@ const primitives = [
         The tweakable block cipher at the heart of the Skein hash function, all
         three sizes, with a small and honest tool stack on top: counter mode, an
         authenticated streaming password container, and a Skein hashing tool. One
-        cipher and one file format, implemented from scratch ten ways: Rust, Go,
-        C, C++, Zig, Java, Python, Haskell, and TypeScript (which also runs in your browser).
+        cipher and one file format, implemented nine ways: Rust, Go, C, C++, Zig,
+        Java, Python, Haskell, and TypeScript (which also runs in your browser).
+        Each reimplements the primitives from scratch; the shipping TypeScript
+        CLIs and the browser demo run the verified Rust cipher compiled to WASM.
       </p>
       <div class="cta">
         <Download client:load {...downloads} />
@@ -432,14 +434,16 @@ const primitives = [
 
   <section id="implementations">
     <div class="wrap">
-      <h2>One cipher, ten implementations</h2>
+      <h2>One cipher, nine implementations</h2>
       <p class="sub">
-        Dorado is written ten ways: Rust (the reference), Go, C, C++, Zig, Java (a
+        Dorado is written nine ways: Rust (the reference), Go, C, C++, Zig, Java (a
         library only), Python, Haskell, and a TypeScript port that runs both in Node
         and in your browser. All reimplement the same primitives from scratch, share the
         same on-disk format, and are byte-for-byte cross-compatible, so a file made
         by one opens in the others. What differs is what each runtime allows; the
-        two TypeScript rows are the same code, only the runtime changes.
+        two TypeScript rows are the same code, only the runtime changes, and as the
+        table shows, the TypeScript rows ship the Rust cipher compiled to WASM (the
+        pure-TS cipher backs the test suite).
       </p>
       <div class="cmp-scroll">
         <table class="cmp">
@@ -468,8 +472,9 @@ const primitives = [
         allocator) in Rust, C, and Zig; only Rust documents a full constant-time
         discipline; and memory safety is why Rust leads overall, since it alone
         prevents the use-after-free and overrun bugs that can leak a secret at
-        compile time (the wipe-and-lock mechanism itself is matched by C, Zig, and
-        Go). Full breakdown in{" "}
+        compile time (C and Zig match the wipe-and-lock mechanism itself; Go
+        approximates it with an off-heap mlock'd buffer, though its wipe is a
+        convention, not a language guarantee). Full breakdown in{" "}
         <a href={`${REPO}/blob/main/docs/implementations.md`}><code>docs/implementations.md</code></a>.
       </p>
     </div>

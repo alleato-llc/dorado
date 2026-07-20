@@ -831,6 +831,7 @@ dependencies = [
  "png",
  "rfd",
  "rime",
+ "zeroize",
 ]
 
 [[package]]

@@ -106,7 +106,7 @@ pub fn configure(app: &mut App) {
         _ => {}
     }
     if let Ok(password) = std::env::var("DORADO_SHOT_PASSWORD") {
-        app.password = password;
+        app.password = zeroize::Zeroizing::new(password);
     }
     if let Ok(text) = std::env::var("DORADO_SHOT_TEXT") {
         app.text = text;

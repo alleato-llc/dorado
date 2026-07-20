@@ -162,7 +162,11 @@ file, or tampering, and decryption stops.
 ## Bounds and validation
 
 - `chunk_size` must be non-zero, at most 2^30 bytes, and a multiple of the variant's
-  block size. The CLI default is 64 KiB.
+  block size. The CLI default is 64 KiB. Although the field admits values up to
+  2^30, a decrypting implementation by default accepts at most 64 MiB (2^26 bytes)
+  and rejects a larger header value; the `DORADO_MAX_CHUNK_BYTES` environment
+  variable overrides that acceptance cap in either direction, clamped to the
+  2^30 hard ceiling.
 - A frame's `ct_len` must not exceed the header `chunk_size`; this bounds per-frame
   allocation before any data is read.
 - Every non-final frame must carry exactly `chunk_size` plaintext bytes, which keeps

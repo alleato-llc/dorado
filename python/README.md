@@ -79,8 +79,9 @@ pytest        # KATs, every KDF/MAC/variant, the security properties, and
 
 ## Cross-compatibility
 
-The container bytes are identical to the Rust/Go/Java/TypeScript/C/Zig ports: each
-can decrypt the others' `.mahi` files. `tests/test_crosscompat.py` decrypts fixtures
+The container bytes are identical to the other eight implementations: each can
+decrypt the others' `.mahi` files. `tests/test_crosscompat.py` decrypts fixtures
 produced by the Rust reference (in `tests/fixtures/`) covering every KDF, MAC, and
-variant plus a labeled and a multi-frame file; the reverse direction is verified
-during development.
+variant plus a labeled and a multi-frame file; the reverse direction is covered by
+a committed fixture in the Rust suite (the Rust CLI decrypts a container encrypted
+by this port).

@@ -14,32 +14,58 @@ Dorado is an educational, unaudited project. Nothing here is a security claim.
 
 The most useful idea is that dorado is built in layers, each a thin step above the
 last. The cipher is the foundation; everything else is standard machinery wrapped
-around it. The library crate is just the cipher and one convenience mode, with zero
-runtime dependencies. Everything to do with passwords, key derivation,
-authentication, and file framing lives in the command-line tool, behind the
-optional `cli` feature.
+around it. Two library crates hold all the cryptography:
+
+- `crates/dorado` is the primitives library: Threefish in all three sizes, CTR,
+  and the from-scratch hashes (Skein-512 and BLAKE3). It is `no_std`; its one
+  optional runtime dependency is `zeroize` (on by default), which wipes each
+  cipher's key schedule on drop.
+- `crates/dorado-engine` is the construction: the password KDFs and both public
+  derivation entry points (`derive_from_password`, the slow stretch, and
+  `derive_from_key`, the fast fan-out of an already-strong key), the MAC menu,
+  the authenticated chunked password container, and the two raw-key modes.
+
+The frontends are thin consumers of those two crates: the `dorado` and `gyotaku`
+CLIs, the `dorado-gui` and `gyotaku-gui` desktop apps (sharing widgets via
+`dorado-gui-kit`), and the `rust/wasm` bindings, which compile the verified
+primitives (not the engine) to WebAssembly for the TypeScript port and the
+browser demo.
 
 ```mermaid
 flowchart TB
-    subgraph lib["library crate (zero deps)"]
-        engine["ARX engine<br/>encrypt / decrypt one block"]
+    subgraph prim["crates/dorado (primitives, no_std)"]
         variants["Threefish256 / 512 / 1024"]
         ctr["ctr_apply<br/>(CTR mode)"]
-        engine --> variants --> ctr
+        hashes["Skein-512 / BLAKE3"]
+        variants --> ctr
     end
 
-    subgraph cli["cli binary (feature = cli)"]
-        rawpath["raw-key path<br/>bare CTR, no header"]
-        pwpath["password path<br/>KDF + encrypt-then-MAC + chunks"]
+    subgraph eng["crates/dorado-engine (construction)"]
+        kdfs["KDFs<br/>derive_from_password / derive_from_key"]
+        pwpath["password container<br/>encrypt-then-MAC + chunks"]
+        rawpath["raw-key modes<br/>authenticated by default, bare CTR opt-out"]
+        kdfs --> pwpath
     end
 
-    ctr --> rawpath
     ctr --> pwpath
+    ctr --> rawpath
+    hashes --> pwpath
+
+    subgraph fronts["frontends"]
+        clis["dorado / gyotaku CLIs"]
+        guis["dorado-gui / gyotaku-gui<br/>(via dorado-gui-kit)"]
+        wasm["rust/wasm bindings<br/>(primitives only)"]
+    end
+
+    pwpath --> clis
+    pwpath --> guis
+    ctr --> wasm
 ```
 
-The `cli`/`lib` line is the trust boundary. The library is the part that matters
-cryptographically and is checked against official test vectors. The CLI is plumbing
-that composes well-known building blocks.
+The line that matters runs between the library crates and the frontends. The
+libraries are the part that matters cryptographically and are checked against
+official test vectors; the frontends are plumbing (arguments, files, windows)
+that calls the same library code everywhere.
 
 ## Layer 1: the cipher
 
@@ -74,18 +100,24 @@ why it is a mode and not part of Threefish. Two things matter: never start the
 counter at the same value twice under one key, and CTR gives confidentiality only.
 It does not detect tampering. Closing that gap is the job of the next layer.
 
-## Layer 3: the command-line tool
+## Layer 3: the engine and its frontends
 
-The CLI has two ways to supply the key, and both stream data in constant memory so
-they handle files larger than RAM.
+The engine has two ways to take the key, and both stream data in constant memory
+so they handle files larger than RAM. The CLI exposes both; the GUI exposes the
+password path.
 
 - **Raw key**: you provide the exact key bytes and the starting counter yourself.
-  The output is bare CTR ciphertext with no container and no authentication. This
-  is the primitive, exposed honestly.
+  By default the output is still authenticated: the engine splits your key into
+  independent encryption and MAC subkeys (domain-separated keyed Skein-512, with
+  no password stretching, since the key is already strong), then frames and tags
+  the data with the same encrypt-then-MAC chunk machinery as the password
+  container, binding the tweak and IV into the first frame's authenticated data.
+  An explicit `--unauthenticated` flag opts out to bare CTR: no framing, no
+  integrity, the primitive exposed honestly.
 - **Password**: you provide a password and the tool does the rest. This path adds
   key derivation, authentication, and a self-describing file format.
 
-The interesting machinery is all in the password path.
+The interesting machinery is mostly in the password path.
 
 ### Passwords are not keys
 
@@ -170,7 +202,8 @@ sequenceDiagram
 
 ## Threat model: what is and is not defended
 
-For the password path:
+For the password path (and for the default authenticated raw-key mode, which
+reuses the same frame machinery):
 
 - A **tampered file** is detected: changing any ciphertext byte or any header
   parameter (the variant, KDF settings, salt, tweak, or IV) makes a tag fail.
@@ -182,9 +215,19 @@ For the password path:
 
 What it does not defend against, stated plainly:
 
-- **Raw-key mode has no authentication at all.** It is bare CTR by design.
-- **Whole-file substitution.** The MAC authenticates a file's contents, not its
-  name or where it sits, so an attacker could swap one valid file for another.
+- **Raw-key mode with `--unauthenticated` has no integrity at all.** It is bare
+  CTR by design: a flipped ciphertext bit silently flips the matching plaintext
+  bit, with no error. The default raw-key mode is authenticated like the password
+  container; the opt-out exists for interop and for seeing the bare primitive,
+  and callers who take it own that gap.
+- **Whole-file substitution, partly.** The MAC authenticates a file's contents,
+  not its name or where it sits, so an attacker could swap one valid file for
+  another. The v4 format's label narrows this: `--label` binds an authenticated
+  context string into the file, and decrypting with `--expect-label` (the
+  `decrypt_password_stream_expecting` API) rejects a substituted but otherwise
+  valid file whose label does not match. This is a mitigation, not a full fix:
+  it only helps when the caller sets and checks labels, and two files carrying
+  the same label remain interchangeable.
 - **Partial output on failure.** Because decryption streams, verified early chunks
   may already be written when a later chunk fails. A non-zero exit means the output
   is incomplete and must not be trusted, even if some bytes appeared.
@@ -209,8 +252,9 @@ Confidence comes from several independent checks:
 - **Unit tests** for the file header, the KDFs, each of the three MACs, and the
   chunk counter.
 - **End-to-end checks** of the CLI for round-trips, tampering, and truncation.
-- **Fuzzing (proposed)**: feeding the header and frame parser many malformed inputs
-  to hunt for crashes. This is a testing tool, not shipped code.
+- **Fuzzing**: a cargo-fuzz (libFuzzer) harness in `rust/fuzz` feeds the decrypt
+  path malformed inputs to hunt for crashes and panics; run it with
+  `cargo +nightly fuzz run decrypt`. This is a testing tool, not shipped code.
 
 To see the cross-implementation agreement directly, run `cargo run --example
 compare`: it encrypts one block with dorado, with the RustCrypto `threefish` crate,
@@ -222,6 +266,7 @@ ciphertext for the same key, tweak, and plaintext.
 The lineage is now complete: Skein, the hash function Threefish was designed for, is
 built on top of the cipher via its chaining mode (UBI). It appears two ways, as the
 default authentication MAC and as a standalone `gyotaku` hashing tool (the Skein
-counterpart of `sha256sum`). Remaining candidates: making the core run without the
-standard library, and implementing the RustCrypto `cipher` traits for ecosystem
-interop.
+counterpart of `sha256sum`). The other early candidates have landed as well: the
+primitives crate is `no_std` (allocation-free with `--no-default-features`), and
+the optional `cipher` and `digest` features implement the RustCrypto traits for
+ecosystem interop.

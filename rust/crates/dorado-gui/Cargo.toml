@@ -23,5 +23,8 @@ rime = { path = "../../../../rime/rime" }
 iced = { version = "0.14", features = ["canvas", "advanced", "tokio"] }
 # Native Open/Save file dialogs; iced has none.
 rfd = "0.15"
+# Best-effort wiping of the app-owned password state (already in the tree via
+# dorado-engine).
+zeroize = "1"
 # PNG encoder for the env-gated review-screenshot harness (src/shot.rs).
 png = "0.17"

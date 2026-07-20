@@ -265,7 +265,7 @@ main = do
   check "mac skein512 == primitive keyed skein" (Mac.tag Mac.Skein512 mkey mmsg == Skein.mac mkey 32 mmsg)
 
   -- Container cross-compatibility: decrypt .mahi files produced by the Rust CLI,
-  -- covering every KDF, MAC, both variants, a multi-frame file, and a labeled one.
+  -- covering every KDF, MAC, all three variants, a multi-frame file, and a labeled one.
   let pw = C8.pack "correct horse battery staple"
       pt1 = C8.pack "Attack at dawn. Meet by the old oak."
       decFix name expected = do
@@ -275,6 +275,7 @@ main = do
   decFix "scrypt-hmac-256.mahi" pt1
   decFix "argon2-blake3-256.mahi" pt1
   decFix "pbkdf2-skein-512.mahi" pt1
+  decFix "pbkdf2-blake3-1024.mahi" pt1
   decFix "labeled.mahi" pt1
   decFix "multichunk.mahi" (seqBytes 3000)
 

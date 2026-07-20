@@ -84,6 +84,19 @@ freestanding:
 		$(CC) $(FREESTANDING_CFLAGS) -c src/$$f.c -o /dev/null && echo "  $$f.c: freestanding OK" || exit 1; \
 	done
 
+# Same check, but genuinely cross-compiled to a bare-metal ARM target (Cortex-M4
+# Thumb by default), so the primitives are proven to build for a no-OS machine that
+# is not the host, not just with -ffreestanding on the host compiler. Needs an ARM
+# bare-metal toolchain (Debian: apt-get install -y gcc-arm-none-eabi). Override
+# CROSS_CC / CROSS_FLAGS for a different toolchain or CPU. `make freestanding`
+# above stays host-only and needs no cross toolchain.
+CROSS_CC ?= arm-none-eabi-gcc
+CROSS_FLAGS ?= -mcpu=cortex-m4 -mthumb
+freestanding-arm:
+	@for f in threefish skein blake3; do \
+		$(CROSS_CC) $(CROSS_FLAGS) $(FREESTANDING_CFLAGS) -c src/$$f.c -o /dev/null && echo "  $$f.c: freestanding ($(CROSS_CC)) OK" || exit 1; \
+	done
+
 # libFuzzer harness for the decrypt path. Needs a clang with libFuzzer. The library
 # sources are compiled in (not the archive) so they are instrumented too. Run it as
 # `./fuzz/fuzz_decrypt` (libFuzzer defaults) or with `-max_total_time=N`.
@@ -96,4 +109,4 @@ clean:
 	rm -f $(LIB_OBJS) src/cli_dorado.o src/cli_gyotaku.o libdorado.a dorado gyotaku \
 		tests/test_dorado tests/test_dorado_san fuzz/fuzz_decrypt
 
-.PHONY: all test test-san fuzz freestanding clean
+.PHONY: all test test-san fuzz freestanding freestanding-arm clean

@@ -4,6 +4,8 @@
 //! stack instead of the JavaScript GC heap. Output is identical to the native
 //! Rust/Go/TS ports, so .mahi files stay cross-compatible.
 
+#![forbid(unsafe_code)]
+
 use dorado::{Threefish1024, Threefish256, Threefish512};
 use wasm_bindgen::prelude::*;
 

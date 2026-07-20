@@ -12,9 +12,10 @@ This is an educational, unaudited implementation. For real data, prefer an audit
 
 ## Project layout
 
-This is a Cargo workspace of seven crates:
+This is a Cargo workspace of four crates, with three GUI crates alongside it
+(excluded from the workspace over their path dependency on `rime`; see below):
 
-- `crates/dorado` — the primitives library, zero runtime dependencies. Threefish + CTR is the core; alongside it are the from-scratch hashes, each verified against official test vectors or differentially against an audited crate: Skein-512 (the hash Threefish was built for) and BLAKE3.
+- `crates/dorado` — the primitives library. Threefish + CTR is the core; alongside it are the from-scratch hashes, each verified against official test vectors or differentially against an audited crate: Skein-512 (the hash Threefish was built for) and BLAKE3. The default build's one runtime dependency is the optional, default-on `zeroize`; with `--no-default-features` it has zero.
 - `crates/dorado-engine` — the shared construction (KDFs, the authenticated chunked container, raw CTR (bare and authenticated), the MAC menu). Depends on `dorado`.
 - `crates/dorado-cli` — the command-line frontend (produces the `dorado` binary).
 - `crates/dorado-gui` — the graphical frontend for the password tool (produces `dorado-gui`), built on `rime` (a sibling repo, `alleato-llc/rime`, a small `iced` component/theming kit) plus `dorado-gui-kit`'s composites over it. Has a theme picker (any of rime's built-in named palettes) and native Open/Save file dialogs (`rfd`).
@@ -144,9 +145,10 @@ cd crates/dorado-gui && cargo run --release          # the password tool
 cd crates/dorado-gyotaku-gui && cargo run --release  # the hashing tool (gyotaku-gui)
 ```
 
-Prebuilt releases are also available: a signed + notarized universal macOS dmg
-for each app, plus bare Linux/Windows binaries, attached to the `rust-v*` GitHub
-Releases (see `rust/docs/RELEASING.md` for how the release pipeline builds these).
+Prebuilt releases: portable unsigned Linux and Windows GUI binaries are attached
+to the `rust-v*` GitHub Releases. The signed + notarized universal macOS dmgs are
+wired into the release pipeline but have not shipped yet (a one-time Apple signing
+setup is pending); see `rust/docs/RELEASING.md` for how the pipeline builds these.
 
 Each GUI is a separate binary that shares the same library code as its CLI, so they are for the same educational purpose and carry the same caveats. iced pulls in a large graphics stack, which is why they are their own crates.
 

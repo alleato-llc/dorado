@@ -66,9 +66,9 @@ byte[] indexKey = com.alleato.dorado.engine.Kdf.deriveFromKey(masterKey, "myapp/
 
 ## Cross-compatibility
 
-The container bytes are identical to the Rust/Go/TypeScript/Python/C/Zig ports:
-each can decrypt the others' `.mahi` files. `CrossCompatTest` decrypts fixtures
+The container bytes are identical to the other eight implementations: each can
+decrypt the others' `.mahi` files. `CrossCompatTest` decrypts fixtures
 produced by the Rust reference (in `src/test/resources/crosscompat/`) covering
 every KDF, MAC, and variant plus a labeled and a multi-frame file; the reverse
-direction (the Rust and Go CLIs decrypting Java's output) is verified during
-development.
+direction is covered by a committed fixture in the Rust suite (the Rust CLI
+decrypts a container encrypted by this port).

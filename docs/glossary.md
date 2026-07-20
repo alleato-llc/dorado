@@ -111,9 +111,11 @@ provide this; you need a MAC.
 **MAC (message authentication code).** A short tag computed from the data and a
 secret key. Anyone with the key can recompute it to confirm the data is unchanged
 and genuine; an attacker without the key cannot forge a valid tag. dorado lets you
-pick from three, all from scratch: Skein-512 (the default), HMAC-SHA256, and keyed
-BLAKE3. All three produce a 32-byte tag and are interchangeable in the
-encrypt-then-MAC step.
+pick from three: Skein-512 (the default), HMAC-SHA256, and keyed BLAKE3. Skein-512
+and keyed BLAKE3 are from scratch in every implementation; HMAC-SHA256 comes from
+each ecosystem's standard library, except in the Haskell and C++ ports, which build
+SHA-256 and HMAC from scratch too. All three produce a 32-byte tag and are
+interchangeable in the encrypt-then-MAC step.
 
 **Keyed hash / PRF MAC.** A way to build a MAC by feeding the key and the message
 into a hash function that behaves like a pseudorandom function (PRF). Skein, HMAC,
@@ -212,4 +214,7 @@ and BLAKE3 against the RustCrypto `skein` and `blake3` crates.
 
 **Fuzzing.** Feeding a function many automatically generated, malformed inputs to
 hunt for crashes, panics, or hangs. It is a testing technique, not shipped code.
-Proposed for dorado's header and frame parser.
+The Rust, C, and C++ implementations carry coverage-guided fuzz harnesses for the
+decrypt path (cargo-fuzz / libFuzzer); the Go, TypeScript, Java, and Python suites
+include deterministic randomized fuzz-style tests; the Zig and Haskell ports have
+neither yet.

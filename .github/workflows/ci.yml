@@ -180,6 +180,28 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           working-directory: rust
 
+  # Fuzz smoke: run the cargo-fuzz decrypt harness (rust/fuzz) briefly. It feeds
+  # arbitrary bytes to decrypt_password_bytes, which must never panic or
+  # over-allocate; a crash fails the job. cargo-fuzz needs a nightly toolchain
+  # (libFuzzer runtime), so this is its own job rather than part of `core`.
+  fuzz:
+    name: Rust fuzz smoke (decrypt)
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust/fuzz
+      # rust-cache keeps ~/.cargo/bin, so after the first run this install is a no-op.
+      - run: cargo install cargo-fuzz
+      - run: cargo +nightly fuzz run decrypt -- -max_total_time=60
+
   # Vet, build, and test the Go port (which must match the Rust on-disk format).
   go:
     name: Go port
@@ -251,11 +273,16 @@ jobs:
         working-directory: c
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y libargon2-dev libssl-dev pkg-config
+      # gcc-arm-none-eabi is the bare-metal cross toolchain for `make freestanding-arm`.
+      - run: sudo apt-get update && sudo apt-get install -y libargon2-dev libssl-dev pkg-config gcc-arm-none-eabi
       - run: make -j"$(nproc)"
       - run: make test
       - run: make test SAN=1     # rerun the suite under AddressSanitizer + UndefinedBehaviorSanitizer
-      - run: make freestanding   # the primitives build with no OS / allocator
+      - run: make freestanding       # the primitives build with no OS / allocator (host compiler)
+      - run: make freestanding-arm   # ...and cross-compile to bare-metal ARM (Cortex-M4)
+      # Fuzz smoke on the decrypt path (libFuzzer, clang ships on the runner). A
+      # crash or sanitizer report fails the job.
+      - run: make fuzz && ./fuzz/fuzz_decrypt -max_total_time=60
 
   # Build and test the Zig port (SDK + CLIs). No external libraries: the KDFs come
   # from Zig's standard library. Cross-compat tests decrypt fixtures made by the
@@ -328,8 +355,10 @@ jobs:
     steps:
       # Runs before checkout (so cpp/ does not exist yet) and installs git for it.
       # libasan/libubsan are the GCC sanitizer runtimes for the -DSANITIZE=ON
-      # build below; without them its executables fail to link.
-      - run: dnf install -y gcc-c++ cmake openssl-devel git libasan libubsan
+      # build below; without them its executables fail to link. clang + compiler-rt
+      # are for the -DFUZZ=ON build (libFuzzer requires Clang; Fedora ships the
+      # libFuzzer runtime in compiler-rt).
+      - run: dnf install -y gcc-c++ cmake openssl-devel git libasan libubsan clang compiler-rt
         working-directory: ${{ github.workspace }}
       - uses: actions/checkout@v4
       - run: cmake -S . -B build
@@ -338,6 +367,11 @@ jobs:
       - run: cmake -S . -B build-san -DSANITIZE=ON
       - run: cmake --build build-san
       - run: ctest --test-dir build-san --output-on-failure   # rerun the suite under AddressSanitizer + UndefinedBehaviorSanitizer
+      # Fuzz smoke on the decrypt path (Clang build of the libFuzzer harness). A
+      # crash or sanitizer report fails the job.
+      - run: cmake -S . -B build-fuzz -DFUZZ=ON -DCMAKE_CXX_COMPILER=clang++
+      - run: cmake --build build-fuzz
+      - run: ./build-fuzz/dorado_fuzz -max_total_time=60
 
   # Test the TypeScript port (SDK + CLIs). The suite runs on the default
   # pure-TS backend, so it needs no wasm build. This job was missing until

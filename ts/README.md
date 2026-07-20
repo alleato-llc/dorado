@@ -29,8 +29,10 @@ npm install
 npm run typecheck
 ```
 
-The Node `dorado` CLI uses the WASM cipher backend (see below); build it first
-with `cd ../rust/wasm && wasm-pack build --target nodejs`.
+The Node `dorado` CLI uses the WASM cipher backend (see below), which loads
+`../../rust/wasm/pkg`. That build is not committed: on a fresh clone, build it
+first with `cd ../rust/wasm && wasm-pack build --target nodejs` (without it the
+CLI exits with an error telling you to do exactly that).
 
 ## Use
 
@@ -64,6 +66,14 @@ Add `--unauthenticated` to fall back to bare CTR (no authentication, output
 length equals input length) — an expert opt-out, since bare CTR silently
 decrypts a corrupted byte to a flipped plaintext byte with no error.
 
+The CLI is fail-closed about secret memory: passwords and raw keys are held in
+`sodium-native` secure buffers (mlock'd, off-heap, guard-paged, wiped after
+use), and if `sodium-native` cannot load the CLI errors out rather than
+degrading silently. Pass `--insecure-memory` to proceed anyway with ordinary
+swappable heap memory; it prints a one-time warning. An interactively typed
+password still transits an immutable JS string before entering the locked
+buffer.
+
 ## Testing
 
 ```
@@ -73,11 +83,12 @@ npm test          # vitest: primitives (KATs) + engine (every KDF/MAC/variant an
 
 ## Cross-compatibility
 
-The container bytes are identical to the Rust/Go/Java/Python/C/Zig ports: each can
-decrypt the others' `.mahi` files. The byte-for-byte match is verified against the
-Rust CLI's output during development, across every KDF, MAC, and variant. (Unlike
-the Java/Python/C/Zig ports, the TS suite does not yet embed committed Rust
-fixtures.)
+The container bytes are identical to the other eight implementations: each can
+decrypt the others' `.mahi` files. The suite decrypts committed fixtures produced
+by the Rust reference (in `src/engine/fixtures/`) covering every KDF, MAC, and
+variant plus a labeled and a multi-frame file; the reverse direction is covered
+by a committed fixture in the Rust suite (the Rust CLI decrypts a container
+encrypted by this port).
 
 ## Cipher backend
 
@@ -90,9 +101,12 @@ cipher and keyed hashes:
   and the value stack instead of being scattered across short-lived `BigInt`s on
   the JS heap. The Node `dorado` CLI uses it.
 
-Both backends produce identical output, so cross-compatibility holds either way.
+The two backends are verified byte-identical by a differential test
+(`src/engine/backend-diff.test.ts`), which runs where `rust/wasm/pkg` has been
+built locally and skips otherwise, so cross-compatibility holds either way.
 WASM removes the un-wipeable transient values, but it is not a zeroization
 guarantee: a password arriving as a JS string, and copies made crossing the
-JS/WASM boundary, still live on the heap. In Node, secrets read as bytes are held
-in `sodium-native` secure (mlock'd, no-swap) buffers and wiped after use; the
-browser has no equivalent.
+JS/WASM boundary, still live on the heap. In Node, the CLI holds passwords and
+raw keys in `sodium-native` secure (mlock'd, off-heap, guard-paged) buffers,
+wiped after use and fail-closed if the library is unavailable (see the CLI
+section); the browser has no equivalent.

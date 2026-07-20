@@ -10,8 +10,8 @@ Like the Rust reference, it **streams** over `std::istream`/`std::ostream` in
 constant memory (files larger than RAM are fine); in-memory wrappers (over
 `std::stringstream`) are provided, so the streaming logic lives in one place. The
 cipher, the Skein/BLAKE3 hashes, and **SHA-256 + HMAC** are all from scratch; only
-the three password KDFs (Argon2id, scrypt, PBKDF2) are delegated, to OpenSSL's
-`EVP_KDF`. Educational and unaudited.
+the three password KDFs (Argon2id, scrypt, PBKDF2) and the CSPRNG are delegated,
+to OpenSSL (`EVP_KDF` and `RAND_bytes`). Educational and unaudited.
 
 ## Layout
 
@@ -30,7 +30,7 @@ the three password KDFs (Argon2id, scrypt, PBKDF2) are delegated, to OpenSSL's
 ## Build
 
 OpenSSL >= 3.2 is the only dependency (it supplies Argon2id, scrypt, and PBKDF2 via
-`EVP_KDF`):
+`EVP_KDF`, and the CSPRNG via `RAND_bytes`):
 
 ```
 # macOS
@@ -67,8 +67,8 @@ auto sub2 = kdf::derive_from_key_with(kdf::KdfPrf::Blake3, master, "myapp/index"
 
 Decryption treats the file header as untrusted: the KDF cost parameters are bounded
 (`kdf::validate`) before any derivation, and the chunk size is capped before any
-allocation: 64 MiB by default, 1 GiB hard ceiling, with the `DORADO_MAX_CHUNK_BYTES`
-env var able only to tighten the cap (`engine::max_chunk_bytes`).
+allocation: 64 MiB by default, with the `DORADO_MAX_CHUNK_BYTES` env var able to
+lower or raise the cap, clamped to the 1 GiB hard ceiling (`engine::max_chunk_bytes`).
 
 CLI:
 
@@ -89,7 +89,7 @@ opt-out. Password mode is always authenticated, and rejects `--unauthenticated`.
 ctest --test-dir build           # or run ./build/dorado_test directly
 ```
 
-The suite covers the primitive KATs (the Crypto++ Threefish vectors, RFC 8439/FIPS
+The suite covers the primitive KATs (the Crypto++ Threefish vectors, FIPS 180-4
 SHA-256, RFC 4231 HMAC, RFC 7914 scrypt, PBKDF2), every MAC and variant, the
 incremental hashers, and cross-compat fixtures produced by the Rust CLI (every
 KDF/MAC/variant plus a labeled and a multi-frame file), with wrong-password and
@@ -99,12 +99,17 @@ before any derivation or allocation, plus the pure chunk-cap resolution) and the
 `derive_from_key` known-answer vectors from `../docs/fixtures/derive-from-key.md`.
 The test runs from the source dir so the committed fixtures resolve.
 
+Two hardening builds are wired as well: configuring with `-DSANITIZE=ON` rebuilds
+the suite under ASan/UBSan (CI reruns `ctest` this way), and `-DFUZZ=ON` (Clang
+only) builds a libFuzzer harness for the decrypt path (`fuzz/fuzz_decrypt.cpp`).
+
 ## Cross-compatibility
 
 The container bytes are identical to the other ports: each can decrypt the others'
 `.mahi` files. The test decrypts fixtures produced by the Rust reference (in
-`tests/fixtures/`); the reverse direction (the Rust CLI decrypting this port's
-container, and matching `gyotaku` digests) is verified during development.
+`tests/fixtures/`, covering every KDF, MAC, and variant); the reverse direction is
+covered by a committed fixture in the Rust suite (the Rust CLI decrypts a container
+encrypted by this port).
 
 ## Secret handling
 
@@ -115,5 +120,6 @@ non-elidable volatile-write `secure_wipe`, the portable analog of `OPENSSL_clean
 The CLI holds the password in a page-aligned, `mlock`'d buffer kept out of swap and
 wiped on free (`mlock` is best-effort: skipped without error if `RLIMIT_MEMLOCK`
 forbids it). This reduces exposure but is not a guarantee: the password still transits
-stdin first, C++ is not memory-safe, and (unlike the C port) no sanitizer or fuzz
-harness is wired yet. Educational and unaudited.
+stdin first, and C++ is not memory-safe; the sanitizer rerun in CI and the libFuzzer
+harness (see Testing) catch bugs only on the paths they exercise. Educational and
+unaudited.

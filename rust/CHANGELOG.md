@@ -8,7 +8,32 @@ the Rust-specific details. Format: [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
-(No unreleased Rust-side changes yet.)
+### Added
+
+- **The reverse cross-compat direction is now verified in committed tests.**
+  `crates/dorado-cli/tests/fixtures/ports/` holds one password container
+  encrypted by each of the eight other ports' own encrypt paths (spanning
+  every KDF, MAC, and variant across the set), and a new end-to-end test in
+  `tests/cli.rs` decrypts them all with the built binary and checks the
+  plaintexts. Until now all cross-compat fixtures were Rust-generated, so
+  only the forward direction (ports decrypting Rust's output) was tested.
+- **The six raw-authenticated known-answer vectors from
+  `docs/fixtures/raw-authenticated.md` are pinned in the engine's own suite**
+  (`raw_authenticated_matches_cross_language_vectors`), so the reference
+  implementation that generated them has a regression test against the same
+  bytes the other eight ports embed.
+- `dorado-wasm`: `#![forbid(unsafe_code)]`, making the no-unsafe guarantee
+  hold across every crate including the WASM bindings.
+
+### Changed
+
+- `dorado-gui`: the app-state password and the worker-thread password copy
+  are now held in `zeroize::Zeroizing<String>`, wiping the app-owned heap
+  allocations on replace, drop, and exit. Best-effort only, and documented
+  as such in the code: iced's `text_input` keeps internal copies of the
+  typed value and nothing is mlock'd, unlike the CLI's `LockedPassword`.
+  `gyotaku-gui` is unchanged; it is an unkeyed hash tool and handles no
+  secrets.
 
 ## [0.2.1] - 2026-07-19
 

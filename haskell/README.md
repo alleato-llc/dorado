@@ -17,9 +17,9 @@ vetted library.
 
 - `src/Dorado/Threefish.hs`, `Skein.hs`, `Blake3.hs`, `Sha256.hs` — the from-scratch
   primitives (Threefish 256/512/1024 + CTR, Skein-512, BLAKE3, and SHA-256 + HMAC),
-  verified against the same vectors as the Rust reference. Unlike the other ports,
-  SHA-256/HMAC-SHA256 are also implemented from scratch here rather than taken from a
-  standard library.
+  verified against the same vectors as the Rust reference. Like the C++ port (and
+  unlike the rest), SHA-256/HMAC-SHA256 are also implemented from scratch here
+  rather than taken from a standard library.
 - `src/Dorado/Kdf.hs`, `Mac.hs`, `Format.hs`, `Engine.hs` — the construction: key
   derivation in both standard forms (the password KDFs delegated to `crypton`, with
   `validate` bounding untrusted cost parameters; the fast key-based
@@ -36,9 +36,9 @@ Decryption treats the container header as untrusted input: the KDF cost paramete
 are bounded (`Dorado.Kdf.validate`) and the chunk size is capped (64 MiB by default,
 1 GiB hard ceiling) before any allocation or key derivation, so a crafted file
 cannot demand gigabytes of memory or a multi-minute derivation. The
-`DORADO_MAX_CHUNK_BYTES` environment variable can tighten the cap, never raise it
-past the ceiling; the pure in-memory decrypt functions use the fixed 64 MiB default
-(only the streaming `IO` forms can read the environment).
+`DORADO_MAX_CHUNK_BYTES` environment variable can lower or raise the cap, clamped
+to the 1 GiB ceiling; the pure in-memory decrypt functions use the fixed 64 MiB
+default (only the streaming `IO` forms can read the environment).
 
 ## Build
 
@@ -96,12 +96,13 @@ cabal test       # KATs for every primitive, KDF vectors (RFC 7914), and the
 The container bytes are identical to the other ports: each can decrypt the others'
 `.mahi` files. The test suite decrypts fixtures produced by the Rust reference (in
 `test/fixtures/`) covering every KDF, MAC, and variant plus a labeled and a
-multi-frame file; the reverse direction (the Rust CLI decrypting Haskell's password
-and raw output, including a multi-frame streamed file) is verified during development.
+multi-frame file; the reverse direction is covered by a committed fixture in the
+Rust suite (the Rust CLI decrypts a container encrypted by this port).
 
 ## Secret handling
 
 Caller-managed, like the Java and Python ports: secrets live in GC-managed
 `ByteString`s that are not wiped, and the CLI does not `mlock` the password. This is
-weaker than the Rust/C/Zig/Go ports (no non-elidable wipe, no locked memory); it is a
-known limitation of this educational port, not a guarantee.
+weaker than the Rust/Go/C/C++/Zig CLIs and the TypeScript Node CLI (no non-elidable
+wipe, no locked memory); it is a known limitation of this educational port, not a
+guarantee.

@@ -243,6 +243,7 @@ int main() {
     dec_fix("scrypt-hmac-256.mahi", pt1);
     dec_fix("argon2-blake3-256.mahi", pt1);
     dec_fix("pbkdf2-skein-512.mahi", pt1);
+    dec_fix("pbkdf2-blake3-1024.mahi", pt1);
     dec_fix("labeled.mahi", pt1);
     dec_fix("multichunk.mahi", seq(3000));
 

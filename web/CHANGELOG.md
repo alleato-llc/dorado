@@ -9,6 +9,18 @@ Cross-cutting changes live in the [Core CHANGELOG](../CHANGELOG.md);
 
 ### Changed
 
+- Claim-accuracy pass from the documentation audit (see the Core changelog's
+  Fixed entry): the hero and meta description say nine implementations (not
+  "from scratch ten ways") and disclose that the shipping TypeScript CLIs and
+  browser demo run the Rust cipher via WASM; the MAC card's "3 from scratch"
+  badge is now "3 choices" with honest provenance (Skein-512 and keyed BLAKE3
+  from scratch everywhere, HMAC-SHA256 from each ecosystem's standard library
+  except Haskell and C++); the comparison table's Rust row scopes mlock to
+  the CLI with best-effort GUI wiping, and the TypeScript Node row notes the
+  new fail-closed locked memory with its `--insecure-memory` opt-out; the
+  memory-safety footnote no longer promotes Go into the wipe-and-lock tier
+  (C and Zig match the mechanism; Go approximates it).
+
 - The `dorado`/`gyotaku` tool cards caught up to reality: the CLIs are ported
   to eight languages (Rust, Go, TypeScript, Python, C, Zig, Haskell, C++),
   not three, and raw-key mode is authenticated by default with bare CTR as an

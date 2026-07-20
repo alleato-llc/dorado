@@ -7,7 +7,7 @@ import process from "node:process";
 import * as engine from "../engine/engine";
 import * as fmt from "../engine/format";
 import { wasmBackend } from "../engine/wasm-backend";
-import { type Secret, secureFrom, wipe } from "./secret";
+import { type Secret, assertSecureMemory, secureFrom, wipe } from "./secret";
 import { hexToBytes, utf8, bytesToHex, fromUtf8 } from "../bytes";
 
 const options = {
@@ -33,6 +33,7 @@ const options = {
   "expect-label": { type: "string" },
   in: { type: "string" },
   out: { type: "string" },
+  "insecure-memory": { type: "boolean", default: false },
   version: { type: "boolean", default: false },
   help: { type: "boolean", short: "h", default: false },
 } as const;
@@ -55,6 +56,9 @@ silently decrypts to a flipped plaintext byte with no error of any kind.
   --chunk-kib N              authenticated chunk size (password and raw-key modes)
   --label / --expect-label   bind/require a non-secret label
   --in FILE / --out FILE      default stdin/stdout
+  --insecure-memory          proceed without locked (mlock'd off-heap) secret
+                             memory when sodium-native fails to load; without
+                             this flag that failure is a hard error
   --version                  print version and exit
   -h, --help                 print this help and exit
 `;
@@ -141,13 +145,17 @@ function passwordMode(o: Opts): boolean {
 async function cmdCrypt(o: Opts, encrypt: boolean): Promise<void> {
   const creds = [o.key, o["key-file"], o.password, o["password-stdin"]].filter(Boolean).length;
   if (creds !== 1) throw new Error("provide exactly one of --key, --key-file, --password, --password-stdin");
+  // Fail closed before touching any secret: encrypt/decrypt always handle one
+  // (a raw key or a password), so a missing sodium-native is a hard error here
+  // unless the user explicitly accepted the degradation.
+  assertSecureMemory(!!o["insecure-memory"]);
 
   if (!passwordMode(o)) {
     let keyHex = str(o.key);
     if (!keyHex) keyHex = readFileSync(str(o["key-file"]), "utf8");
-    const key = dehex(keyHex);
-    const variant = ({ 32: fmt.T256, 64: fmt.T512, 128: fmt.T1024 } as Record<number, fmt.Variant>)[key.length];
-    if (variant === undefined) throw new Error(`key must be 32, 64, or 128 bytes, got ${key.length}`);
+    const key = secureFrom(dehex(keyHex));
+    const variant = ({ 32: fmt.T256, 64: fmt.T512, 128: fmt.T1024 } as Record<number, fmt.Variant>)[key.bytes.length];
+    if (variant === undefined) throw new Error(`key must be 32, 64, or 128 bytes, got ${key.bytes.length}`);
     if (!o.iv) throw new Error("--iv is required with --key/--key-file");
     try {
       const tweak = dehex(str(o.tweak));
@@ -155,18 +163,18 @@ async function cmdCrypt(o: Opts, encrypt: boolean): Promise<void> {
       let out: Uint8Array;
       if (o.unauthenticated) {
         // Bare CTR: symmetric, so encrypt and decrypt are the same operation.
-        out = engine.rawCTR(variant, key, tweak, iv, readInput(o), wasmBackend);
+        out = engine.rawCTR(variant, key.bytes, tweak, iv, readInput(o), wasmBackend);
       } else {
         // Authenticated (the default): encrypt-then-MAC is not symmetric, so
         // the subcommand selects the direction.
         const chunkSize = int(str(o["chunk-kib"])) * 1024;
         out = encrypt
-          ? await engine.encryptRawAuthenticatedBytes(variant, key, tweak, iv, macOf(o), chunkSize, readInput(o), wasmBackend)
-          : await engine.decryptRawAuthenticatedBytes(variant, key, tweak, iv, macOf(o), chunkSize, readInput(o), wasmBackend);
+          ? await engine.encryptRawAuthenticatedBytes(variant, key.bytes, tweak, iv, macOf(o), chunkSize, readInput(o), wasmBackend)
+          : await engine.decryptRawAuthenticatedBytes(variant, key.bytes, tweak, iv, macOf(o), chunkSize, readInput(o), wasmBackend);
       }
       writeOutput(o, out);
     } finally {
-      wipe(key);
+      key.wipe();
     }
     return;
   }

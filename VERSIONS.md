@@ -17,7 +17,7 @@ port and a bump of that integer.
 | --- | --- | --- | --- |
 | Core | 0.1.0 | [CHANGELOG.md](CHANGELOG.md) | `docs/`, `SECURITY.md`, CI, cross-port decisions |
 | Container format | v4 | [docs/spec.md](docs/spec.md) | the on-disk `.mahi` wire format (all ports) |
-| Rust port | 0.2.1 | [rust/CHANGELOG.md](rust/CHANGELOG.md) | `rust/` (the reference implementation) |
+| Rust port | 0.2.3 | [rust/CHANGELOG.md](rust/CHANGELOG.md) | `rust/` (the reference implementation) |
 | Go port | 0.1.0 | [go/CHANGELOG.md](go/CHANGELOG.md) | `go/` |
 | Java port | 0.1.0 | [java/CHANGELOG.md](java/CHANGELOG.md) | `java/` |
 | Python port | 0.1.0 | [python/CHANGELOG.md](python/CHANGELOG.md) | `python/` |

@@ -27,13 +27,36 @@ the Rust-specific details. Format: [Keep a Changelog](https://keepachangelog.com
 
 ### Changed
 
-- `dorado-gui`: the app-state password and the worker-thread password copy
-  are now held in `zeroize::Zeroizing<String>`, wiping the app-owned heap
-  allocations on replace, drop, and exit. Best-effort only, and documented
-  as such in the code: iced's `text_input` keeps internal copies of the
-  typed value and nothing is mlock'd, unlike the CLI's `LockedPassword`.
-  `gyotaku-gui` is unchanged; it is an unkeyed hash tool and handles no
-  secrets.
+- **`dorado-gui`'s password handling now matches the CLI's: wiped *and*
+  locked.** The field is rime's new `secure_input`, and the app state holds
+  its `SecretHandle` in place of the `Zeroizing<String>` this entry
+  previously described. The buffer is fixed-capacity (never reallocated, so
+  no `realloc` leaves a stale copy behind), `mlock`'d out of swap
+  best-effort, and zeroized on drop; because `mlock` acts on whole pages, it
+  sits in a page-aligned window that no other allocation shares. The widget
+  edits it in place and emits only unit messages, so the password no longer
+  enters iced's message queue, widget tree, or text shaper, which is what
+  the previous `Zeroizing<String>` approach could not cover. A job copies
+  the bytes out under the handle's lock into its own `Zeroizing` buffer for
+  the engine call. `shot.rs` seeds the handle directly and wipes the
+  intermediate `String`.
+
+  Residual risks, documented rather than papered over: the OS keyboard/IME
+  path and the compositor see keystrokes first, winit's event struct briefly
+  holds each typed character, a paste source keeps its own copy in the
+  system clipboard, and hibernation writes locked pages to disk regardless.
+  Deliberate omissions: no copy-out, no selection, no reveal toggle.
+  `docs/implementations.md` is updated to match. `gyotaku-gui` is unchanged;
+  it is an unkeyed hash tool and handles no secrets.
+
+### Fixed
+
+- `dorado-gui-kit`: the output panel's ciphertext hex ran off the right edge
+  instead of wrapping. Hex is one unbroken token and iced wraps on words by
+  default, so the text now uses `Wrapping::WordOrGlyph`, which breaks the
+  hex mid-token while still wrapping decrypted plaintext on word
+  boundaries. Wrapped lines also gained a trailing gutter so they clear the
+  overlaid scrollbar rather than running underneath it.
 
 ## [0.2.1] - 2026-07-19
 

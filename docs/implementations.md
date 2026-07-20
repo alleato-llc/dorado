@@ -51,7 +51,7 @@ both run the verified Rust cipher compiled to WASM and work in memory.
 
 | Implementation | Role / frontends | Cipher engine | KDFs | Streaming | Secret memory |
 | --- | --- | --- | --- | --- | --- |
-| **Rust** | Reference; CLIs + 2 GUIs | native | `argon2`/`scrypt`/`pbkdf2` crates | Yes | `zeroize` (wiped on drop); CLI mlocks password; GUIs best-effort wipe |
+| **Rust** | Reference; CLIs + 2 GUIs | native | `argon2`/`scrypt`/`pbkdf2` crates | Yes | `zeroize` (wiped on drop); CLI and `dorado-gui` mlock password |
 | **Go** | Port; CLIs | native | `golang.org/x/crypto` + stdlib | Yes | engine wipes keys; CLI mlocks password (off-heap) |
 | **C** | Port; CLIs | native | system `libargon2` + OpenSSL | Yes | engine wipes keys; CLI mlocks password |
 | **C++** | Port; CLIs | native | OpenSSL `EVP_KDF` (argon2/scrypt/pbkdf2) | Yes | engine wipes keys; CLI mlocks password |
@@ -118,10 +118,16 @@ Zig and Haskell have neither); C and C++ also run under ASan/UBSan in CI.
   - *Rust* wipes secret buffers and the cipher's key schedule on drop (`zeroize`,
     automatically on every path), and its CLI `mlock`s the password buffer out of
     swap (via the `region` crate, so `#![forbid(unsafe_code)]` still holds). The
-    GUIs are best-effort only: `dorado-gui` wipes its app-owned password copies
-    (`Zeroizing<String>`, cleared on replace, drop, and exit) but does not `mlock`,
-    and copies held inside iced's text-input widgets are not covered;
-    `gyotaku-gui` handles no secrets.
+    `dorado-gui` holds the typed password in rime's `secure_input` buffer, which
+    is fixed-capacity (never reallocated, so no `realloc` leaves a stale copy),
+    `mlock`'d out of swap best-effort, and zeroized on drop. Because `mlock` acts
+    on whole pages, that buffer sits in a page-aligned window no other allocation
+    shares. The widget edits it in place and emits only unit messages, so unlike
+    iced's own `text_input` the password never enters the message queue, the
+    widget tree, or the text shaper. What remains uncovered is outside the
+    process or upstream of the widget: the OS keyboard/IME path, the winit event
+    struct that briefly holds each typed character, and a paste source's own copy
+    in the system clipboard. `gyotaku-gui` handles no secrets.
   - *C* and *Zig* wipe the derived keys and the cipher's expanded key schedule with a
     non-elidable clear (`OPENSSL_cleanse` / `std.crypto.secureZero`), and their CLIs
     hold the password in a page-aligned, `mlock`'d buffer kept out of swap. The wipe

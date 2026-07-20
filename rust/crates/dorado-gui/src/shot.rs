@@ -40,6 +40,7 @@
 //! screenshot and exits.
 
 use iced::{window, Task};
+use zeroize::Zeroize;
 
 use dorado_engine as engine;
 
@@ -105,8 +106,11 @@ pub fn configure(app: &mut App) {
         Ok("blake3") => app.mac = MacChoice::Blake3,
         _ => {}
     }
-    if let Ok(password) = std::env::var("DORADO_SHOT_PASSWORD") {
-        app.password = zeroize::Zeroizing::new(password);
+    if let Ok(mut password) = std::env::var("DORADO_SHOT_PASSWORD") {
+        // Write the env-provided password into the locked handle, then wipe
+        // the intermediate String (best-effort; the env block itself remains).
+        app.password.push_str(&password);
+        password.zeroize();
     }
     if let Ok(text) = std::env::var("DORADO_SHOT_TEXT") {
         app.text = text;
@@ -148,10 +152,11 @@ fn run_sync(app: &mut App) {
     }
 }
 
-/// The actual encrypt/decrypt, mirroring `Job::run`'s text-source branch.
+/// The actual encrypt/decrypt, mirroring `Job::run`'s text-source branch. The
+/// password bytes are read under the handle's lock for the duration of the
+/// engine call.
 fn compute(app: &App, opts: &engine::PasswordOptions) -> Result<String, String> {
-    let pw = app.password.as_bytes();
-    match app.direction {
+    app.password.with_bytes(|pw| match app.direction {
         Direction::Encrypt => {
             let ct = engine::encrypt_password_bytes(pw, opts, app.text.as_bytes())?;
             Ok(hex(&ct))
@@ -161,7 +166,7 @@ fn compute(app: &App, opts: &engine::PasswordOptions) -> Result<String, String> 
             let pt = engine::decrypt_password_bytes(pw, &data)?;
             Ok(String::from_utf8_lossy(&pt).into_owned())
         }
-    }
+    })
 }
 
 /// Drive the capture forward from a [`Message::Shot`] event.

@@ -1,6 +1,7 @@
 //! A titled output block: a caption + "Copy" button header row above a
 //! bordered, scrollable text block.
 
+use iced::widget::text::Wrapping;
 use iced::widget::{column, container, row, scrollable, text, Space};
 use iced::{Alignment, Element, Length};
 use rime::theme::tokens;
@@ -20,10 +21,22 @@ pub fn output_panel<'a, M: Clone + 'a>(
         button::ghost("Copy", on_copy),
     ]
     .align_y(Alignment::Center);
+    // Ciphertext hex is one unbroken token, so the default word wrapping leaves
+    // it running off the right edge; `WordOrGlyph` breaks it mid-token while
+    // still wrapping decrypted plaintext on word boundaries.
     let content = card(
-        container(scrollable(text(body.to_string()).size(13)))
-            .width(Length::Fill)
-            .height(Length::Fixed(120.0)),
+        container(scrollable(
+            // Trailing gutter so wrapped lines clear the overlaid scrollbar
+            // instead of running under it.
+            container(
+                text(body.to_string())
+                    .size(13)
+                    .wrapping(Wrapping::WordOrGlyph),
+            )
+            .padding([0, 10]),
+        ))
+        .width(Length::Fill)
+        .height(Length::Fixed(120.0)),
     );
     column![header, content].spacing(8).into()
 }

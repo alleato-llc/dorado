@@ -27,7 +27,7 @@ use dorado_gui_kit::{
     theme_picker,
 };
 use rime::theme;
-use rime::widgets::{button, card, labeled, slider, text_field};
+use rime::widgets::{button, card, labeled, slider, text_field, SecretHandle};
 use zeroize::Zeroizing;
 
 mod shot;
@@ -173,7 +173,9 @@ impl std::fmt::Display for MacChoice {
 enum Message {
     DirectionSelected(Direction),
     SourceSelected(Source),
-    PasswordChanged(String),
+    /// The password field mutated its buffer. Carries nothing: the password
+    /// stays in the app's `SecretHandle` and never enters the message queue.
+    PasswordEdited,
     TextChanged(String),
     InPathChanged(String),
     OutPathChanged(String),
@@ -202,12 +204,13 @@ enum Message {
 struct App {
     direction: Direction,
     source: Source,
-    /// Best-effort hygiene: the app-owned password heap allocation is zeroized
-    /// when replaced or dropped. iced's `text_input` widget keeps its own
-    /// internal copies of the typed value (and `Message::PasswordChanged`
-    /// carries plain `String`s), so this wipes the app-owned copies only; it is
-    /// not the CLI's mlock'd, fully-wiped handling.
-    password: Zeroizing<String>,
+    /// The password's single home: rime's `secure_input` buffer, fixed
+    /// capacity (never reallocated), mlock'd into RAM best-effort, and
+    /// zeroized on drop. The widget edits it in place and emits only unit
+    /// messages, so the password never enters iced's message queue, widget
+    /// tree, or text shaper; a job copies the bytes out under the lock into
+    /// its own `Zeroizing` buffer for the engine call.
+    password: SecretHandle,
     text: String,
     in_path: String,
     out_path: String,
@@ -239,7 +242,7 @@ impl Default for App {
         App {
             direction: Direction::Encrypt,
             source: Source::Text,
-            password: Zeroizing::new(String::new()),
+            password: SecretHandle::new(),
             text: String::new(),
             in_path: String::new(),
             out_path: String::new(),
@@ -316,9 +319,10 @@ struct Job {
     direction: Direction,
     source: Source,
     opts: engine::PasswordOptions,
-    /// The worker's own copy of the password, zeroized when the job is dropped
-    /// at the end of `run`.
-    password: Zeroizing<String>,
+    /// The worker's own copy of the password bytes (read out of the app's
+    /// `SecretHandle` under its lock), zeroized when the job is dropped at the
+    /// end of `run`.
+    password: Zeroizing<Vec<u8>>,
     text: String,
     in_path: String,
     out_path: String,
@@ -326,7 +330,7 @@ struct Job {
 
 impl Job {
     fn run(self) -> Result<String, String> {
-        let pw = self.password.as_bytes();
+        let pw: &[u8] = &self.password;
         if pw.is_empty() {
             return Err("password must not be empty".into());
         }
@@ -404,7 +408,9 @@ impl App {
         match message {
             Message::DirectionSelected(d) => self.direction = d,
             Message::SourceSelected(s) => self.source = s,
-            Message::PasswordChanged(v) => self.password = Zeroizing::new(v),
+            // The secure_input already applied the edit to the handle; the
+            // message only triggers this re-render.
+            Message::PasswordEdited => {}
             Message::TextChanged(v) => self.text = v,
             Message::InPathChanged(v) => self.in_path = v,
             Message::OutPathChanged(v) => self.out_path = v,
@@ -447,7 +453,9 @@ impl App {
                     direction: self.direction,
                     source: self.source,
                     opts,
-                    password: self.password.clone(),
+                    // Copy the bytes out under the handle's lock into a wiped
+                    // buffer of the job's own.
+                    password: Zeroizing::new(self.password.with_bytes(|pw| pw.to_vec())),
                     text: self.text.clone(),
                     in_path: self.in_path.clone(),
                     out_path: self.out_path.clone(),
@@ -515,7 +523,12 @@ impl App {
             .push(theme_picker(&self.theme_name, Message::ThemeSelected))
             .push(direction)
             .push(source)
-            .push(password_field(&self.password, Message::PasswordChanged));
+            // Enter in the password field submits, same as the Go button.
+            .push(password_field(
+                &self.password,
+                Message::PasswordEdited,
+                Message::Run,
+            ));
 
         match self.source {
             Source::Text => {

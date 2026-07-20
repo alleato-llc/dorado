@@ -39,7 +39,7 @@ const tools = [
 // in the lead text). Kept in sync with docs/implementations.md.
 const cmpCols = ["Role / frontends", "Cipher engine", "Key derivation", "Streaming", "Secret memory"];
 const cmpRows = [
-  { name: "Rust", ref: true, cells: ["Reference; CLIs + 2 GUIs", "native", "argon2 / scrypt / pbkdf2 crates", "Yes", "zeroize wipe; CLI mlocks password; GUIs best-effort wipe"] },
+  { name: "Rust", ref: true, cells: ["Reference; CLIs + 2 GUIs", "native", "argon2 / scrypt / pbkdf2 crates", "Yes", "zeroize wipe; CLI and dorado-gui mlock password"] },
   { name: "Go", cells: ["Port; CLIs", "native", "x/crypto + stdlib", "Yes", "wipes keys; mlocks password (off-heap)"] },
   { name: "C", cells: ["Port; CLIs", "native", "libargon2 + OpenSSL", "Yes", "wipes keys; mlocks password"] },
   { name: "C++", cells: ["Port; CLIs", "native", "OpenSSL EVP_KDF", "Yes", "wipes keys; mlocks password"] },

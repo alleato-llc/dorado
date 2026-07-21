@@ -356,9 +356,14 @@ impl App {
 
         content = content.push(progress_status_row(self.busy, self.progress, &self.status));
 
-        if !self.output.is_empty() {
-            content = content.push(output_panel("Digest", &self.output, Message::Copy));
-        }
+        // Always present, empty or not; see `output_panel`'s docs.
+        content = content.push(output_panel(
+            "Digest",
+            &self.output,
+            "Digest appears here",
+            None,
+            Message::Copy,
+        ));
 
         let centered = container(content).center_x(Length::Fill);
         container(scrollable(centered))

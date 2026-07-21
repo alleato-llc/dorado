@@ -10,6 +10,48 @@ the Rust-specific details. Format: [Keep a Changelog](https://keepachangelog.com
 
 ### Added
 
+- **`dorado-gui` gained a settings panel**, behind a gear in the header
+  (rime's `settings` shell over its `icons::glyph::SETTINGS`; the app now
+  loads rime's icon font, without which the glyph renders as tofu). Three
+  sections: Encryption, which is where the old inline "Options" disclosure's
+  controls now live; Appearance, which takes over the theme picker that used
+  to sit in the main column and adds an output-panel font; and Clipboard.
+  The main column is correspondingly shorter, with the theme picker and the
+  options toggle both gone from it.
+
+  Sections are an enum rather than the bare indices the rail speaks, so the
+  labels and the content dispatch cannot drift apart, and an out-of-range
+  index degrades to the first section instead of panicking. **Nothing is
+  written to disk**: the app persists no configuration at all, so every
+  choice resets on launch. That is deliberate rather than unfinished, and it
+  suits a tool whose whole job is secrets: no config file means nothing left
+  behind, not even evidence the app was used.
+
+- **A clipboard-clear timer** (Clipboard section; default 30s, or Never).
+  Copying arms a deadline and the countdown only subscribes while a copy is
+  pending, so an idle window is not waking for nothing. Documented in the
+  panel as best-effort, because it is: it bounds how long the *system*
+  clipboard holds a copy and cannot recall one, anything watching the
+  clipboard has already read the value, and clipboard managers keep their own
+  history dorado cannot reach.
+
+- **An output-panel font picker** (Appearance). iced 0.14 fixes the
+  application-wide default font at startup, so a runtime change has to be
+  handed to widgets directly; `output_panel` now takes an `Option<Font>` and
+  the setting reaches the one place a monospace face genuinely helps, long
+  unbroken ciphertext hex. Families resolve by name from a fixed list, so an
+  absent one falls back to the default; the lookup only ever returns the
+  `&'static str`s already in that list, which avoids leaking a `String` per
+  change the way the obvious `Box::leak` spelling would.
+
+- `dorado-gui`: unit tests (`src/tests.rs`) for the settings helpers that can
+  silently drift: the section label/index mapping, the uniqueness and reverse
+  lookup of the clipboard interval labels, and the font resolver.
+
+- The screenshot harness learned `DORADO_SHOT_SETTINGS=<section>` and
+  `DORADO_SHOT_FONT=<family>`. `DORADO_SHOT_OPTIONS` keeps working and now
+  opens the settings panel on Encryption, where those controls moved.
+
 - **The reverse cross-compat direction is now verified in committed tests.**
   `crates/dorado-cli/tests/fixtures/ports/` holds one password container
   encrypted by each of the eight other ports' own encrypt paths (spanning
@@ -57,6 +99,25 @@ the Rust-specific details. Format: [Keep a Changelog](https://keepachangelog.com
   hex mid-token while still wrapping decrypted plaintext on word
   boundaries. Wrapped lines also gained a trailing gutter so they clear the
   overlaid scrollbar rather than running underneath it.
+
+- **The result area no longer pops into existence when a job finishes.** Both
+  GUIs only rendered the output panel once there was output, and the status
+  row collapsed to nothing while empty, so finishing a job inserted a "Done"
+  line *and* a whole panel at once and shoved the layout down at the moment
+  the user was reading it. `output_panel` now takes a `placeholder` and is
+  rendered unconditionally: an empty body draws the same frame with muted
+  placeholder text and an inert Copy button (`on_press_maybe`), so the panel
+  is a fixed part of the window. `progress_status_row` is likewise a constant
+  height in every state, holding the bar's slot open when idle and reserving
+  the caption's line when the status is empty. Idle and finished layouts are
+  now identical except for their contents.
+
+- `dorado-gui`: the KDF-cost and chunk-size sliders rendered as bare labels
+  with no track once they moved into the settings panel. rime's `slider` puts
+  its label in a fixed 170px gutter and its readout in another 48px, which
+  fits the main column but leaves nothing for the track in the panel's
+  narrower content pane. They now stack the label above the slider, using the
+  empty-label form rime documents for exactly this case.
 
 ## [0.2.1] - 2026-07-19
 

@@ -12,7 +12,7 @@
 
 #![forbid(unsafe_code)]
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use iced::alignment::Horizontal;
 use iced::futures::channel::oneshot;
@@ -27,10 +27,117 @@ use dorado_gui_kit::{
     theme_picker,
 };
 use rime::theme;
-use rime::widgets::{button, card, labeled, slider, text_field, SecretHandle};
+use rime::widgets::{
+    button, caption, card, labeled, select, settings, slider, text_field, SecretHandle,
+};
 use zeroize::Zeroizing;
 
 mod shot;
+
+#[cfg(test)]
+mod tests;
+
+/// Nothing the settings panel holds is written to disk: the app persists no
+/// configuration at all, so every choice here resets on the next launch. That
+/// is deliberate for a tool whose whole job is secrets, and it keeps the GUI a
+/// self-contained showcase (see `rust/CHANGELOG.md`).
+mod settings_state {
+    /// The settings panel's sections, in the order the left rail lists them.
+    /// An enum rather than the bare indices the rail speaks, so the labels and
+    /// the content dispatch cannot drift apart.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+    pub enum Section {
+        #[default]
+        Encryption,
+        Appearance,
+        Clipboard,
+    }
+
+    impl Section {
+        /// The rail labels, indexed by [`Section::index`].
+        pub const LABELS: &'static [&'static str] = &["Encryption", "Appearance", "Clipboard"];
+
+        pub fn index(self) -> usize {
+            match self {
+                Section::Encryption => 0,
+                Section::Appearance => 1,
+                Section::Clipboard => 2,
+            }
+        }
+
+        /// The section for a rail index; out-of-range falls back to the first,
+        /// so a mismatch can never panic in `view`.
+        pub fn from_index(i: usize) -> Self {
+            match i {
+                1 => Section::Appearance,
+                2 => Section::Clipboard,
+                _ => Section::Encryption,
+            }
+        }
+    }
+}
+
+use settings_state::Section;
+
+/// The label for "leave the platform default alone", and the first font choice.
+const DEFAULT_FONT_LABEL: &str = "System Default";
+
+/// The font families offered in Appearance. Resolved by name at render time, so
+/// a family the machine does not have silently falls back to the default: this
+/// is a convenience list, not a guarantee that any of them are installed. Kept
+/// short and boring on purpose, since the point is legibility of hex output.
+const FONT_CHOICES: &[&str] = &[
+    DEFAULT_FONT_LABEL,
+    "Menlo",
+    "Monaco",
+    "SF Mono",
+    "JetBrains Mono",
+    "Fira Code",
+    "Courier New",
+];
+
+/// Resolve a family name to an iced [`Font`](iced::Font).
+///
+/// `Font::with_name` wants a `&'static str`, and the obvious fix (leaking a
+/// `String` per change) leaks unboundedly if the name is ever user-typed. Since
+/// every name we offer is already a `&'static str` in [`FONT_CHOICES`], look it
+/// up there instead and leak nothing.
+fn font_by_name(name: &str) -> Option<iced::Font> {
+    FONT_CHOICES
+        .iter()
+        .find(|choice| **choice == name && **choice != DEFAULT_FONT_LABEL)
+        .map(|choice| iced::Font::with_name(choice))
+}
+
+/// How long the clipboard may keep a copied secret, in seconds. `0` disables
+/// clearing (the copy stays until something else overwrites it).
+const CLIPBOARD_CLEAR_CHOICES: &[u32] = &[0, 10, 30, 60, 300];
+
+/// A slider with its label stacked above rather than beside it.
+///
+/// rime's `slider` puts the label in a fixed 170px gutter, which suits the main
+/// column but not the settings panel's narrow content pane: 170px of label plus
+/// a 48px readout leaves the track no room at all, and it collapses to nothing.
+/// Passing an empty label collapses that gutter (rime documents this for tight
+/// spaces), so the label goes above via `labeled` instead.
+fn stacked_slider<'a>(
+    label: &'a str,
+    range: std::ops::RangeInclusive<f32>,
+    value: f32,
+    readout: impl Into<String>,
+    on_change: impl Fn(f32) -> Message + 'a,
+) -> Element<'a, Message> {
+    labeled(label, slider("", range, value, readout, on_change))
+}
+
+/// Render a clipboard-clear interval for the picker.
+fn clipboard_clear_label(secs: u32) -> String {
+    match secs {
+        0 => "Never".to_string(),
+        s if s % 60 == 0 => format!("After {} min", s / 60),
+        s => format!("After {s}s"),
+    }
+}
 
 /// The default theme, by name (see [`rime::theme::builtin_themes`]).
 const DEFAULT_THEME: &str = "Dracula";
@@ -68,6 +175,8 @@ fn main() -> iced::Result {
         .title(App::title)
         .theme(App::theme)
         .subscription(App::subscription)
+        // rime's icon glyphs (the settings gear) render as tofu without this.
+        .font(rime::icons::FONT_BYTES)
         .window(iced::window::Settings {
             size: iced::Size::new(480.0, height),
             icon: app_icon(),
@@ -181,7 +290,16 @@ enum Message {
     OutPathChanged(String),
     BrowseInPath,
     BrowseOutPath,
-    ToggleOptions,
+    SettingsOpened,
+    SettingsDismissed,
+    /// The settings rail speaks bare indices; mapped to a [`Section`] on
+    /// arrival so the rest of the app never handles a loose integer.
+    SettingsSectionSelected(usize),
+    FontSelected(String),
+    ClipboardClearSelected(u32),
+    /// A tick of the clipboard-clear countdown; only subscribed while a copy is
+    /// actually pending.
+    ClipboardTick,
     VariantSelected(VariantChoice),
     KdfSelected(KdfChoice),
     MacSelected(MacChoice),
@@ -214,8 +332,10 @@ struct App {
     text: String,
     in_path: String,
     out_path: String,
-    // Options.
-    show_options: bool,
+    // Settings panel.
+    settings_open: bool,
+    settings_section: Section,
+    // Options (the Encryption section).
     variant: VariantChoice,
     kdf: KdfChoice,
     mac: MacChoice,
@@ -227,6 +347,16 @@ struct App {
     tweak_hex: String,
     // Appearance.
     theme_name: String,
+    /// A family name from [`FONT_CHOICES`]; [`DEFAULT_FONT_LABEL`] means "leave
+    /// iced's default alone".
+    font_name: String,
+    // Clipboard.
+    /// Seconds before a copied secret is cleared from the clipboard; `0` never
+    /// clears. Best-effort by nature (see the handler for `Message::Copy`).
+    clipboard_clear_secs: u32,
+    /// When the pending copy should be wiped. `Some` only between a copy and
+    /// its clear, and the sole thing that keeps the countdown subscribed.
+    clipboard_deadline: Option<Instant>,
     // Result.
     output: String,
     status: String,
@@ -246,7 +376,8 @@ impl Default for App {
             text: String::new(),
             in_path: String::new(),
             out_path: String::new(),
-            show_options: false,
+            settings_open: false,
+            settings_section: Section::default(),
             variant: VariantChoice::B256,
             kdf: KdfChoice::Argon2id,
             mac: MacChoice::Skein,
@@ -257,6 +388,9 @@ impl Default for App {
             chunk_kib: 64,
             tweak_hex: String::new(),
             theme_name: DEFAULT_THEME.to_string(),
+            font_name: DEFAULT_FONT_LABEL.to_string(),
+            clipboard_clear_secs: 30,
+            clipboard_deadline: None,
             output: String::new(),
             status: String::new(),
             busy: false,
@@ -398,9 +532,16 @@ impl App {
         } else {
             Subscription::none()
         };
+        // Only ticks while a copy is actually pending, so an idle window is
+        // not waking once a second for nothing.
+        let clipboard = if self.clipboard_deadline.is_some() {
+            iced::time::every(Duration::from_millis(250)).map(|_| Message::ClipboardTick)
+        } else {
+            Subscription::none()
+        };
         match shot::subscription(self) {
-            Some(shot) => Subscription::batch([busy, shot]),
-            None => busy,
+            Some(shot) => Subscription::batch([busy, clipboard, shot]),
+            None => Subscription::batch([busy, clipboard]),
         }
     }
 
@@ -424,7 +565,21 @@ impl App {
                     self.out_path = path.display().to_string();
                 }
             }
-            Message::ToggleOptions => self.show_options = !self.show_options,
+            Message::SettingsOpened => self.settings_open = true,
+            Message::SettingsDismissed => self.settings_open = false,
+            Message::SettingsSectionSelected(i) => self.settings_section = Section::from_index(i),
+            Message::FontSelected(name) => self.font_name = name,
+            Message::ClipboardClearSelected(secs) => self.clipboard_clear_secs = secs,
+            Message::ClipboardTick => {
+                if self
+                    .clipboard_deadline
+                    .is_some_and(|at| Instant::now() >= at)
+                {
+                    self.clipboard_deadline = None;
+                    self.status = "Clipboard cleared".to_string();
+                    return iced::clipboard::write(String::new());
+                }
+            }
             Message::VariantSelected(v) => self.variant = v,
             Message::KdfSelected(k) => self.kdf = k,
             Message::MacSelected(m) => self.mac = m,
@@ -436,7 +591,17 @@ impl App {
             Message::TweakChanged(v) => self.tweak_hex = v,
             Message::ThemeSelected(name) => self.theme_name = name,
             Message::Tick => self.progress = (self.progress + 0.04) % 1.0,
-            Message::Copy => return iced::clipboard::write(self.output.clone()),
+            Message::Copy => {
+                // Arm the clear, if enabled. Best-effort in the strongest
+                // sense: anything watching the clipboard has already read the
+                // value, and other apps' clipboard managers keep their own
+                // history we cannot reach. This only bounds how long *the
+                // system clipboard* holds it.
+                self.clipboard_deadline = (self.clipboard_clear_secs > 0).then(|| {
+                    Instant::now() + Duration::from_secs(self.clipboard_clear_secs as u64)
+                });
+                return iced::clipboard::write(self.output.clone());
+            }
             Message::Run => {
                 if self.busy {
                     return Task::none();
@@ -488,13 +653,18 @@ impl App {
         let _scope = theme::enter(self.palette());
         let p = theme::tokens();
 
-        let header = column![
-            text("dorado").size(32).color(p.ink),
-            text("Threefish password encryption")
-                .size(13)
-                .color(p.muted),
+        let header = iced::widget::row![
+            column![
+                text("dorado").size(32).color(p.ink),
+                text("Threefish password encryption")
+                    .size(13)
+                    .color(p.muted),
+            ]
+            .spacing(3),
+            iced::widget::Space::new().width(Length::Fill),
+            button::icon(rime::icons::glyph::SETTINGS, Message::SettingsOpened),
         ]
-        .spacing(3);
+        .align_y(iced::Alignment::Center);
 
         let direction = segmented(&[
             (
@@ -520,7 +690,6 @@ impl App {
             .spacing(16)
             .max_width(420)
             .push(header)
-            .push(theme_picker(&self.theme_name, Message::ThemeSelected))
             .push(direction)
             .push(source)
             // Enter in the password field submits, same as the Go button.
@@ -560,17 +729,6 @@ impl App {
             }
         }
 
-        let toggle_label = if self.show_options {
-            "Options ▴"
-        } else {
-            "Options ▾"
-        };
-        content = content.push(button::ghost(toggle_label, Message::ToggleOptions));
-
-        if self.show_options {
-            content = content.push(self.options_view());
-        }
-
         let go_label = if self.busy { "Working…" } else { "Go" };
         let mut go = iced::widget::button(
             text(go_label)
@@ -588,32 +746,123 @@ impl App {
 
         content = content.push(progress_status_row(self.busy, self.progress, &self.status));
 
-        if !self.output.is_empty() {
-            content = content.push(output_panel("Output", &self.output, Message::Copy));
-        }
+        // Always present, empty or not: a panel that appears only once a job
+        // finishes shoves the rest of the window down at the moment the user is
+        // reading it.
+        let placeholder = match self.direction {
+            Direction::Encrypt => "Ciphertext appears here",
+            Direction::Decrypt => "Decrypted text appears here",
+        };
+        content = content.push(output_panel(
+            "Output",
+            &self.output,
+            placeholder,
+            font_by_name(&self.font_name),
+            Message::Copy,
+        ));
 
         let centered = container(content).center_x(Length::Fill);
-        container(scrollable(centered))
+        let base = container(scrollable(centered))
             .padding(16)
             .width(Length::Fill)
-            .height(Length::Fill)
-            .into()
+            .height(Length::Fill);
+
+        if !self.settings_open {
+            return base.into();
+        }
+        settings(
+            base,
+            Section::LABELS,
+            self.settings_section.index(),
+            Message::SettingsSectionSelected,
+            self.settings_section_view(),
+            None,
+            Message::SettingsDismissed,
+        )
     }
 }
 
 impl App {
-    /// The collapsible options panel: variant, KDF, KDF cost, chunk size, tweak.
-    fn options_view(&self) -> Element<'_, Message> {
+    /// The settings panel's content pane, for whichever section is active.
+    fn settings_section_view(&self) -> Element<'_, Message> {
+        match self.settings_section {
+            Section::Encryption => self.encryption_section(),
+            Section::Appearance => self.appearance_section(),
+            Section::Clipboard => self.clipboard_section(),
+        }
+    }
+
+    /// Theme and font. The font applies to the output panel only: iced 0.14
+    /// fixes the application-wide default font at startup, so a runtime change
+    /// has to be handed to individual widgets, and the output is the one place
+    /// a monospace face genuinely helps (long unbroken ciphertext hex).
+    fn appearance_section(&self) -> Element<'_, Message> {
+        let fonts: Vec<String> = FONT_CHOICES.iter().map(|f| f.to_string()).collect();
+        column![
+            // No section headers: both controls label themselves, and a
+            // "Theme" heading above a "Theme" picker just says it twice.
+            theme_picker(&self.theme_name, Message::ThemeSelected),
+            labeled(
+                "Output font",
+                select(fonts, Some(self.font_name.clone()), Message::FontSelected),
+            ),
+            caption(
+                "Applies to the output panel. iced fixes the app-wide font at \
+                 startup, so this reaches the one place it matters most: long \
+                 unbroken ciphertext hex. A family this machine lacks falls \
+                 back to the default."
+            ),
+        ]
+        .spacing(12)
+        .into()
+    }
+
+    /// How long a copied secret may sit in the system clipboard.
+    fn clipboard_section(&self) -> Element<'_, Message> {
+        let choices: Vec<u32> = CLIPBOARD_CLEAR_CHOICES.to_vec();
+        column![
+            labeled(
+                "Clear after copying",
+                select(
+                    choices
+                        .iter()
+                        .map(|s| clipboard_clear_label(*s))
+                        .collect::<Vec<_>>(),
+                    Some(clipboard_clear_label(self.clipboard_clear_secs)),
+                    |label: String| {
+                        Message::ClipboardClearSelected(
+                            CLIPBOARD_CLEAR_CHOICES
+                                .iter()
+                                .copied()
+                                .find(|s| clipboard_clear_label(*s) == label)
+                                .unwrap_or(0),
+                        )
+                    },
+                ),
+            ),
+            caption(
+                "Best-effort only. This bounds how long the system clipboard \
+                 holds a copy; it cannot recall one. Anything watching the \
+                 clipboard has already read the value, and clipboard managers \
+                 keep their own history dorado cannot reach."
+            ),
+        ]
+        .spacing(12)
+        .into()
+    }
+
+    /// Variant, KDF, KDF cost, chunk size, tweak.
+    fn encryption_section(&self) -> Element<'_, Message> {
         let cost: Element<'_, Message> = match self.kdf {
             KdfChoice::Argon2id => column![
-                slider(
+                stacked_slider(
                     "Memory",
                     4.0..=256.0,
                     self.argon2_mem_mib as f32,
                     format!("{} MiB", self.argon2_mem_mib),
                     |v: f32| Message::Argon2MemChanged(v.round() as u32),
                 ),
-                slider(
+                stacked_slider(
                     "Iterations",
                     1.0..=8.0,
                     self.argon2_time as f32,
@@ -623,14 +872,14 @@ impl App {
             ]
             .spacing(12)
             .into(),
-            KdfChoice::Scrypt => slider(
+            KdfChoice::Scrypt => stacked_slider(
                 "Cost log2(N)",
                 8.0..=20.0,
                 self.scrypt_logn as f32,
                 format!("{}", self.scrypt_logn),
                 |v: f32| Message::ScryptLognChanged(v.round() as u8),
             ),
-            KdfChoice::Pbkdf2 => slider(
+            KdfChoice::Pbkdf2 => stacked_slider(
                 "Rounds",
                 10_000.0..=1_000_000.0,
                 self.pbkdf2_rounds as f32,
@@ -660,7 +909,7 @@ impl App {
                     Message::MacSelected,
                 ),
                 cost,
-                slider(
+                stacked_slider(
                     "Chunk size",
                     1.0..=512.0,
                     self.chunk_kib as f32,

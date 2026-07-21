@@ -17,8 +17,13 @@
 //! - `DORADO_SHOT=<path>` — enable; capture the window to `<path>` (a `.png`).
 //! - `DORADO_SHOT_DIRECTION=encrypt|decrypt` — sets the encrypt/decrypt toggle.
 //! - `DORADO_SHOT_SOURCE=text|file` — sets the text/file source toggle.
-//! - `DORADO_SHOT_OPTIONS=1` — expand the options panel (any non-empty value).
+//! - `DORADO_SHOT_OPTIONS=1` — open the settings panel on its Encryption
+//!   section, where the old inline options panel's controls now live.
+//! - `DORADO_SHOT_SETTINGS=encryption|appearance|clipboard` — open the settings
+//!   panel on a specific section.
 //! - `DORADO_SHOT_THEME=<name>` — apply a named theme (e.g. "Solarized Light").
+//! - `DORADO_SHOT_FONT=<family>` — set the output-panel font (e.g. "Menlo"); an
+//!   unknown family falls back to the default, same as picking one in the UI.
 //! - `DORADO_SHOT_KDF=argon2id|scrypt|pbkdf2` — sets the KDF picker.
 //! - `DORADO_SHOT_VARIANT=256|512|1024` — sets the Threefish variant picker.
 //! - `DORADO_SHOT_MAC=skein|hmac-sha256|blake3` — sets the MAC picker.
@@ -44,7 +49,7 @@ use zeroize::Zeroize;
 
 use dorado_engine as engine;
 
-use crate::{hex, App, Direction, KdfChoice, MacChoice, Message, Source, VariantChoice};
+use crate::{hex, App, Direction, KdfChoice, MacChoice, Message, Section, Source, VariantChoice};
 
 /// The capture state, held by [`App`] only while shot mode is active.
 pub struct Shot {
@@ -82,11 +87,25 @@ pub fn configure(app: &mut App) {
         Ok("file") => app.source = Source::File,
         _ => {}
     }
+    // The options moved into the settings panel, so this now opens that panel.
+    // `DORADO_SHOT_SETTINGS` picks the section; bare `DORADO_SHOT_OPTIONS`
+    // keeps working and lands on Encryption, where the options used to live.
     if std::env::var("DORADO_SHOT_OPTIONS").is_ok() {
-        app.show_options = true;
+        app.settings_open = true;
+    }
+    if let Ok(name) = std::env::var("DORADO_SHOT_SETTINGS") {
+        app.settings_open = true;
+        app.settings_section = match name.as_str() {
+            "appearance" => Section::Appearance,
+            "clipboard" => Section::Clipboard,
+            _ => Section::Encryption,
+        };
     }
     if let Ok(name) = std::env::var("DORADO_SHOT_THEME") {
         app.theme_name = name;
+    }
+    if let Ok(name) = std::env::var("DORADO_SHOT_FONT") {
+        app.font_name = name;
     }
     match std::env::var("DORADO_SHOT_KDF").as_deref() {
         Ok("argon2id") => app.kdf = KdfChoice::Argon2id,

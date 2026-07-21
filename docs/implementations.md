@@ -127,7 +127,22 @@ Zig and Haskell have neither); C and C++ also run under ASan/UBSan in CI.
     widget tree, or the text shaper. What remains uncovered is outside the
     process or upstream of the widget: the OS keyboard/IME path, the winit event
     struct that briefly holds each typed character, and a paste source's own copy
-    in the system clipboard. `gyotaku-gui` handles no secrets.
+    in the system clipboard.
+
+    The GUI's *other* secrets get the weaker of the two treatments: the message
+    being encrypted, the recovered plaintext, and the worker thread's copies are
+    held in `Zeroizing` buffers, so each is wiped when replaced and on exit. That
+    matters most while typing, since iced's `text_input` is a controlled widget
+    that hands the app a fresh `String` of the whole field on every keystroke;
+    moving each into `Zeroizing` wipes the copy it supersedes instead of leaving
+    one stale copy per character on the freed heap. It does not reach the copies
+    iced keeps *internally* (its paragraph and shaping buffers), and those fields
+    are not `mlock`'d, so unlike the password they can still reach swap. Closing
+    that gap needs the same from-scratch treatment the password field got, which
+    is not done. Copying output to the clipboard hands it to the OS, which keeps
+    its own copy; the GUI offers a configurable clear-after-N-seconds timer that
+    bounds how long the system clipboard holds it but cannot recall it.
+    `gyotaku-gui` handles no secrets.
   - *C* and *Zig* wipe the derived keys and the cipher's expanded key schedule with a
     non-elidable clear (`OPENSSL_cleanse` / `std.crypto.secureZero`), and their CLIs
     hold the password in a page-aligned, `mlock`'d buffer kept out of swap. The wipe

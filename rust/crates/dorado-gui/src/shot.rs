@@ -132,7 +132,7 @@ pub fn configure(app: &mut App) {
         password.zeroize();
     }
     if let Ok(text) = std::env::var("DORADO_SHOT_TEXT") {
-        app.text = text;
+        app.text = zeroize::Zeroizing::new(text);
     }
 
     // See the module doc's judgment-call note: run the real job synchronously
@@ -161,7 +161,7 @@ fn run_sync(app: &mut App) {
     };
     match compute(app, &opts) {
         Ok(out) => {
-            app.output = out;
+            app.output = zeroize::Zeroizing::new(out);
             app.status = "Done".to_string();
         }
         Err(e) => {
@@ -182,7 +182,8 @@ fn compute(app: &App, opts: &engine::PasswordOptions) -> Result<String, String> 
         }
         Direction::Decrypt => {
             let data = engine::parse_hex(&app.text).map_err(|e| format!("ciphertext hex: {e}"))?;
-            let pt = engine::decrypt_password_bytes(pw, &data)?;
+            // Wiped on the way out, as in `Job::run`.
+            let pt = zeroize::Zeroizing::new(engine::decrypt_password_bytes(pw, &data)?);
             Ok(String::from_utf8_lossy(&pt).into_owned())
         }
     })

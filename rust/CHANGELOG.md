@@ -48,6 +48,23 @@ the Rust-specific details. Format: [Keep a Changelog](https://keepachangelog.com
   silently drift: the section label/index mapping, the uniqueness and reverse
   lookup of the clipboard interval labels, and the font resolver.
 
+- **`dorado-gui` now wipes its message and output buffers too**, not just the
+  password. The message being encrypted, the recovered plaintext, the worker
+  thread's copies, and the whole-file buffers on the file path are all held in
+  `Zeroizing`. The typing case is the one that actually accumulated: iced's
+  `text_input` is a controlled widget that hands the app a fresh `String` of
+  the entire field on every keystroke, so an n-character message previously
+  left n superseded copies of itself on the freed heap; moving each into
+  `Zeroizing` wipes the one it replaces. `Job::run` wipes in both directions
+  without branching on which side is the secret, since a wiped buffer of
+  ciphertext costs nothing and is easier to review than a per-branch rule.
+
+  Still uncovered, and documented as such in `docs/implementations.md`: the
+  copies iced keeps internally (paragraph and shaping buffers), and the fact
+  that these fields are not `mlock`'d, so unlike the password they can reach
+  swap. Closing that needs the same from-scratch widget treatment the password
+  field got.
+
 - The screenshot harness learned `DORADO_SHOT_SETTINGS=<section>` and
   `DORADO_SHOT_FONT=<family>`. `DORADO_SHOT_OPTIONS` keeps working and now
   opens the settings panel on Encryption, where those controls moved.

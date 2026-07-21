@@ -329,7 +329,18 @@ struct App {
     /// tree, or text shaper; a job copies the bytes out under the lock into
     /// its own `Zeroizing` buffer for the engine call.
     password: SecretHandle,
-    text: String,
+    /// The message being encrypted, or the ciphertext hex being decrypted.
+    ///
+    /// `Zeroizing` because iced's `text_input` is a controlled widget: every
+    /// keystroke hands us a fresh `String` holding the whole field, and the
+    /// previous one is dropped. Unwrapped, typing an n-character message would
+    /// strew n superseded copies of it across the freed heap. Moving each into
+    /// `Zeroizing` means the copy it replaces is wiped instead.
+    ///
+    /// This does not reach the copies *inside* iced (its paragraph/shaping
+    /// buffers), which is the gap only a from-scratch widget can close; see
+    /// the `secure_input` work in rime for the password field's version.
+    text: Zeroizing<String>,
     in_path: String,
     out_path: String,
     // Settings panel.
@@ -358,7 +369,10 @@ struct App {
     /// its clear, and the sole thing that keeps the countdown subscribed.
     clipboard_deadline: Option<Instant>,
     // Result.
-    output: String,
+    /// The finished job's output: ciphertext hex when encrypting, but the
+    /// recovered **plaintext** when decrypting, so it is wiped on replace and
+    /// on exit like the input is.
+    output: Zeroizing<String>,
     status: String,
     busy: bool,
     progress: f32,
@@ -373,7 +387,7 @@ impl Default for App {
             direction: Direction::Encrypt,
             source: Source::Text,
             password: SecretHandle::new(),
-            text: String::new(),
+            text: Zeroizing::new(String::new()),
             in_path: String::new(),
             out_path: String::new(),
             settings_open: false,
@@ -391,7 +405,7 @@ impl Default for App {
             font_name: DEFAULT_FONT_LABEL.to_string(),
             clipboard_clear_secs: 30,
             clipboard_deadline: None,
-            output: String::new(),
+            output: Zeroizing::new(String::new()),
             status: String::new(),
             busy: false,
             progress: 0.0,
@@ -457,12 +471,21 @@ struct Job {
     /// `SecretHandle` under its lock), zeroized when the job is dropped at the
     /// end of `run`.
     password: Zeroizing<Vec<u8>>,
-    text: String,
+    /// The worker's own copy of the message (or ciphertext hex), wiped when the
+    /// job is dropped at the end of `run`.
+    text: Zeroizing<String>,
     in_path: String,
     out_path: String,
 }
 
 impl Job {
+    /// Run the job and return its output.
+    ///
+    /// Every intermediate holding user data is wiped, in both directions and
+    /// without asking which way is the secret one: when encrypting the input is
+    /// the secret and the output is ciphertext, and when decrypting it is the
+    /// other way round. Wiping a buffer of ciphertext costs nothing and is far
+    /// easier to review than a rule that has to be re-derived per branch.
     fn run(self) -> Result<String, String> {
         let pw: &[u8] = &self.password;
         if pw.is_empty() {
@@ -476,21 +499,28 @@ impl Job {
             (Source::Text, Direction::Decrypt) => {
                 let data =
                     engine::parse_hex(&self.text).map_err(|e| format!("ciphertext hex: {e}"))?;
-                let pt = engine::decrypt_password_bytes(pw, &data)?;
+                // The recovered plaintext, and the lossy `String` copied out of
+                // it: both wiped when this scope ends, leaving only the
+                // `Zeroizing` output the caller stores.
+                let pt = Zeroizing::new(engine::decrypt_password_bytes(pw, &data)?);
                 Ok(String::from_utf8_lossy(&pt).into_owned())
             }
             (Source::File, dir) => {
                 if self.in_path.is_empty() || self.out_path.is_empty() {
                     return Err("input and output file paths are required".into());
                 }
-                let input = std::fs::read(&self.in_path)
-                    .map_err(|e| format!("read {}: {e}", self.in_path))?;
-                let out = if dir == Direction::Encrypt {
+                // Whole-file buffers: the plaintext side of the operation is in
+                // one of these two, so both are wiped.
+                let input = Zeroizing::new(
+                    std::fs::read(&self.in_path)
+                        .map_err(|e| format!("read {}: {e}", self.in_path))?,
+                );
+                let out = Zeroizing::new(if dir == Direction::Encrypt {
                     engine::encrypt_password_bytes(pw, &self.opts, &input)?
                 } else {
                     engine::decrypt_password_bytes(pw, &input)?
-                };
-                std::fs::write(&self.out_path, &out)
+                });
+                std::fs::write(&self.out_path, &*out)
                     .map_err(|e| format!("write {}: {e}", self.out_path))?;
                 Ok(format!("Wrote {} bytes to {}", out.len(), self.out_path))
             }
@@ -552,7 +582,9 @@ impl App {
             // The secure_input already applied the edit to the handle; the
             // message only triggers this re-render.
             Message::PasswordEdited => {}
-            Message::TextChanged(v) => self.text = v,
+            // Moving the message's `String` in (rather than copying from it)
+            // is what lets `Zeroizing` wipe the copy this one supersedes.
+            Message::TextChanged(v) => self.text = Zeroizing::new(v),
             Message::InPathChanged(v) => self.in_path = v,
             Message::OutPathChanged(v) => self.out_path = v,
             Message::BrowseInPath => {
@@ -600,7 +632,9 @@ impl App {
                 self.clipboard_deadline = (self.clipboard_clear_secs > 0).then(|| {
                     Instant::now() + Duration::from_secs(self.clipboard_clear_secs as u64)
                 });
-                return iced::clipboard::write(self.output.clone());
+                // The clipboard takes an ordinary `String` and the OS keeps its
+                // own copy regardless; the clear timer above is what bounds it.
+                return iced::clipboard::write(self.output.to_string());
             }
             Message::Run => {
                 if self.busy {
@@ -635,7 +669,10 @@ impl App {
                 self.busy = false;
                 match result {
                     Ok(out) => {
-                        self.output = out;
+                        // Moved, not copied: the job's `String` becomes the
+                        // wiped one we hold, and the previous output is wiped
+                        // as it is replaced.
+                        self.output = Zeroizing::new(out);
                         self.status = "Done".to_string();
                     }
                     Err(e) => {

@@ -28,6 +28,19 @@ the Rust-specific details. Format: [Keep a Changelog](https://keepachangelog.com
   Skipped under `DORADO_NO_HARDEN` (local debugging) and `DORADO_SHOT`. The
   in-memory threat model is now documented in `rust/docs/overview.md`.
 
+- **`dorado` (CLI) now suppresses core dumps** too, so the frontends match. It
+  already `mlock`'d and wiped the password, but `mlock` keeps pages out of
+  swap, not out of a core dump, so a crash could still spill the password or
+  derived keys into a core file. It now sets `RLIMIT_CORE` = 0 at startup, via
+  the tiny safe `rlimit` crate (libc only, already in the tree through
+  `region`), so `#![forbid(unsafe_code)]` still holds. Unix-only and a no-op
+  elsewhere. Unlike the GUI it does not also refuse `ptrace`: the CLI is
+  short-lived, and `RLIMIT_CORE` leaves debugging intact, so no opt-out is
+  needed. Of the ports, TypeScript already had core-dump exclusion for free
+  (its CLI delegates to libsodium's `sodium_malloc`, which bundles `mlock` +
+  guard pages + `MADV_DONTDUMP`); the other `mlock`'ing ports (Go, C, Zig, C++)
+  share the gap this closes for Rust.
+
 - **`dorado-gui` gained a settings panel**, behind a gear in the header
   (rime's `settings` shell over its `icons::glyph::SETTINGS`; the app now
   loads rime's icon font, without which the glyph renders as tofu). Three

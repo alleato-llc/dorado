@@ -19,3 +19,10 @@ zeroize = "1"
 # Lock the password buffer into RAM (out of swap). Safe API, so the crate keeps
 # #![forbid(unsafe_code)].
 region = "3"
+
+# Suppress core dumps (RLIMIT_CORE = 0) so a crash cannot spill the password or
+# derived keys to a core file; `mlock` does not cover this. A tiny safe wrapper
+# (libc only, already in the tree via `region`), so #![forbid(unsafe_code)]
+# holds. Unix-only; a no-op elsewhere.
+[target.'cfg(unix)'.dependencies]
+rlimit = "0.10"

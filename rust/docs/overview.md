@@ -259,13 +259,17 @@ strongest first:
   reach swap, and displaying readable characters forces iced/cosmic-text to keep
   their own copies in text and glyph buffers no widget can reach or wipe. The app
   wipes every copy it owns; it cannot wipe the toolkit's.
-- **Process hardening (GUI).** To cover exactly that residual, the GUI disables
-  core dumps at startup (`RLIMIT_CORE` = 0) and, on Linux, marks itself
-  non-dumpable (`PR_SET_DUMPABLE` = 0), which also refuses `ptrace` from same-user
-  processes. The un-wipeable toolkit copies then stop being reachable by anything
-  short of code already executing as the user, which no in-process wiping would
-  stop either. Done through the safe `rustix` wrapper, so no `unsafe` enters
-  dorado; skipped under `DORADO_NO_HARDEN` and the screenshot harness.
+- **Process hardening.** Both frontends disable core dumps at startup
+  (`RLIMIT_CORE` = 0): `mlock` keeps secrets out of swap but not out of a core
+  file, so a crash could otherwise spill the password (or, in the GUI, decrypted
+  output) to disk. The GUI additionally, on Linux, marks itself non-dumpable
+  (`PR_SET_DUMPABLE` = 0), which refuses `ptrace` from same-user processes and so
+  reaches even the un-wipeable toolkit text and glyph copies above: they stop
+  being reachable by anything short of code already executing as the user, which
+  no in-process wiping would stop either. The CLI, being short-lived, does the
+  core-dump limit only. Done through safe wrappers (`rlimit` for the CLI,
+  `rustix` for the GUI), so no `unsafe` enters dorado; the GUI's is skipped under
+  `DORADO_NO_HARDEN` and the screenshot harness.
 - **The clipboard.** Copying output hands it to the OS, which keeps its own copy.
   A configurable clear-after-N-seconds timer (default 30s) bounds how long the
   system clipboard holds it but cannot recall a copy already read, and clipboard

@@ -59,6 +59,26 @@ impl Deref for LockedPassword {
         &self.pw
     }
 }
+
+/// Suppress core dumps for this process (`RLIMIT_CORE` = 0), so a crash cannot
+/// spill the password or derived keys into a core file on disk.
+///
+/// This is distinct from [`LockedPassword`]'s `mlock`: locking keeps pages out
+/// of *swap*, not out of a *core dump*, so a secret can be mlock'd and still
+/// land in a dump. Best-effort, and skipped on a platform without the limit.
+///
+/// Unlike the GUI, the CLI does not also refuse `ptrace`: it is short-lived, so
+/// the attach window is small, and `RLIMIT_CORE` leaves debugging intact (it
+/// only stops core files, not attaching), so no opt-out is needed.
+#[cfg(unix)]
+fn suppress_core_dumps() {
+    let _ = rlimit::setrlimit(rlimit::Resource::CORE, 0, 0);
+}
+
+/// No core-dump limit to set on this platform; secrets rely on wiping alone.
+#[cfg(not(unix))]
+fn suppress_core_dumps() {}
+
 use dorado_engine::{KdfParams, MacId, PrfId, Variant};
 
 #[derive(Parser)]
@@ -296,6 +316,9 @@ impl Args {
 }
 
 fn main() -> ExitCode {
+    // Before any secret can exist: a crash must not leave a core file with the
+    // password or derived keys in it. See `suppress_core_dumps`.
+    suppress_core_dumps();
     match run() {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {

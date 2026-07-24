@@ -244,3 +244,17 @@ fn inspect_command_takes_no_credential() {
     assert!(parse(&["dorado", "inspect"]).is_ok());
     assert!(parse(&["dorado", "inspect", "--in", "file.mahi"]).is_ok());
 }
+
+#[cfg(unix)]
+#[test]
+fn core_dumps_can_be_suppressed_on_this_platform() {
+    // Proves the measure actually takes effect here, not just that it compiles.
+    // Lowers this test process's own core limit (harmless; no test wants a
+    // core file), then reads it back.
+    suppress_core_dumps();
+    let (soft, _hard) = rlimit::getrlimit(rlimit::Resource::CORE).expect("getrlimit(CORE)");
+    assert_eq!(
+        soft, 0,
+        "core-dump soft limit should be zero after suppression"
+    );
+}

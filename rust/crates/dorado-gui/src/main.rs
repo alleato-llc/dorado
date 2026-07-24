@@ -32,6 +32,7 @@ use rime::widgets::{
 };
 use zeroize::Zeroizing;
 
+mod harden;
 mod shot;
 
 #[cfg(test)]
@@ -163,6 +164,10 @@ fn app_icon() -> Option<iced::window::Icon> {
 }
 
 fn main() -> iced::Result {
+    // Suppress core dumps and (on Linux) same-user ptrace before anything
+    // sensitive can exist. Best-effort; see src/harden.rs.
+    harden::apply();
+
     // A review screenshot (src/shot.rs) needs the whole scrollable content
     // visible with nothing scrolled out of frame, so it gets a taller window;
     // the normal app keeps its compact default.

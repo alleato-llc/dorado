@@ -135,14 +135,23 @@ Zig and Haskell have neither); C and C++ also run under ASan/UBSan in CI.
     matters most while typing, since iced's `text_input` is a controlled widget
     that hands the app a fresh `String` of the whole field on every keystroke;
     moving each into `Zeroizing` wipes the copy it supersedes instead of leaving
-    one stale copy per character on the freed heap. It does not reach the copies
-    iced keeps *internally* (its paragraph and shaping buffers), and those fields
-    are not `mlock`'d, so unlike the password they can still reach swap. Closing
-    that gap needs the same from-scratch treatment the password field got, which
-    is not done. Copying output to the clipboard hands it to the OS, which keeps
-    its own copy; the GUI offers a configurable clear-after-N-seconds timer that
-    bounds how long the system clipboard holds it but cannot recall it.
-    `gyotaku-gui` handles no secrets.
+    one stale copy per character on the freed heap. What it cannot reach is the
+    copies iced and cosmic-text keep *internally*: displaying readable text
+    forces the toolkit to shape it, and the shaped text and glyph buffers that
+    produces are not reachable from any widget, so a dedicated "sensitive output"
+    widget could not wipe them either. Those fields are also not `mlock`'d, so
+    unlike the password they can reach swap. Rather than chase copies the app
+    cannot own, the GUI hardens the process instead: at startup it disables core
+    dumps (`RLIMIT_CORE`) and, on Linux, marks itself non-dumpable
+    (`PR_SET_DUMPABLE`), which also refuses `ptrace` from same-user processes, so
+    the un-wipeable toolkit copies stop being reachable by anything short of code
+    already running as the user. This uses the safe `rustix` wrapper, so
+    `#![forbid(unsafe_code)]` still holds, and is best-effort: macOS gets only the
+    core-dump limit (its anti-debug primitive is private and unreliable), and
+    nothing here defends against root or a compromised kernel. Copying output to
+    the clipboard hands it to the OS, which keeps its own copy; the GUI's
+    configurable clear-after-N-seconds timer bounds how long the system clipboard
+    holds it but cannot recall it. `gyotaku-gui` handles no secrets.
   - *C* and *Zig* wipe the derived keys and the cipher's expanded key schedule with a
     non-elidable clear (`OPENSSL_cleanse` / `std.crypto.secureZero`), and their CLIs
     hold the password in a page-aligned, `mlock`'d buffer kept out of swap. The wipe

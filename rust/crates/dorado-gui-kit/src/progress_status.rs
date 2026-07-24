@@ -40,6 +40,6 @@ pub fn progress_status_row<'a, M: 'a>(
     Column::new()
         .spacing(8)
         .push(bar)
-        .push(text(caption.to_string()).size(13).color(p.muted))
+        .push(text(caption).size(13).color(p.muted))
         .into()
 }

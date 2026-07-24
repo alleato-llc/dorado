@@ -10,6 +10,24 @@ the Rust-specific details. Format: [Keep a Changelog](https://keepachangelog.com
 
 ### Added
 
+- **`dorado-gui` now hardens the process at startup**, covering the one
+  in-memory residual the app cannot reach any other way. Displaying decrypted
+  plaintext forces iced/cosmic-text to keep their own copies of it in text and
+  glyph buffers that no widget can wipe (which is why a "sensitive output"
+  widget would not have helped, and was not built). Instead the GUI disables
+  core dumps (`RLIMIT_CORE` = 0) so a crash cannot spill secrets to disk, and
+  on Linux marks itself non-dumpable (`PR_SET_DUMPABLE` = 0), which also
+  refuses `ptrace` from same-user processes; those un-wipeable toolkit copies
+  then stop being reachable by anything short of code already running as the
+  user. This is the measure KeePassXC and libsodium apply for the same reason.
+  Done through the safe `rustix` wrapper (already in the tree via iced/winit),
+  so `#![forbid(unsafe_code)]` still holds, exactly as `region` does for the
+  CLI's `mlock`. Best-effort and honest about it: macOS gets only the core-dump
+  limit (its `PT_DENY_ATTACH` is a private, unreliable API that fights
+  notarization), and nothing here defends against root or a compromised kernel.
+  Skipped under `DORADO_NO_HARDEN` (local debugging) and `DORADO_SHOT`. The
+  in-memory threat model is now documented in `rust/docs/overview.md`.
+
 - **`dorado-gui` gained a settings panel**, behind a gear in the header
   (rime's `settings` shell over its `icons::glyph::SETTINGS`; the app now
   loads rime's icon font, without which the glyph renders as tofu). Three
@@ -116,6 +134,15 @@ the Rust-specific details. Format: [Keep a Changelog](https://keepachangelog.com
   hex mid-token while still wrapping decrypted plaintext on word
   boundaries. Wrapped lines also gained a trailing gutter so they clear the
   overlaid scrollbar rather than running underneath it.
+
+- **The output panel copied the decrypted plaintext on every redraw.** iced's
+  text takes a `Cow`, and `text(body.to_string())` hands it an owned `String`,
+  so each frame allocated a fresh unwiped copy of whatever the panel was
+  showing. In decrypt mode that is the recovered plaintext, and no amount of
+  wiping on the app's side could catch those: they were allocated and dropped
+  inside `view`. The panel now borrows (`Cow::Borrowed`, no allocation), as
+  does the status row. Found while scoping a `sensitive_output` widget, which
+  is what that widget's real value would have been.
 
 - **The result area no longer pops into existence when a job finishes.** Both
   GUIs only rendered the output panel once there was output, and the status

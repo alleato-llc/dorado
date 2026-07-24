@@ -19,6 +19,13 @@ use rime::widgets::{button, card};
 /// default. Callers pass one because iced fixes the application-wide default
 /// font at startup, so a user-chosen font has to reach the widget directly.
 /// The placeholder always uses the default font: it is prose, not output.
+///
+/// `body` is **borrowed into the text widget, never copied**. iced's text takes
+/// a `Cow`, so handing it a `String` (as `body.to_string()` would) allocates a
+/// fresh owned copy on every redraw. When the body is decrypted plaintext, that
+/// is a new unwiped copy of the secret per frame, which no amount of wiping on
+/// the caller's side can catch. Borrowing produces `Cow::Borrowed` and
+/// allocates nothing.
 pub fn output_panel<'a, M: Clone + 'a>(
     caption: &'a str,
     body: &'a str,
@@ -35,7 +42,7 @@ pub fn output_panel<'a, M: Clone + 'a>(
         copy = copy.on_press_maybe(None);
     }
     let header = row![
-        text(caption.to_string()).size(12).color(p.muted),
+        text(caption).size(12).color(p.muted),
         Space::new().width(Length::Fill),
         copy,
     ]
@@ -48,11 +55,9 @@ pub fn output_panel<'a, M: Clone + 'a>(
             // Trailing gutter so wrapped lines clear the overlaid scrollbar
             // instead of running under it.
             container(if is_empty {
-                text(placeholder.to_string()).size(13).color(p.muted)
+                text(placeholder).size(13).color(p.muted)
             } else {
-                let body = text(body.to_string())
-                    .size(13)
-                    .wrapping(Wrapping::WordOrGlyph);
+                let body = text(body).size(13).wrapping(Wrapping::WordOrGlyph);
                 match font {
                     Some(font) => body.font(font),
                     None => body,

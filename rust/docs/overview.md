@@ -237,6 +237,46 @@ What it does not defend against, stated plainly:
 
 For real data, prefer an audited tool.
 
+## Secrets in memory while the tool runs
+
+The section above is about the file. A separate question is a secret's exposure
+inside the running process, before it is wiped. The adversary here is different:
+another process running as the same user (the class infostealer malware
+exploits), a core-dump file left after a crash, or a swap file. Handled,
+strongest first:
+
+- **The password.** One locked, wiped buffer. The CLI's `LockedPassword` and the
+  GUI's `SecretHandle` (rime's `secure_input`) both `mlock` it out of swap
+  best-effort and zeroize it on drop, and the buffer never reallocates, so no
+  `realloc` leaves a stale copy behind. The GUI field additionally never renders
+  the characters (it draws mask bullets as plain geometry) and emits only unit
+  messages, so the password never enters iced's message queue, widget tree, or
+  text shaper. This is the strong tier.
+- **The message plaintext and the decrypted output (GUI).** Held in `Zeroizing`
+  buffers, wiped when replaced and on exit, including the worker thread's copies
+  and the whole-file buffers. But these are visible text, weaker than the
+  password in two ways the app cannot close: they are not `mlock`'d, so they can
+  reach swap, and displaying readable characters forces iced/cosmic-text to keep
+  their own copies in text and glyph buffers no widget can reach or wipe. The app
+  wipes every copy it owns; it cannot wipe the toolkit's.
+- **Process hardening (GUI).** To cover exactly that residual, the GUI disables
+  core dumps at startup (`RLIMIT_CORE` = 0) and, on Linux, marks itself
+  non-dumpable (`PR_SET_DUMPABLE` = 0), which also refuses `ptrace` from same-user
+  processes. The un-wipeable toolkit copies then stop being reachable by anything
+  short of code already executing as the user, which no in-process wiping would
+  stop either. Done through the safe `rustix` wrapper, so no `unsafe` enters
+  dorado; skipped under `DORADO_NO_HARDEN` and the screenshot harness.
+- **The clipboard.** Copying output hands it to the OS, which keeps its own copy.
+  A configurable clear-after-N-seconds timer (default 30s) bounds how long the
+  system clipboard holds it but cannot recall a copy already read, and clipboard
+  managers keep their own history. The password field has no copy-out at all.
+
+Out of scope, the limits every userspace tool shares: root, a compromised kernel,
+cold-boot or DMA attacks, a debugger attached before startup, and a keylogger or
+IME upstream of the app. macOS gets core-dump suppression only; its anti-debug
+primitive is a private, unreliable API and is deliberately not used. Hardening
+raises the bar against unprivileged same-user snooping; it is not a wall.
+
 ## How we know it works
 
 Confidence comes from several independent checks:

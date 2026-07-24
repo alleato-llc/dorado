@@ -28,3 +28,9 @@ rfd = "0.15"
 zeroize = "1"
 # PNG encoder for the env-gated review-screenshot harness (src/shot.rs).
 png = "0.17"
+# Best-effort process hardening (src/harden.rs): suppress core dumps and, on
+# Linux, refuse same-user ptrace. A safe wrapper over the raw syscalls (its own
+# unsafe, not ours, so the crate keeps `#![forbid(unsafe_code)]`, exactly as
+# `region` does for the CLI's mlock). Already in the tree via iced/winit/wgpu;
+# this only turns on its `process` feature.
+rustix = { version = "1", features = ["process"] }

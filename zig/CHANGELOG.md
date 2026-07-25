@@ -10,6 +10,12 @@ the master table.
 
 ### Added
 
+- The `dorado` CLI suppresses core dumps at startup
+  (`std.posix.setrlimit(.CORE, ...)` in `cli_dorado.zig`), so a crash cannot
+  leave the password or derived keys in a core file. `mlock` keeps those pages
+  out of swap but not out of a core dump, so this complements it. Best-effort,
+  POSIX-only, a no-op on `.windows`/`.wasi`. See the
+  [Core changelog](../CHANGELOG.md) for the cross-port rationale.
 - `zig/src/kdf.zig`: key-based derivation (`deriveFromKey` / `deriveFromKeyWith`
   with a `KdfPrf` enum: `.skein512`, the default, or `.blake3`), the fast
   domain-separated fan-out of an already high-entropy key into independent

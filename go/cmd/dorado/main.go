@@ -36,6 +36,9 @@ import (
 const version = "0.1.0"
 
 func main() {
+	// Suppress core dumps before any secret exists: mlock keeps the password out of
+	// swap but not out of a core dump, so a crash could still spill it to disk.
+	secure.SuppressCoreDumps()
 	if len(os.Args) < 2 {
 		usage()
 	}

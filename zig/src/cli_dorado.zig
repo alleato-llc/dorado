@@ -19,6 +19,25 @@ const fmt = dorado.format;
 extern "c" fn mlock(addr: *const anyopaque, len: usize) c_int;
 extern "c" fn munlock(addr: *const anyopaque, len: usize) c_int;
 
+// Best-effort: disable core dumps for this process before any secret exists.
+//
+// We already mlock the password buffer (see crypt below), but mlock only keeps a
+// page out of swap, not out of a core dump: if the process crashes, the kernel can
+// write a core file that captures locked pages just like any other memory, spilling
+// the password or derived keys to disk. Setting RLIMIT_CORE (soft and hard) to 0
+// stops that core file from being written. (libsodium's secure allocator pairs
+// mlock with madvise(MADV_DONTDUMP) for the same reason.) This is hardening, not a
+// correctness requirement, so any error is ignored and we keep going. We do not
+// touch ptrace / PR_SET_DUMPABLE: this CLI is short-lived, so we keep it simple and
+// debuggable and just close the core-file path.
+fn suppressCoreDumps() void {
+    switch (@import("builtin").os.tag) {
+        // No POSIX resource limits to set; nothing to do.
+        .windows, .wasi => {},
+        else => std.posix.setrlimit(.CORE, .{ .cur = 0, .max = 0 }) catch {},
+    }
+}
+
 // Adapt a buffered std.Io.Reader to the engine's callback Reader.
 const ReaderAdapter = struct {
     r: *std.Io.Reader,
@@ -171,6 +190,10 @@ fn nextArg(idx: *usize, av: []const []const u8) []const u8 {
 }
 
 pub fn main(init: std.process.Init) !void {
+    // First thing, before any password or derived key can exist: stop a crash from
+    // writing those secrets into a core file on disk.
+    suppressCoreDumps();
+
     const a = init.gpa;
     const io = init.io;
 

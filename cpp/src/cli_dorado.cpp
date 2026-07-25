@@ -4,6 +4,9 @@
 // the non-secret header. Streams over file/std handles in constant memory.
 #include <sys/mman.h>
 #include <unistd.h>
+#if defined(__unix__) || defined(__APPLE__)
+#include <sys/resource.h>
+#endif
 
 #include <cctype>
 #include <cstdint>
@@ -32,6 +35,21 @@ using dorado::engine::Options;
 std::size_t page_size() {
   long pg = sysconf(_SC_PAGESIZE);
   return pg < 1 ? 4096 : std::size_t(pg);
+}
+
+// Set the core-dump size limit to zero so a crash cannot spill the password or
+// derived keys to disk. mlock keeps those pages out of swap, but a core dump
+// captures locked pages like any other, so mlock alone does not cover this.
+// (libsodium's secure allocator pairs mlock with MADV_DONTDUMP for the same
+// reason.) Best-effort: if setrlimit fails we just continue. On non-unix builds
+// this is a no-op.
+void suppress_core_dumps() noexcept {
+#if defined(__unix__) || defined(__APPLE__)
+  struct rlimit rl {
+    0, 0
+  };
+  ::setrlimit(RLIMIT_CORE, &rl);  // ignore failure; hardening is best-effort
+#endif
 }
 
 // A page-aligned, mlock'd buffer for the password: kept out of swap, and wiped +
@@ -395,6 +413,7 @@ int run_inspect(const Flags& f) {
 }  // namespace
 
 int main(int argc, char** argv) {
+  suppress_core_dumps();  // before any secret can exist
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
     if (a == "-h" || a == "--help") { std::cout << kUsage; return 0; }

@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <sys/resource.h>
 #include <unistd.h>
 
 #include "dorado/engine.h"
@@ -156,7 +157,23 @@ static int fail(const char *msg) {
     return 1;
 }
 
+/* Disable core dumps for this process. mlock keeps the password and derived keys
+ * out of swap, but a core dump captures locked pages like any other, so a crash
+ * could still spill secrets to disk. Setting RLIMIT_CORE to 0 closes that path.
+ * Best-effort: a setrlimit failure is ignored, the program continues either way.
+ * (No-op where setrlimit/RLIMIT_CORE are unavailable, e.g. a Windows build.) */
+static void suppress_core_dumps(void) {
+#if defined(RLIMIT_CORE)
+    struct rlimit rl = {0, 0};
+    (void)setrlimit(RLIMIT_CORE, &rl);
+#endif
+}
+
 int main(int argc, char **argv) {
+    /* Before any secret can exist, disable core dumps so a crash cannot write the
+     * password or derived keys to a core file on disk. */
+    suppress_core_dumps();
+
     /* Top-level --help/-h/--version work with or without a subcommand, matching
      * the Rust reference. Scan all args so "dorado encrypt --help" works too. */
     for (int i = 1; i < argc; i++) {

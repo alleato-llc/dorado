@@ -10,6 +10,11 @@ the master table.
 
 ### Added
 
+- The `dorado` CLI suppresses core dumps at startup (`setrlimit(RLIMIT_CORE, 0)`
+  in `cli_dorado.c`), so a crash cannot leave the password or derived keys in a
+  core file. `mlock` keeps those pages out of swap but not out of a core dump,
+  so this complements it. Best-effort, guarded for platforms without the limit.
+  See the [Core changelog](../CHANGELOG.md) for the cross-port rationale.
 - **Raw-key mode gains an authenticated option**: `dorado_encrypt_raw_authenticated_stream`
   / `dorado_decrypt_raw_authenticated_stream` (plus `dorado_encrypt_raw_authenticated` /
   `dorado_decrypt_raw_authenticated` in-memory wrappers), encrypt-then-MAC over the

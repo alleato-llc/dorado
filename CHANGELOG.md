@@ -23,6 +23,24 @@ This changelog starts in 2026-06; for earlier history see the git log.
 
 ### Added
 
+- **Core-dump suppression across the CLIs**, a cross-port hardening decision
+  recorded here. Every port that `mlock`s the password already kept it out of
+  swap, but `mlock` does not keep a page out of a *core dump*: a crash writes a
+  core file that captures locked pages like any other, so the password or
+  derived keys could still land on disk. libsodium's secure allocator pairs
+  `mlock` with `madvise(MADV_DONTDUMP)` for exactly this reason. Each port's
+  `dorado` CLI now sets `RLIMIT_CORE` to 0 at startup, before any secret exists;
+  it is best-effort (a refused limit is ignored), Unix-only, and a no-op
+  elsewhere. The short-lived CLIs do not also disable `ptrace`. Rust led this
+  (its CLI, and its GUI, which additionally refuses `ptrace` on Linux; see
+  [rust/CHANGELOG](rust/CHANGELOG.md)); TypeScript already had it, because its
+  CLI holds secrets in libsodium's guarded allocator (`sodium_malloc`, which
+  bundles `mlock`, guard pages, and `MADV_DONTDUMP`); and Go, C, Zig, and C++
+  now close the same gap, each in its own idiom (per-port details in their
+  changelogs). Java, Python, and Haskell lock and wipe nothing by design
+  (caller-managed), so they are out of scope. No wire-format or algorithm
+  change; cross-compatibility is unaffected.
+
 - **Cross-compat is now verified in both directions and with full fixture
   coverage**, a cross-port decision recorded here. Forward: every one of the
   nine implementations embeds Rust-generated password-container fixtures

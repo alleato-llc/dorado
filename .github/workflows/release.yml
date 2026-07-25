@@ -43,7 +43,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  SALPA_VERSION: "0.1.12" # pinned salpa release on ghcr (bump deliberately)
+  SALPA_VERSION: "0.1.13" # pinned salpa release on ghcr (bump deliberately)
 
 jobs:
   # Correctness gate before anything is versioned/released.
@@ -193,12 +193,10 @@ jobs:
           echo "${{ github.token }}" | oras login ghcr.io -u "${{ github.actor }}" --password-stdin
           oras pull "ghcr.io/${{ github.repository_owner }}/salpa:${SALPA_VERSION}"
           SALPA="$PWD/salpa-darwin-arm64"; chmod +x "$SALPA"
+          # salpa >= 0.1.13 makes its keychain import idempotent, so signing both
+          # apps in this loop no longer collides on a stale keychain (it used to
+          # need a `security delete-keychain` here between iterations).
           for app in dorado-gui dorado-gyotaku-gui; do
-            # salpa's cert-import step creates a fixed-name keychain and does not
-            # remove a stale one, so the second app in this loop otherwise dies on
-            # `security create-keychain` (exit 48, "keychain already exists").
-            # Drop any keychain left by the previous iteration first.
-            security delete-keychain "${RUNNER_TEMP}/salpa-signing.keychain-db" 2>/dev/null || true
             (cd "dorado/rust/crates/$app" &&
               "$SALPA" --version "${{ needs.version.outputs.version }}" build &&
               "$SALPA" --version "${{ needs.version.outputs.version }}" publish)

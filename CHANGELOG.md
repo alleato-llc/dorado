@@ -212,12 +212,13 @@ This changelog starts in 2026-06; for earlier history see the git log.
 
 - **The macOS GUI release job signed only the first of the two apps.** The
   `build-gui-macos` job loops salpa over `dorado-gui` and `dorado-gyotaku-gui`
-  on one runner, and salpa's cert-import step creates a fixed-name signing
-  keychain without removing a stale one, so the second app died on
-  `security create-keychain` (exit 48, "keychain already exists"). The loop now
-  deletes any leftover keychain before each app. (The underlying non-idempotency
-  is a salpa issue; this is the in-repo unblock, since the workflow pulls a
-  pinned salpa binary.)
+  on one runner, and salpa's cert-import created a fixed-name signing keychain
+  without removing a stale one, so the second app died on
+  `security create-keychain` (exit 48, "keychain already exists"). Fixed
+  upstream in **salpa 0.1.13** (its keychain import now deletes any stale
+  keychain before creating one); dorado bumps its `SALPA_VERSION` pin to that
+  release and drops the temporary in-workflow `delete-keychain` workaround, so
+  the fix lives in one place.
 
 - **Documentation audit: every claim in the landing page, project docs, and
   port READMEs was verified against the code, and the ones that overstated

@@ -43,19 +43,28 @@ pub fn apply() {
         return;
     }
 
-    // Cross-Unix: no core file, whatever its size, on a crash.
-    let _ = rustix::process::setrlimit(
-        rustix::process::Resource::Core,
-        rustix::process::Rlimit {
-            current: Some(0),
-            maximum: Some(0),
-        },
-    );
+    // Unix only: `rustix::process` (setrlimit, PR_SET_DUMPABLE) is gated behind
+    // `cfg(not(windows))` in rustix itself, and the `rustix` dependency is
+    // target-gated to `cfg(unix)`, so none of this is even referenced on
+    // Windows, where it is simply a no-op (no RLIMIT_CORE to set).
+    #[cfg(unix)]
+    {
+        // Cross-Unix: no core file, whatever its size, on a crash.
+        let _ = rustix::process::setrlimit(
+            rustix::process::Resource::Core,
+            rustix::process::Rlimit {
+                current: Some(0),
+                maximum: Some(0),
+            },
+        );
 
-    // Linux only: refuse ptrace from same-user processes and exclude from core
-    // dumps. macOS has no equivalent that is both reliable and public.
-    #[cfg(target_os = "linux")]
-    let _ = rustix::process::set_dumpable_behavior(rustix::process::DumpableBehavior::NotDumpable);
+        // Linux only: refuse ptrace from same-user processes and exclude from
+        // core dumps. macOS has no equivalent that is both reliable and public.
+        #[cfg(target_os = "linux")]
+        let _ = rustix::process::set_dumpable_behavior(
+            rustix::process::DumpableBehavior::NotDumpable,
+        );
+    }
 }
 
 /// Whether to skip hardening: for local debugging (`DORADO_NO_HARDEN`) or under
@@ -78,6 +87,7 @@ mod tests {
         assert!(opted_out(true, true));
     }
 
+    #[cfg(unix)]
     #[test]
     fn core_dumps_can_be_disabled_on_this_platform() {
         // Proves the measure actually takes effect here, not just that it

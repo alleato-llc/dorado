@@ -32,5 +32,8 @@ png = "0.17"
 # Linux, refuse same-user ptrace. A safe wrapper over the raw syscalls (its own
 # unsafe, not ours, so the crate keeps `#![forbid(unsafe_code)]`, exactly as
 # `region` does for the CLI's mlock). Already in the tree via iced/winit/wgpu;
-# this only turns on its `process` feature.
+# this only turns on its `process` feature. Unix-only: rustix gates `process`
+# behind `cfg(not(windows))`, and harden.rs is a no-op on Windows, so the dep is
+# scoped to unix to keep it off the Windows build entirely.
+[target.'cfg(unix)'.dependencies]
 rustix = { version = "1", features = ["process"] }

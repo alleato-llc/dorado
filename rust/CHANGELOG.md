@@ -141,6 +141,16 @@ the Rust-specific details. Format: [Keep a Changelog](https://keepachangelog.com
 
 ### Fixed
 
+- **The Windows `dorado-gui` build was broken by the process-hardening
+  addition.** `harden.rs` referenced `rustix::process` unconditionally, but
+  rustix gates that whole module behind `cfg(not(windows))`, so the Windows GUI
+  failed to compile (`E0433`) and no Windows GUI binary shipped in the
+  `rust-v0.2.x` releases cut while it was broken. The `rustix` usage and its
+  dependency entry are now `cfg(unix)`-gated; on Windows `apply()` is a no-op
+  (no `RLIMIT_CORE` to set), matching how the CLI already gated its `rlimit`
+  dependency. Verified with `cargo check --target x86_64-pc-windows-gnu`. The
+  core-dump suppression on Unix and macOS is unchanged.
+
 - `dorado-gui-kit`: the output panel's ciphertext hex ran off the right edge
   instead of wrapping. Hex is one unbroken token and iced wraps on words by
   default, so the text now uses `Wrapping::WordOrGlyph`, which breaks the

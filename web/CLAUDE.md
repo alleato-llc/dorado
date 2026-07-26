@@ -30,16 +30,21 @@ site setup (same stack, same theme-toggle pattern) so the two stay consistent.
   because the engine's KDFs need it in the browser. Do not reimplement cipher or
   engine logic here; it lives in `../rust` and `../ts`. When the wire format or
   cipher changes, rebuild `src/wasm/` or the demo drifts from the CLIs.
-- `src/lib/releases.ts` resolves the Rust CLI track's (`rust-v*`) newest release
-  into its four platform `dorado` binary URLs at BUILD time (Astro frontmatter, runs
-  in Node), mirroring soroban's `site/src/lib/releases.ts`. Never fails the build:
-  any error (offline, rate limit, no release yet) falls back to the Releases
-  page. `src/components/Download.tsx` (a `client:load` island) takes those URLs
-  as props and picks which button to show based on the visitor's OS/arch
-  detected client-side; the pre-hydration/no-JS state is a full all-platforms
-  list. `GITHUB_TOKEN` in `../.github/workflows/deploy-site.yml`'s `Deploy` step
-  authenticates the build-time API call — required, not just for the rate limit,
-  since the repo is private and an unauthenticated request 404s regardless.
+- `src/lib/releases.ts` resolves the Rust track's (`rust-v*`) newest release into
+  its per-platform asset URLs at BUILD time (Astro frontmatter, runs in Node),
+  mirroring soroban's `site/src/lib/releases.ts`. It resolves four groups by
+  asset-name pattern: the two desktop GUIs (a signed universal macOS dmg plus
+  x86_64 Linux/Windows) and the two CLIs (`dorado`, `gyotaku`, each with a real
+  macOS arm64/x86_64 split). Never fails the build: any error (offline, rate
+  limit, no release yet, missing asset) falls back to the Releases page.
+  `src/components/Download.tsx` (a `client:load` island) takes those URLs as
+  props and renders two OS/arch-aware dropdowns, "Download for Desktop" and
+  "Download CLI" (each holding dorado + gyotaku for the visitor's detected
+  platform), plus a "View the source" link; the pre-hydration/no-JS state is a
+  flat set of links to the Releases page. `GITHUB_TOKEN` in
+  `../.github/workflows/deploy-site.yml`'s `Deploy` step authenticates the
+  build-time API call, required, not just for the rate limit, since the repo is
+  private and an unauthenticated request 404s regardless.
 
 ## Conventions
 

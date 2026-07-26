@@ -7,6 +7,21 @@ Cross-cutting changes live in the [Core CHANGELOG](../CHANGELOG.md);
 
 ## [Unreleased]
 
+### Added
+
+- **Hero download buttons.** The hero now leads with two OS/arch-aware dropdowns
+  plus a source link: **Download for Desktop** (the dorado and gyotaku desktop
+  apps, a signed universal macOS dmg or the Linux/Windows binary for the detected
+  platform), **Download CLI** (the dorado and gyotaku command-line tools, with the
+  right macOS arm64/x86_64 build auto-selected), and **View the source**. Each
+  dropdown lists both tools with a one-line role and the resolved platform, and
+  ends with an "All platforms and versions" link. `src/lib/releases.ts` now
+  resolves all four tool groups (previously just the dorado CLI) by asset-name
+  pattern at build time, and `src/components/Download.tsx` became a reusable
+  dropdown island (closes on outside-click / Escape / selection; `aria-haspopup`
+  / `aria-expanded`); the pre-hydration and no-JS state is a flat set of
+  Releases-page links. Pure Preact, no new dependencies.
+
 ### Changed
 
 - Claim-accuracy pass from the documentation audit (see the Core changelog's

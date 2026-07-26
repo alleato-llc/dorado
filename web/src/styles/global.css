@@ -202,6 +202,89 @@ header.site nav a {
   border-color: var(--accent);
 }
 
+/* ---------- download dropdowns (hero CTA) ---------- */
+
+/* A <button> styled as a .btn needs the element defaults reset. */
+button.btn {
+  font: inherit;
+  cursor: pointer;
+  line-height: inherit;
+}
+
+.dl-menu {
+  position: relative;
+  display: inline-block;
+}
+
+.dl-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.dl-caret {
+  font-size: 0.7em;
+  transition: transform 0.15s ease;
+}
+
+.dl-caret.is-open {
+  transform: rotate(180deg);
+}
+
+/* The floating menu, anchored under its toggle. */
+.dl-panel {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 0.4rem);
+  left: 0;
+  min-width: max(100%, 15rem);
+  display: flex;
+  flex-direction: column;
+  padding: 0.35rem;
+  text-align: left;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px var(--shadow);
+}
+
+.dl-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 8px;
+  color: var(--text);
+}
+
+.dl-item:hover {
+  text-decoration: none;
+  background: var(--surface);
+}
+
+.dl-name {
+  font-weight: 600;
+}
+
+.dl-sub {
+  font-size: 0.78rem;
+  color: var(--faint);
+}
+
+.dl-all {
+  margin-top: 0.2rem;
+  padding: 0.45rem 0.65rem;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 8px 8px;
+  font-size: 0.82rem;
+  color: var(--accent);
+}
+
+.dl-all:hover {
+  text-decoration: none;
+  background: var(--surface);
+}
+
 /* ---------- hero screenshot (real app, theme-matched) ---------- */
 
 /* The two apps' screenshots are portrait windows (dorado 960x1280, gyotaku

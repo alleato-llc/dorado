@@ -1,32 +1,50 @@
-// Build-time resolution of the Rust CLI release track's download URLs.
+// Build-time resolution of the Rust release track's download URLs.
 //
 // Mirrors soroban's site/src/lib/releases.ts. Runs in Astro frontmatter, i.e. at
 // BUILD time (Node). It makes a single HTTP request to the Releases API for the
-// newest `rust-v*` tag (the only release track dorado has — see
-// ../.github/workflows/release.yml) and reads the four `dorado` platform binary
-// names off it (`dorado-<os>-<arch>[.exe]`, salpa's bare-binary naming
-// convention — see ../../rust/salpa-dorado.yaml). `gyotaku` ships the same way
-// but isn't wired into the download button; it's reachable from the Releases
-// page link every button falls back to. A `release: published` trigger on
-// deploy-site.yml re-runs the build so the resolved URLs stay fresh. On ANY
-// failure (offline local build, rate limit, no release yet, missing asset) it
-// falls back to a GitHub URL that always exists, so the site build can never
-// break on this.
+// newest `rust-v*` tag (the only release track dorado has, see
+// ../.github/workflows/release.yml) and reads the asset names off it.
 //
-// The repo is currently private: even the fallback Releases-page link 404s for
-// a visitor without repo access, same as every other github.com/alleato-llc/dorado
-// link already on this page. That's expected while the repo stays private, not a
-// bug in this resolver.
+// It resolves four groups, matching salpa's naming (see ../../rust/*.yaml):
+//   - desktop GUIs: a SIGNED UNIVERSAL macOS dmg (`Dorado-<version>.dmg`, one
+//     binary for both arches) plus bare `*-gui-<os>-x86_64[.exe]` for Linux and
+//     Windows. No macOS arch split here, since the dmg is universal.
+//   - CLIs: bare `<tool>-<os>-<arch>[.exe]`, with a real macOS arm64/x86_64
+//     split (there is no universal CLI binary).
+//
+// A `release: published` trigger on deploy-site.yml re-runs the build so the
+// resolved URLs stay fresh. On ANY failure (offline local build, rate limit, no
+// release yet, missing asset) each URL falls back to the Releases page, which
+// always exists, so the site build can never break on this.
+//
+// The repo is currently private: even the fallback Releases-page link 404s for a
+// visitor without repo access, same as every other github.com/alleato-llc/dorado
+// link on this page. That is expected while the repo stays private, not a bug.
 
 const REPO = "alleato-llc/dorado";
 const API = `https://api.github.com/repos/${REPO}/releases`;
 const RELEASES_PAGE = `https://github.com/${REPO}/releases`;
 
+/** A desktop app: one universal macOS dmg, plus x86_64 Linux/Windows binaries. */
+export interface GuiUrls {
+  macUniversal: string;
+  linux: string;
+  windows: string;
+}
+
+/** A CLI tool: macOS split by arch, plus x86_64 Linux/Windows binaries. */
+export interface CliUrls {
+  macArm64: string;
+  macX64: string;
+  linux: string;
+  windows: string;
+}
+
 export interface DownloadUrls {
-  linuxX64: string;
-  macosArm64: string;
-  macosX64: string;
-  windowsX64: string;
+  desktopDorado: GuiUrls;
+  desktopGyotaku: GuiUrls;
+  cliDorado: CliUrls;
+  cliGyotaku: CliUrls;
   /** Catch-all: the Releases page, used as the ultimate fallback. */
   releasesPage: string;
 }
@@ -48,7 +66,7 @@ async function fetchReleases(): Promise<Release[]> {
     Accept: "application/vnd.github+json",
     "User-Agent": "dorado-site-build",
   };
-  // A token (present in CI) lifts the unauthenticated 60/hr rate limit — and,
+  // A token (present in CI) lifts the unauthenticated 60/hr rate limit, and,
   // since this repo is private, is actually REQUIRED there: an unauthenticated
   // request to a private repo's API 404s regardless of rate limit.
   const token = process.env.GITHUB_TOKEN;
@@ -76,21 +94,46 @@ export async function resolveDownloads(): Promise<DownloadUrls> {
     const releases = await fetchReleases();
     const rust = newest(releases, (t) => /^rust-v\d/.test(t));
     return {
-      linuxX64: pick(rust, /^dorado-linux-x86_64$/i),
-      macosArm64: pick(rust, /^dorado-macos-arm64$/i),
-      macosX64: pick(rust, /^dorado-macos-x86_64$/i),
-      windowsX64: pick(rust, /^dorado-windows-x86_64\.exe$/i),
+      desktopDorado: {
+        macUniversal: pick(rust, /^Dorado-.*\.dmg$/i),
+        linux: pick(rust, /^dorado-gui-linux-x86_64$/i),
+        windows: pick(rust, /^dorado-gui-windows-x86_64\.exe$/i),
+      },
+      desktopGyotaku: {
+        macUniversal: pick(rust, /^Gyotaku-.*\.dmg$/i),
+        linux: pick(rust, /^gyotaku-gui-linux-x86_64$/i),
+        windows: pick(rust, /^gyotaku-gui-windows-x86_64\.exe$/i),
+      },
+      cliDorado: {
+        macArm64: pick(rust, /^dorado-macos-arm64$/i),
+        macX64: pick(rust, /^dorado-macos-x86_64$/i),
+        linux: pick(rust, /^dorado-linux-x86_64$/i),
+        windows: pick(rust, /^dorado-windows-x86_64\.exe$/i),
+      },
+      cliGyotaku: {
+        macArm64: pick(rust, /^gyotaku-macos-arm64$/i),
+        macX64: pick(rust, /^gyotaku-macos-x86_64$/i),
+        linux: pick(rust, /^gyotaku-linux-x86_64$/i),
+        windows: pick(rust, /^gyotaku-windows-x86_64\.exe$/i),
+      },
       releasesPage: RELEASES_PAGE,
     };
   } catch (err) {
-    // Never fail the build on a download-link lookup — every URL degrades to
-    // the Releases page, which always resolves (once the repo is readable).
+    // Never fail the build on a download-link lookup: every URL degrades to the
+    // Releases page, which always resolves (once the repo is readable).
     console.warn(`[releases] using Releases-page fallback: ${err}`);
+    const gui: GuiUrls = { macUniversal: RELEASES_PAGE, linux: RELEASES_PAGE, windows: RELEASES_PAGE };
+    const cli: CliUrls = {
+      macArm64: RELEASES_PAGE,
+      macX64: RELEASES_PAGE,
+      linux: RELEASES_PAGE,
+      windows: RELEASES_PAGE,
+    };
     return {
-      linuxX64: RELEASES_PAGE,
-      macosArm64: RELEASES_PAGE,
-      macosX64: RELEASES_PAGE,
-      windowsX64: RELEASES_PAGE,
+      desktopDorado: gui,
+      desktopGyotaku: gui,
+      cliDorado: cli,
+      cliGyotaku: cli,
       releasesPage: RELEASES_PAGE,
     };
   }

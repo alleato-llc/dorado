@@ -82,10 +82,9 @@ jobs:
 
       - name: Deploy
         # GITHUB_TOKEN authenticates web/src/lib/releases.ts's build-time call to
-        # the Releases API — required (not just rate-limit relief), since this
-        # repo is private and an unauthenticated request 404s regardless of rate
-        # limit. The resolver never fails the build even without it; links just
-        # degrade to the Releases page.
+        # the Releases API, lifting the 60/hr unauthenticated rate limit. The repo
+        # is public, so it is no longer required, just helpful. The resolver never
+        # fails the build even without it; links just degrade to the Releases page.
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: salpa deploy # npm build web/ -> sync web/dist -> invalidate CloudFront

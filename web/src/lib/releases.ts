@@ -17,9 +17,8 @@
 // release yet, missing asset) each URL falls back to the Releases page, which
 // always exists, so the site build can never break on this.
 //
-// The repo is currently private: even the fallback Releases-page link 404s for a
-// visitor without repo access, same as every other github.com/alleato-llc/dorado
-// link on this page. That is expected while the repo stays private, not a bug.
+// The repo is public, so the resolved asset URLs and the Releases-page fallback
+// are reachable by any visitor.
 
 const REPO = "alleato-llc/dorado";
 const API = `https://api.github.com/repos/${REPO}/releases`;
@@ -66,9 +65,9 @@ async function fetchReleases(): Promise<Release[]> {
     Accept: "application/vnd.github+json",
     "User-Agent": "dorado-site-build",
   };
-  // A token (present in CI) lifts the unauthenticated 60/hr rate limit, and,
-  // since this repo is private, is actually REQUIRED there: an unauthenticated
-  // request to a private repo's API 404s regardless of rate limit.
+  // A token (present in CI) lifts the unauthenticated 60/hr rate limit. The
+  // repo is public, so it is no longer required; the build works without it,
+  // just against the lower anonymous limit.
   const token = process.env.GITHUB_TOKEN;
   if (token) headers.Authorization = `Bearer ${token}`;
   const res = await fetch(API, { headers });

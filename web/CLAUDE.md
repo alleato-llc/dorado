@@ -43,8 +43,9 @@ site setup (same stack, same theme-toggle pattern) so the two stay consistent.
   platform), plus a "View the source" link; the pre-hydration/no-JS state is a
   flat set of links to the Releases page. `GITHUB_TOKEN` in
   `../.github/workflows/deploy-site.yml`'s `Deploy` step authenticates the
-  build-time API call, required, not just for the rate limit, since the repo is
-  private and an unauthenticated request 404s regardless.
+  build-time API call to lift the 60/hr unauthenticated rate limit; the repo is
+  public, so it is no longer required, and the resolver falls back to the
+  Releases page on any error regardless.
 
 ## Conventions
 

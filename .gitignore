@@ -34,6 +34,7 @@
 # Java port (java/). The Gradle wrapper (gradlew, gradle/wrapper/) is committed.
 /java/.gradle
 /java/build
+/java/bin
 
 # Python port (python/).
 /python/.venv

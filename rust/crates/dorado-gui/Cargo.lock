@@ -2963,6 +2963,7 @@ dependencies = [
 [[package]]
 name = "rime"
 version = "0.1.0"
+source = "git+https://github.com/alleato-llc/rime?rev=d68f1350c9d783a9e656e990d8340bf1d805624a#d68f1350c9d783a9e656e990d8340bf1d805624a"
 dependencies = [
  "iced",
  "region",

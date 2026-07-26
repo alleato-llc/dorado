@@ -12,14 +12,14 @@ path = "src/main.rs"
 [dependencies]
 dorado = { path = "../dorado" }
 dorado-gui-kit = { path = "../dorado-gui-kit" }
-# The house component kit + theming. A sibling repo; path dep for local dev.
+# The house component kit + theming. A public sibling repo (git dep, pinned by commit).
 # iced is re-exported as rime::iced, but we also depend on it directly for the
 # application entry point; cargo unifies to one 0.14.x across the graph. The
 # `tokio` feature (on top of iced's own defaults, which already include
 # `thread-pool` and so give `Task::perform` a working executor) is needed
 # specifically for `iced::time::every`, which drives the busy-progress tick;
 # the default (featureless) executor's timer module is empty.
-rime = { path = "../../../../rime/rime" }
+rime = { git = "https://github.com/alleato-llc/rime", rev = "d68f1350c9d783a9e656e990d8340bf1d805624a" }
 iced = { version = "0.14", features = ["canvas", "advanced", "tokio"] }
 # Native Open file dialog; iced has none. Gyotaku only ever reads a file.
 rfd = "0.15"

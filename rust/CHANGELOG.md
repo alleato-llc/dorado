@@ -117,6 +117,15 @@ the Rust-specific details. Format: [Keep a Changelog](https://keepachangelog.com
 
 ### Changed
 
+- **The GUI crates now depend on `rime` as a pinned git dependency instead of a
+  relative path.** `dorado-gui`, `dorado-gui-kit`, and `dorado-gyotaku-gui`
+  previously pointed at `../../../../rime/rime`, which only resolved when `rime`
+  was checked out as a sibling of `dorado`, so a fresh clone could not build the
+  GUIs. They now use `{ git = "https://github.com/alleato-llc/rime", rev = ... }`
+  pinned to a specific commit (rime is public), so a clone builds them with no
+  extra setup. The now-redundant `rime` sibling checkout is dropped from the CI,
+  release, and screenshot workflows (Cargo fetches it), and the docs are updated.
+
 - **`dorado-gui`'s password handling now matches the CLI's: wiped *and*
   locked.** The field is rime's new `secure_input`, and the app state holds
   its `SecretHandle` in place of the `Zeroizing<String>` this entry

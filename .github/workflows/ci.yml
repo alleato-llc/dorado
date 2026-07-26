@@ -103,10 +103,9 @@ jobs:
 
   # The GUIs pull in a graphics stack and need windowing system libraries to
   # build, so they get their own job with those installed (build/lint only).
-  # They also depend on the sibling `rime` component kit by path
-  # (github.com/alleato-llc/rime, public), so `dorado` and `rime` are checked
-  # out as siblings, matching each GUI crate's `../../../../rime/rime` path
-  # dependency. Each of the three GUI-related crates (dorado-gui,
+  # They also depend on the `rime` component kit (github.com/alleato-llc/rime,
+  # public), pinned as a git dependency, so Cargo fetches it and no sibling
+  # checkout is needed. Each of the three GUI-related crates (dorado-gui,
   # dorado-gui-kit, dorado-gyotaku-gui) is excluded from the main workspace
   # (rust/Cargo.toml) and resolves its own separate Cargo.lock, so each is
   # linted from its own directory rather than via `-p` from a shared workspace.
@@ -118,8 +117,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { path: dorado }
-      - uses: actions/checkout@v4
-        with: { repository: alleato-llc/rime, path: rime } # public sibling; dorado-gui(-kit)/dorado-gyotaku-gui depend on it by ../../../../rime/rime
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy

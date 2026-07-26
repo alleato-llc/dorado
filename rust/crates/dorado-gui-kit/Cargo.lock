@@ -2452,6 +2452,7 @@ checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 [[package]]
 name = "rime"
 version = "0.1.0"
+source = "git+https://github.com/alleato-llc/rime?rev=d68f1350c9d783a9e656e990d8340bf1d805624a#d68f1350c9d783a9e656e990d8340bf1d805624a"
 dependencies = [
  "iced",
  "region",

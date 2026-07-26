@@ -13,7 +13,7 @@ This is an educational, unaudited implementation. For real data, prefer an audit
 ## Project layout
 
 This is a Cargo workspace of four crates, with three GUI crates alongside it
-(excluded from the workspace over their path dependency on `rime`; see below):
+(excluded from the workspace: they carry the graphics stack and depend on `rime`, a pinned git dependency; see below):
 
 - `crates/dorado` — the primitives library. Threefish + CTR is the core; alongside it are the from-scratch hashes, each verified against official test vectors or differentially against an audited crate: Skein-512 (the hash Threefish was built for) and BLAKE3. The default build's one runtime dependency is the optional, default-on `zeroize`; with `--no-default-features` it has zero.
 - `crates/dorado-engine` — the shared construction (KDFs, the authenticated chunked container, raw CTR (bare and authenticated), the MAC menu). Depends on `dorado`.
@@ -23,8 +23,8 @@ This is a Cargo workspace of four crates, with three GUI crates alongside it
 - `crates/dorado-gyotaku` — a standalone Skein-512 hashing tool (produces the `gyotaku` binary), like `sha256sum` but Skein.
 - `crates/dorado-gyotaku-gui` — the graphical frontend for the hashing tool (produces `gyotaku-gui`), a sibling of `dorado-gui`, sharing its look via `rime` + `dorado-gui-kit`.
 
-`dorado-gui`, `dorado-gui-kit`, and `dorado-gyotaku-gui` depend on the sibling `rime`
-repo by path, so they are excluded from this workspace (see `Cargo.toml`) and each
+`dorado-gui`, `dorado-gui-kit`, and `dorado-gyotaku-gui` depend on the `rime`
+repo (a pinned git dependency) and are excluded from this workspace (see `Cargo.toml`) and each
 resolves its own separate `Cargo.lock`; build/test them from their own directories
 (`cd crates/dorado-gui && cargo build`), not via `--workspace`/`-p` from here.
 
@@ -138,7 +138,7 @@ Two small graphical demos built on [iced](https://iced.rs/) plus [rime](https://
 
 `gyotaku-gui` is the hashing tool in a window: pick a source (typed text or a file) and an output length, and it shows the Skein-512 digest, computed by the same `dorado::skein` code as the CLI (streaming a file in constant memory on a worker thread). Paste an expected digest to verify a match.
 
-Both crates depend on the sibling `rime` repo by path and are excluded from the main workspace (see above), so run them from their own directories:
+Both crates depend on the `rime` repo (a pinned git dependency) and are excluded from the main workspace (see above), so run them from their own directories:
 
 ```
 cd crates/dorado-gui && cargo run --release          # the password tool

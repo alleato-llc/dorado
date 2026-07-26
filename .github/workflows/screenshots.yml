@@ -10,10 +10,9 @@ name: Screenshots (GUIs)
 # is each crate's permanent env-gated harness (src/shot.rs), driven by
 # scripts/generate_screenshots.py.
 #
-# rime is a public sibling repo (dorado-gui / dorado-gyotaku-gui depend on it
-# by path, ../../../../rime/rime from each crate -- see rust/Cargo.toml's
-# workspace exclude comment and the `gui` job in ci.yml, which checks rime out
-# the same way).
+# rime is a public sibling repo, pinned as a git dependency by dorado-gui /
+# dorado-gyotaku-gui, so Cargo fetches it (no sibling checkout needed), matching
+# the `gui` job in ci.yml.
 #
 # Manual by default; also runs when either GUI's rendering could change
 # (rust/crates/dorado-gui/**, rust/crates/dorado-gyotaku-gui/**) or the
@@ -45,8 +44,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { path: dorado }
-      - uses: actions/checkout@v4
-        with: { repository: alleato-llc/rime, path: rime } # sibling of dorado
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:

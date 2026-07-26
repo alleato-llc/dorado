@@ -21,7 +21,7 @@ Dorado is a Cargo workspace of seven crates:
 - `crates/dorado-cli` — clap frontend; produces the `dorado` binary.
 - `crates/dorado-gui` — iced frontend; produces `dorado-gui`. Built on `rime` (a
   sibling repo, `alleato-llc/rime`; a small `iced` component/theming kit consumed
-  as a path dependency) plus `dorado-gui-kit`'s composites over it. A theme picker
+  as a pinned git dependency) plus `dorado-gui-kit`'s composites over it. A theme picker
   offers any of rime's built-in named palettes (default Dracula); native Open/Save
   file dialogs (`rfd`) fill the input/output path fields. `src/shot.rs` is a
   permanent, env-gated (`DORADO_SHOT`) review-screenshot harness (ported from

@@ -6,8 +6,9 @@ edition = "2021"
 license = "MIT"
 
 [dependencies]
-# The house component kit + theming. A sibling repo; path dep for local dev.
-rime = { path = "../../../../rime/rime" }
+# The house component kit + theming. A public sibling repo, pinned by commit so
+# a fresh clone builds without checking rime out alongside.
+rime = { git = "https://github.com/alleato-llc/rime", rev = "d68f1350c9d783a9e656e990d8340bf1d805624a" }
 # iced is re-exported as rime::iced, but composites here also name iced types
 # directly (Element, Length, ...); cargo unifies to one 0.14.x across the graph.
 iced = { version = "0.14", features = ["canvas", "advanced"] }

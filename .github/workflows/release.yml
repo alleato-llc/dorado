@@ -18,7 +18,8 @@ name: Release
 # (see `build-gui-macos` / `build-gui-portable` below), each driven by its own
 # plain salpa.yaml living in its own crate directory (rust/crates/dorado-gui/,
 # rust/crates/dorado-gyotaku-gui/ -- both excluded from the main Cargo
-# workspace over their `rime` path dependency, see rust/Cargo.toml). Unlike
+# workspace since they carry the iced graphics stack and rime, see
+# rust/Cargo.toml). Unlike
 # the CLI, macOS gets a SIGNED + NOTARIZED universal dmg (Gatekeeper is far
 # more hostile to a double-clicked, unsigned GUI app than a terminal-launched
 # CLI binary); Linux/Windows still get bare unsigned binaries, same as the
@@ -157,9 +158,9 @@ jobs:
   # setup this needs.
   #
   # dorado-gui and dorado-gyotaku-gui are excluded from the main Cargo
-  # workspace (see rust/Cargo.toml) since each depends on the sibling `rime`
-  # repo by path, so dorado and rime are checked out as siblings here too,
-  # matching ci.yml's `gui` job and screenshots.yml.
+  # workspace (see rust/Cargo.toml) and resolve their own Cargo.lock; rime is a
+  # pinned git dependency Cargo fetches, so no rime checkout is needed here
+  # (matching ci.yml's `gui` job and screenshots.yml).
   build-gui-macos:
     name: gui-macos-universal
     needs: [version]
@@ -174,8 +175,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { path: dorado }
-      - uses: actions/checkout@v4
-        with: { repository: alleato-llc/rime, path: rime } # public sibling; dorado-gui/dorado-gyotaku-gui depend on it by ../../../../rime/rime
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-apple-darwin,aarch64-apple-darwin # universal lipo
@@ -222,8 +221,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { path: dorado }
-      - uses: actions/checkout@v4
-        with: { repository: alleato-llc/rime, path: rime } # public sibling; dorado-gui/dorado-gyotaku-gui depend on it by ../../../../rime/rime
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:

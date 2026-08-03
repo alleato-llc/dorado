@@ -1,0 +1,175 @@
+{
+  "_comment": "Canonical list of dorado's implementations. The landing page derives its comparison table and CLI-language lists from this; scripts/check_implementations.py asserts the rest of the repo agrees (the port directories, bench/run.py, the docs counts, and the CI jobs). Adding a port starts here.",
+  "columns": [
+    "Role / frontends",
+    "Cipher engine",
+    "Key derivation",
+    "Streaming",
+    "Secret memory"
+  ],
+  "implementations": [
+    {
+      "id": "rust",
+      "name": "Rust",
+      "dir": "rust",
+      "cli": true,
+      "benched": true,
+      "reference": true,
+      "rows": [
+        {
+          "label": "Rust",
+          "role": "Reference; CLIs + 2 GUIs",
+          "engine": "native",
+          "kdf": "argon2 / scrypt / pbkdf2 crates",
+          "streaming": "Yes",
+          "memory": "zeroize wipe; CLI and dorado-gui mlock password"
+        }
+      ],
+      "ci_job": "core"
+    },
+    {
+      "id": "go",
+      "name": "Go",
+      "dir": "go",
+      "cli": true,
+      "benched": true,
+      "rows": [
+        {
+          "label": "Go",
+          "role": "Port; CLIs",
+          "engine": "native",
+          "kdf": "x/crypto + stdlib",
+          "streaming": "Yes",
+          "memory": "wipes keys; mlocks password (off-heap)"
+        }
+      ]
+    },
+    {
+      "id": "c",
+      "name": "C",
+      "dir": "c",
+      "cli": true,
+      "benched": true,
+      "rows": [
+        {
+          "label": "C",
+          "role": "Port; CLIs",
+          "engine": "native",
+          "kdf": "libargon2 + OpenSSL",
+          "streaming": "Yes",
+          "memory": "wipes keys; mlocks password"
+        }
+      ]
+    },
+    {
+      "id": "cpp",
+      "name": "C++",
+      "dir": "cpp",
+      "cli": true,
+      "benched": true,
+      "rows": [
+        {
+          "label": "C++",
+          "role": "Port; CLIs",
+          "engine": "native",
+          "kdf": "OpenSSL EVP_KDF",
+          "streaming": "Yes",
+          "memory": "wipes keys; mlocks password"
+        }
+      ]
+    },
+    {
+      "id": "zig",
+      "name": "Zig",
+      "dir": "zig",
+      "cli": true,
+      "benched": true,
+      "rows": [
+        {
+          "label": "Zig",
+          "role": "Port; CLIs",
+          "engine": "native",
+          "kdf": "Zig stdlib (no deps)",
+          "streaming": "Yes",
+          "memory": "wipes keys; mlocks password"
+        }
+      ]
+    },
+    {
+      "id": "java",
+      "name": "Java",
+      "dir": "java",
+      "cli": false,
+      "benched": true,
+      "rows": [
+        {
+          "label": "Java",
+          "role": "Port; SDK only",
+          "engine": "native",
+          "kdf": "Bouncy Castle",
+          "streaming": "Yes",
+          "memory": "caller-managed"
+        }
+      ]
+    },
+    {
+      "id": "python",
+      "name": "Python",
+      "dir": "python",
+      "cli": true,
+      "benched": true,
+      "rows": [
+        {
+          "label": "Python",
+          "role": "Port; CLIs",
+          "engine": "native",
+          "kdf": "argon2-cffi + hashlib",
+          "streaming": "Yes",
+          "memory": "caller-managed"
+        }
+      ]
+    },
+    {
+      "id": "haskell",
+      "name": "Haskell",
+      "dir": "haskell",
+      "cli": true,
+      "benched": true,
+      "rows": [
+        {
+          "label": "Haskell",
+          "role": "Port; CLIs",
+          "engine": "native",
+          "kdf": "crypton",
+          "streaming": "Yes",
+          "memory": "caller-managed"
+        }
+      ]
+    },
+    {
+      "id": "ts",
+      "name": "TypeScript",
+      "dir": "ts",
+      "cli": true,
+      "benched": true,
+      "rows": [
+        {
+          "label": "TypeScript · Node",
+          "role": "Port; CLIs",
+          "engine": "WASM (Rust core)",
+          "kdf": "hash-wasm",
+          "streaming": "No (in-memory)",
+          "memory": "locked off-heap buffers (fail-closed; --insecure-memory opts out)"
+        },
+        {
+          "label": "TypeScript · Browser",
+          "role": "In-page demo",
+          "engine": "WASM (Rust core)",
+          "kdf": "hash-wasm",
+          "streaming": "No (in-memory)",
+          "memory": "none (demo)"
+        }
+      ]
+    }
+  ]
+}

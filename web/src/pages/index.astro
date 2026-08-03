@@ -1,5 +1,6 @@
 ---
 import Layout from "../layouts/Layout.astro";
+import manifest from "../../../implementations.json";
 import Demo from "../components/Demo.tsx";
 import HashDemo from "../components/HashDemo.tsx";
 import Download from "../components/Download.tsx";
@@ -12,17 +13,30 @@ const REPO = "https://github.com/alleato-llc/dorado";
 // per OS/arch. See src/lib/releases.ts.
 const downloads = await resolveDownloads();
 
+// Implementations come from the repo-root implementations.json, the ONE list.
+// Adding a port means editing that file; this page needs no change.
+// scripts/check_implementations.py fails if the rest of the repo disagrees with it.
+const impls = manifest.implementations;
+
+// The tool cards list the languages whose CLIs ship. Java is a deliberate omission:
+// it is `cli: false` in the manifest (SDK only), which is why it appears in the table
+// below but not here. Derived, so that stays a fact rather than a hand-typed string.
+const cliLangs = impls.filter((i) => i.cli).map((i) => i.name);
+const cliList = [...cliLangs, "browser"].join(" · ");
+const cliCountWord = ["zero", "one", "two", "three", "four", "five", "six", "seven",
+                      "eight", "nine", "ten"][cliLangs.length] ?? String(cliLangs.length);
+
 const tools = [
   {
     name: "dorado",
     badge: "encrypt / decrypt",
-    langs: "Rust · Go · TypeScript · Python · C · Zig · Haskell · C++ · browser",
-    body: "The cipher tool: encrypt and decrypt files or stdin, with a password-derived authenticated container or a caller-supplied raw key. Both paths authenticate by default (raw mode's bare CTR remains an explicit opt-out). The command-line interface is ported to eight languages plus the in-browser demo, all reading the same files.",
+    langs: cliList,
+    body: `The cipher tool: encrypt and decrypt files or stdin, with a password-derived authenticated container or a caller-supplied raw key. Both paths authenticate by default (raw mode's bare CTR remains an explicit opt-out). The command-line interface is ported to ${cliCountWord} languages plus the in-browser demo, all reading the same files.`,
   },
   {
     name: "gyotaku",
     badge: "hashing",
-    langs: "Rust · Go · TypeScript · Python · C · Zig · Haskell · C++ · browser",
+    langs: cliList,
     body: "A standalone Skein-512 hashing tool, like sha256sum but Skein. Kept separate from the cipher tools so a hash needs no key stack. Named for the Japanese art of fish-printing: a fingerprint of a file.",
   },
   {
@@ -37,19 +51,14 @@ const tools = [
 // is one more row, not a wider table). The columns are the differences only; the
 // primitives, wire format, and cross-compatibility are identical everywhere (stated
 // in the lead text). Kept in sync with docs/implementations.md.
-const cmpCols = ["Role / frontends", "Cipher engine", "Key derivation", "Streaming", "Secret memory"];
-const cmpRows = [
-  { name: "Rust", ref: true, cells: ["Reference; CLIs + 2 GUIs", "native", "argon2 / scrypt / pbkdf2 crates", "Yes", "zeroize wipe; CLI and dorado-gui mlock password"] },
-  { name: "Go", cells: ["Port; CLIs", "native", "x/crypto + stdlib", "Yes", "wipes keys; mlocks password (off-heap)"] },
-  { name: "C", cells: ["Port; CLIs", "native", "libargon2 + OpenSSL", "Yes", "wipes keys; mlocks password"] },
-  { name: "C++", cells: ["Port; CLIs", "native", "OpenSSL EVP_KDF", "Yes", "wipes keys; mlocks password"] },
-  { name: "Zig", cells: ["Port; CLIs", "native", "Zig stdlib (no deps)", "Yes", "wipes keys; mlocks password"] },
-  { name: "Java", cells: ["Port; SDK only", "native", "Bouncy Castle", "Yes", "caller-managed"] },
-  { name: "Python", cells: ["Port; CLIs", "native", "argon2-cffi + hashlib", "Yes", "caller-managed"] },
-  { name: "Haskell", cells: ["Port; CLIs", "native", "crypton", "Yes", "caller-managed"] },
-  { name: "TypeScript · Node", cells: ["Port; CLIs", "WASM (Rust core)", "hash-wasm", "No (in-memory)", "locked off-heap buffers (fail-closed; --insecure-memory opts out)"] },
-  { name: "TypeScript · Browser", cells: ["In-page demo", "WASM (Rust core)", "hash-wasm", "No (in-memory)", "none (demo)"] },
-];
+const cmpCols = manifest.columns;
+const cmpRows = impls.flatMap((i) =>
+  i.rows.map((r) => ({
+    name: r.label,
+    ref: i.reference === true,
+    cells: [r.role, r.engine, r.kdf, r.streaming, r.memory],
+  })),
+);
 
 const primitives = [
   {

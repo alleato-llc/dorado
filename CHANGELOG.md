@@ -23,6 +23,18 @@ This changelog starts in 2026-06; for earlier history see the git log.
 
 ### Added
 
+- **`implementations.json`: one canonical list of ports, enforced.** The landing page
+  derives its comparison table and its CLI-language lists from it (so Java's absence
+  from the CLI lists is now a `cli: false` fact rather than a hand-typed string), and
+  `scripts/check_implementations.py` asserts everything that cannot be derived: the port
+  directories, `bench/run.py`'s runners and `IMPL_ORDER`, the CI jobs and paths filters,
+  and the prose counts in `README.md`, `docs/implementations.md`, and `CLAUDE.md`. A new
+  always-running `implementations` CI job runs it, deliberately not path-filtered, since
+  a change that breaks the agreement is exactly the change that would skip a filtered
+  check. Verified against the real bug: reverting the bench wiring reproduces four named
+  failures. `CLAUDE.md` gains an "Adding an implementation" checklist.
+
+
 - **Core-dump suppression across the CLIs**, a cross-port hardening decision
   recorded here. Every port that `mlock`s the password already kept it out of
   swap, but `mlock` does not keep a page out of a *core dump*: a crash writes a
@@ -181,6 +193,12 @@ This changelog starts in 2026-06; for earlier history see the git log.
   `VERSIONS.md`). CI gains a path-filtered `cpp` job, wired into the `changes` filter and
   re-run on `docs/spec.md` changes like the other ports. Per-port details are in
   [`cpp/CHANGELOG.md`](cpp/CHANGELOG.md).
+
+### Fixed
+
+- `CLAUDE.md` said "the ten implementations" while the sentence above it listed nine
+  directories, and `README.md` and `docs/implementations.md` both said nine. Corrected,
+  and the count is now checked so it cannot drift again.
 
 ### Changed
 

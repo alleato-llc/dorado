@@ -24,7 +24,7 @@ $ python3 run.py
   java: building (gradle classes + javac)
   python: running
   ts: running
-wrote results.json and RESULTS.md (35 measurements, 7 implementations)
+wrote results.json and RESULTS.md (45 measurements, 9 implementations)
 
 $ cat RESULTS.md
 | Implementation | Threefish-256 CTR | ... | BLAKE3 |

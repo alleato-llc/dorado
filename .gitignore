@@ -63,5 +63,10 @@
 /bench/c/dorado-bench
 /bench/zig/.zig-cache
 /bench/zig/zig-out
+/bench/__pycache__/
+/bench/cpp/dorado-bench
 /bench/go/dorado-bench
+/bench/haskell/dorado-bench
+/bench/haskell/*.hi
+/bench/haskell/*.o
 /bench/java/*.class

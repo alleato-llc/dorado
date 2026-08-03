@@ -57,6 +57,18 @@ def prep_c():
     return ["c/dorado-bench"]
 
 
+def prep_cpp():
+    if not which("c++"):
+        return None
+    harness.log("  cpp: building (-O2)")
+    _build([
+        "c++", "-std=c++23", "-O2", "-I../cpp/include", "cpp/main.cpp",
+        "../cpp/src/threefish.cpp", "../cpp/src/skein.cpp", "../cpp/src/blake3.cpp",
+        "-o", "cpp/dorado-bench",
+    ])
+    return ["cpp/dorado-bench"]
+
+
 def prep_zig():
     if not which("zig"):
         return None
@@ -101,6 +113,17 @@ def prep_python():
     return None
 
 
+def prep_haskell():
+    if not which("ghc"):
+        return None
+    harness.log("  haskell: building (-O2)")
+    # Compiled straight against the port's library sources; the primitives need only
+    # GHC boot packages, so no cabal build (and no crypton) is required.
+    _build(["ghc", "-O2", "-i../../haskell/src", "Main.hs", "-o", "dorado-bench"],
+           cwd="haskell")
+    return ["haskell/dorado-bench"]
+
+
 def prep_ts():
     tsx = BENCH.parent / "ts" / "node_modules" / ".bin" / "tsx"
     if tsx.exists():
@@ -111,18 +134,21 @@ def prep_ts():
 SPECS = [
     RunnerSpec("rust", prep_rust),
     RunnerSpec("c", prep_c),
+    RunnerSpec("cpp", prep_cpp),
     RunnerSpec("zig", prep_zig),
     RunnerSpec("go", prep_go),
     RunnerSpec("java", prep_java),
     RunnerSpec("python", prep_python),
+    RunnerSpec("haskell", prep_haskell),
     RunnerSpec("ts", prep_ts),
 ]
 
 # Row order and labels, column order and labels, all dorado-specific.
-IMPL_ORDER = ["rust", "c", "zig", "go", "java", "python", "ts", "wasm"]
+IMPL_ORDER = ["rust", "c", "cpp", "zig", "go", "java", "haskell", "python", "ts", "wasm"]
 IMPL_LABELS = {
-    "rust": "Rust", "c": "C", "zig": "Zig", "go": "Go", "java": "Java",
-    "python": "Python", "ts": "TypeScript (pure)", "wasm": "WASM (Rust)",
+    "rust": "Rust", "c": "C", "cpp": "C++", "zig": "Zig", "go": "Go", "java": "Java",
+    "haskell": "Haskell", "python": "Python", "ts": "TypeScript (pure)",
+    "wasm": "WASM (Rust)",
 }
 BENCH_ORDER = ["threefish-256-ctr", "threefish-512-ctr", "threefish-1024-ctr", "skein-512", "blake3"]
 BENCH_LABELS = {

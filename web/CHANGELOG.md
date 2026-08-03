@@ -9,6 +9,13 @@ Cross-cutting changes live in the [Core CHANGELOG](../CHANGELOG.md);
 
 ### Added
 
+- The comparison table, its column headers, and the tool cards' CLI-language lists are
+  now derived from the repo-root `implementations.json` instead of being retyped here,
+  so adding a port updates the page with no edit to `index.astro`. The deploy also
+  triggers on that manifest, since a port can now change the rendered page without
+  touching `web/`.
+
+
 - **Hero download buttons.** The hero now leads with two OS/arch-aware dropdowns
   plus a source link: **Download for Desktop** (the dorado and gyotaku desktop
   apps, a signed universal macOS dmg or the Linux/Windows binary for the detected

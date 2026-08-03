@@ -93,6 +93,11 @@ void iv_advance(std::vector<std::uint8_t>& iv, std::uint64_t blocks) {
 struct Keys {
   Bytes enc, mac;
 };
+// Throws std::runtime_error if the KDF itself fails. Callers on the decrypt path run
+// kdf::validate first, so a malformed header is rejected before reaching here; this
+// remains a throwing helper only for genuinely exceptional backend failures, which the
+// public entrypoints convert into an error rather than letting escape (see the
+// try/catch around the decrypt path).
 Keys derive_keys(const kdf::Kdf& k, Span password, Span salt, int key_len) {
   auto out = kdf::derive(k, password, salt, std::size_t(key_len) + 32);
   Keys keys{Bytes(out.begin(), out.begin() + key_len), Bytes(out.begin() + key_len, out.end())};
@@ -444,8 +449,17 @@ Bytes encrypt_password(const Options& opts, Span tweak, Span password, Span plai
 Result<Bytes> decrypt_password_expecting(Span password, std::optional<Span> expect, Span container) {
   auto in = as_stream(container);
   std::ostringstream oss(std::ios::binary);
-  auto r = decrypt_password_stream(password, expect, in, oss);
-  if (!r) return std::unexpected(r.error());
+  // Decrypting is the one entrypoint fed wholly untrusted bytes, and this API reports
+  // failure through Result. A backend that throws (OpenSSL's EVP_KDF_derive does, via
+  // kdf::derive) would otherwise escape as an uncaught exception and abort the process
+  // rather than return an error; fuzz_decrypt found exactly that. Header parameters
+  // are validated before any key is derived, so this is the backstop, not the guard.
+  try {
+    auto r = decrypt_password_stream(password, expect, in, oss);
+    if (!r) return std::unexpected(r.error());
+  } catch (const std::exception& e) {
+    return std::unexpected(std::string("decryption failed: ") + e.what());
+  }
   return drain(oss);
 }
 

@@ -102,7 +102,7 @@ This is the dorado monorepo. It has several parts:
 
 When changing the wire format or an algorithm, keep `rust/`, `go/`, `ts/`, `java/`,
 `python/`, `c/`, `zig/`, `haskell/`, and `cpp/` in sync or cross-compatibility breaks.
-The ten implementations are byte-for-byte cross-compatible and that property is tested.
+The nine implementations are byte-for-byte cross-compatible and that property is tested.
 The Rust implementation is the reference and the baseline for vectors and fixtures.
 
 CI lives at the repo root in `.github/workflows/ci.yml`. It is path-filtered: a
@@ -110,6 +110,25 @@ CI lives at the repo root in `.github/workflows/ci.yml`. It is path-filtered: a
 relevant, but a change to the wire-format spec (`docs/spec.md`) or to the workflow
 re-runs every port's cross-compat suite. The root `LICENSE` (MIT) covers the whole
 repository.
+
+## Adding an implementation
+
+`implementations.json` at the repo root is the canonical list of ports. The landing page
+*derives* its comparison table and CLI-language lists from it, so the page cannot drift;
+`scripts/check_implementations.py` asserts everything that cannot be derived. Run it
+(`python3 scripts/check_implementations.py`) and let it drive you through:
+
+1. `implementations.json`: id, name, dir, `cli` (does a CLI ship?), `benched`, the page
+   row cells, and `ci_job` if the CI job is not named after the port (Rust's is `core`).
+2. The port directory itself, kept byte-for-byte cross-compatible with the reference.
+3. `bench/<id>/` plus its wiring in `bench/run.py` (`RunnerSpec`, `IMPL_ORDER`,
+   `IMPL_LABELS`), then regenerate the benchmark artifacts on an idle machine. Skipping
+   this is how the published table measured 7 of 9 ports for six weeks.
+4. `.github/workflows/ci.yml`: a paths-filter entry and a job.
+5. The prose counts in `README.md`, `docs/implementations.md`, and this file.
+
+The page needs no edit, but build `web/` and look at it anyway. A rendered page is the
+one artifact no repo-side check inspects.
 
 ## Conventions (whole repo)
 

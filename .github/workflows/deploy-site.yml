@@ -30,6 +30,11 @@ on:
     branches: [main]
     paths:
       - "web/**"
+      # The page derives its comparison table and CLI-language lists from the
+      # repo-root manifest at build time, so adding a port changes the rendered page
+      # without touching web/. Without this path the site would keep advertising the
+      # old list -- the drift the manifest exists to end.
+      - "implementations.json"
       - "salpa.yaml"
       - ".github/workflows/deploy-site.yml"
   # A new rust-v* release redeploys the site so web/src/lib/releases.ts picks up

@@ -77,6 +77,20 @@ jobs:
   # crates (dorado-gui, dorado-gui-kit, dorado-gyotaku-gui) are excluded from
   # this workspace (see rust/Cargo.toml) precisely so this job never needs the
   # sibling `rime` checkout the GUIs depend on; see the `gui` job below.
+  # Cross-cutting: implementations.json is the canonical list of ports, and this
+  # asserts the repo, docs, bench, and this workflow agree with it. Deliberately NOT
+  # path-filtered -- a change that breaks the agreement is exactly the change that
+  # would otherwise skip the check. Stdlib Python, seconds to run.
+  implementations:
+    name: Implementation list is consistent
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python3 scripts/check_implementations.py
+
   core:
     name: Rust core (fmt, clippy, test)
     needs: changes

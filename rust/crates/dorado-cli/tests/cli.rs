@@ -20,6 +20,13 @@ fn tmp(name: &str) -> PathBuf {
 }
 
 /// Run a prepared command, feeding `password` to its stdin, and report success.
+///
+/// A command that rejects its arguments exits before it ever reads the password, which
+/// closes the pipe under the write. That is the expected behaviour for the negative
+/// tests here, not a failure, so a `BrokenPipe` is tolerated and the verdict is taken
+/// from the exit status alone. Any other write error is still a real problem and
+/// panics. (Unwrapping the write made this a race: on a fast or loaded machine the
+/// child won and the test panicked with `BrokenPipe`.)
 fn feed_password(mut cmd: Command, password: &str) -> bool {
     let mut child = cmd
         .stdin(Stdio::piped())
@@ -27,12 +34,13 @@ fn feed_password(mut cmd: Command, password: &str) -> bool {
         .stderr(Stdio::null())
         .spawn()
         .unwrap();
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(password.as_bytes())
-        .unwrap();
+    if let Err(err) = child.stdin.take().unwrap().write_all(password.as_bytes()) {
+        assert_eq!(
+            err.kind(),
+            std::io::ErrorKind::BrokenPipe,
+            "feeding the password failed: {err}"
+        );
+    }
     child.wait().unwrap().success()
 }
 

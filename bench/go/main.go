@@ -6,6 +6,7 @@ import (
 	"crypto/cipher"
 	"fmt"
 	"os"
+	"sort"
 	"strconv"
 	"time"
 
@@ -34,6 +35,8 @@ func bench(name string, warmup, measure time.Duration, op func()) {
 	}
 	best := 0.0
 	var total uint64
+	// Per-batch MB/s; the median beside the peak is the run's stability signal.
+	samples := []float64{}
 	t0 := time.Now()
 	for time.Since(t0) < measure {
 		start = time.Now()
@@ -44,10 +47,24 @@ func bench(name string, warmup, measure time.Duration, op func()) {
 		if mbps > best {
 			best = mbps
 		}
+		samples = append(samples, mbps)
 		total += batch
 	}
-	fmt.Printf("{\"impl\":\"go\",\"bench\":\"%s\",\"mbps\":%.2f,\"iters\":%d}\n", name, best, total)
+	sort.Float64s(samples)
+	median := 0.0
+	if n := len(samples); n > 0 {
+		if n%2 == 1 {
+			median = samples[n/2]
+		} else {
+			median = (samples[n/2-1] + samples[n/2]) / 2
+		}
+	}
+	fmt.Printf("{\"impl\":\"go\",\"bench\":\"%s\",\"mbps\":%.2f,\"mbps_median\":%.2f,\"iters\":%d,\"protocol\":\"%s\"}\n",
+		name, best, median, total, protocolVersion)
 }
+
+// The Gota protocol these runners implement (see bench/README.md).
+const protocolVersion = "1.2.0"
 
 var bufBytes int
 

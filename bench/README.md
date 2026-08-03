@@ -46,11 +46,11 @@ Run one implementation directly and see its raw JSON (here Rust, 64 KiB buffer,
 ```
 $ cd rust && cargo build --release
 $ ./target/release/dorado-bench 65536 0.3 0.5
-{"impl":"rust","bench":"threefish-256-ctr","mbps":84.07,"iters":640}
-{"impl":"rust","bench":"threefish-512-ctr","mbps":117.91,"iters":1024}
-{"impl":"rust","bench":"threefish-1024-ctr","mbps":139.53,"iters":1280}
-{"impl":"rust","bench":"skein-512","mbps":116.56,"iters":1024}
-{"impl":"rust","bench":"blake3","mbps":1204.55,"iters":10240}
+{"impl":"rust","bench":"threefish-256-ctr","mbps":84.07,"mbps_median":83.12,"iters":640,"protocol":"1.2.0"}
+{"impl":"rust","bench":"threefish-512-ctr","mbps":117.91,"mbps_median":116.44,"iters":1024,"protocol":"1.2.0"}
+{"impl":"rust","bench":"threefish-1024-ctr","mbps":139.53,"mbps_median":138.02,"iters":1280,"protocol":"1.2.0"}
+{"impl":"rust","bench":"skein-512","mbps":116.56,"mbps_median":115.30,"iters":1024,"protocol":"1.2.0"}
+{"impl":"rust","bench":"blake3","mbps":1204.55,"mbps_median":1191.88,"iters":10240,"protocol":"1.2.0"}
 ```
 
 The same idea for the others (each prints the same JSON shape; full setup in each
@@ -82,6 +82,19 @@ Apple M4 Max 2026-06-20 6be147c {'buffer_bytes': 65536, 'warmup_seconds': 0.5, '
   actually waits for. It covers only the ports that ship a CLI, and its differences
   are dominated by runtime startup and the KDF library, *not* the implementation, so
   it is a reality check, not a per-language race.
+
+### What each JSON line carries
+
+`mbps` is the peak per-batch rate and `mbps_median` the median of those rates; the gap
+between them is the run's stability signal (close means clean, wide means the peak is
+noisy). `protocol` names the Gota protocol version the runner implements, so a runner
+left behind after an upgrade says so instead of being silently out of date -- these
+runners were exactly that until they were brought to 1.2.0.
+
+Note what the median cannot tell you: it measures stability *within* one run. A figure
+that is steady in every individual run but differs between runs (Zig's Threefish-1024
+has read 52, 68, and 149 MB/s across three snapshots) needs a baseline comparison, not a
+median. That is what `report.py`'s comparison mode is for.
 
 ## Built on Gota
 

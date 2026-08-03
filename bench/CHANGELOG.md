@@ -12,6 +12,18 @@ re-copy, do not edit in place).
 
 ### Added
 
+- **Re-copied `harness.py`, `report.py`, and `report_template.html` from Gota**, which
+  had been frozen at an old revision. The orchestrator gains toolchain-version
+  provenance (`gather_metadata(toolchains=...)`, now wired into `run.py`), a per-runner
+  timeout, the `Metric` kind, and the comparison helpers; `report.py` gains baseline
+  comparison, `--markdown`, and `--fail-on-regression`. Only the provenance docstrings
+  are adapted, per the note those files carry.
+- **All nine runners emit the current protocol line**
+  (`{"impl","bench","mbps","mbps_median","iters","protocol"}`, Gota protocol 1.2.0).
+  They were still on the original four-field line: no `mbps_median`, so no stability
+  signal, and no version, so nothing said they were behind. Each now collects per-batch
+  rates and reports their median beside the peak.
+
 - **C++ and Haskell throughput runners** (`bench/cpp/`, `bench/haskell/`), closing a gap
   that had been open since those ports landed: `bench/` was last touched 2026-06-20, the
   Haskell port arrived 06-21 and C++ on 06-22, so the published table claimed to cover
@@ -30,6 +42,17 @@ re-copy, do not edit in place).
   per-language colors, magnitude bars, and formatted MB/s.
 
 ### Changed
+
+- Benchmark artifacts regenerated under the new harness, so `results.json` now records
+  the toolchain versions that produced the numbers and the protocol each runner
+  implements. This is what was missing when Zig's Threefish-512 and Skein-512 rates
+  quadrupled between the 2026-06-20 and 2026-08-02 snapshots and the cause could not be
+  pinned down.
+- On that note: Zig's **Threefish-1024** has now read 52.2, 68.2, and 148.6 MB/s across
+  three snapshots, while every other measurement moved only a few percent. Its
+  peak-to-median gap *within* this run is small, so it is not noise inside a run; the
+  variance is between runs. Unexplained, recorded rather than smoothed over, and now at
+  least measurable, since the toolchain that produced each number is captured.
 
 - Regenerated `RESULTS.md` / `results.json` / `report.html` as a nine-implementation run
   (2026-08-02). The seven previously-measured ports all land within a few percent of the

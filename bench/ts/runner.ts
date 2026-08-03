@@ -12,6 +12,9 @@ import { T256, T512, T1024, type Variant } from "../../ts/src/engine/format";
 import * as skein from "../../ts/src/skein";
 import * as blake3 from "../../ts/src/blake3";
 
+// The Gota protocol these runners implement (see bench/README.md).
+const PROTOCOL = "1.2.0";
+
 let bufBytes = 1048576;
 
 // Report peak throughput across many batches (max MB/s is the reproducible rate;
@@ -30,15 +33,24 @@ function bench(name: string, warmup: number, measure: number, op: () => void): v
 
   let best = 0;
   let total = 0;
+  // Per-batch MB/s; the median beside the peak is the run's stability signal.
+  const samples: number[] = [];
   const t0 = performance.now();
   while ((performance.now() - t0) / 1000 < measure) {
     const start = performance.now();
     for (let i = 0; i < batch; i++) op();
     const mbps = (bufBytes * batch) / 1e6 / ((performance.now() - start) / 1000);
     if (mbps > best) best = mbps;
+    samples.push(mbps);
     total += batch;
   }
-  process.stdout.write(`{"impl":"ts","bench":"${name}","mbps":${best.toFixed(2)},"iters":${total}}\n`);
+  samples.sort((a, b) => a - b);
+  const n = samples.length;
+  const median =
+    n === 0 ? 0 : n % 2 === 1 ? samples[n / 2 | 0] : (samples[n / 2 - 1] + samples[n / 2]) / 2;
+  process.stdout.write(
+    `{"impl":"ts","bench":"${name}","mbps":${best.toFixed(2)},"mbps_median":${median.toFixed(2)},"iters":${total},"protocol":"${PROTOCOL}"}\n`,
+  );
 }
 
 function ctrOp(variant: Variant, keyLen: number, data: Uint8Array): () => void {

@@ -13,6 +13,7 @@ module Main (main) where
 
 import Control.Exception (evaluate)
 import Data.Bits (xor)
+import Data.List (sort)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Data.Word (Word64, Word8)
@@ -23,6 +24,10 @@ import Text.Printf (printf)
 import qualified Dorado.Blake3 as Blake3
 import qualified Dorado.Skein as Skein
 import Dorado.Threefish (Variant (..), ctrApply, newThreefish)
+
+-- | The Gota protocol these runners implement (see bench/README.md).
+protocolVersion :: String
+protocolVersion = "1.2.0"
 
 data Op = Ctr Variant | SkeinHash | Blake3Hash
 
@@ -78,21 +83,32 @@ bench name op key iv dat warmup measure = do
 
   t0 <- getMonotonicTime
   let bytes = fromIntegral (BS.length dat) :: Double
-      loop !best !total = do
+      -- Accumulate every batch's rate; the median beside the peak is the run's
+      -- stability signal (protocol 1.1.0).
+      loop !best !total acc = do
         now <- getMonotonicTime
         if now - t0 >= measure
-          then pure (best, total)
+          then pure (best, total, acc)
           else do
             elapsed <- timeBatch op key iv dat batch
             let mbps = bytes * fromIntegral batch / 1e6 / elapsed
-            loop (max best mbps) (total + batch)
-  (best, total) <- loop 0 0
+            loop (max best mbps) (total + batch) (mbps : acc)
+  (best, total, samples) <- loop 0 0 []
+
+  let sorted = sort samples
+      n = length sorted
+      median
+        | n == 0 = 0
+        | odd n = sorted !! (n `div` 2)
+        | otherwise = (sorted !! (n `div` 2 - 1) + sorted !! (n `div` 2)) / 2
 
   printf
-    "{\"impl\":\"haskell\",\"bench\":\"%s\",\"mbps\":%.2f,\"iters\":%d}\n"
+    "{\"impl\":\"haskell\",\"bench\":\"%s\",\"mbps\":%.2f,\"mbps_median\":%.2f,\"iters\":%d,\"protocol\":\"%s\"}\n"
     name
     best
+    median
     (toInteger total)
+    protocolVersion
 
 main :: IO ()
 main = do

@@ -8,6 +8,8 @@
 //   java  -cp ../../java/build/classes/java/main:. Bench [buf] [warmup_s] [measure_s]
 
 import com.alleato.dorado.Blake3;
+import java.util.ArrayList;
+import java.util.Collections;
 import com.alleato.dorado.Skein;
 import com.alleato.dorado.Threefish;
 
@@ -20,6 +22,9 @@ public class Bench {
 
     // Report peak throughput across many batches (max MB/s is the reproducible rate;
     // jitter only ever slows a batch). The clock is read only at batch boundaries.
+    /** The Gota protocol these runners implement (see bench/README.md). */
+    static final String PROTOCOL = "1.2.0";
+
     static void bench(String name, double warmup, double measure, Op op) {
         long start = System.nanoTime();
         while ((System.nanoTime() - start) / 1e9 < warmup) {
@@ -38,6 +43,8 @@ public class Bench {
         }
         double best = 0.0;
         long total = 0;
+        // Per-batch MB/s; the median beside the peak is the run's stability signal.
+        ArrayList<Double> samples = new ArrayList<>();
         long t0 = System.nanoTime();
         while ((System.nanoTime() - t0) / 1e9 < measure) {
             start = System.nanoTime();
@@ -48,9 +55,16 @@ public class Bench {
             if (mbps > best) {
                 best = mbps;
             }
+            samples.add(mbps);
             total += batch;
         }
-        System.out.printf("{\"impl\":\"java\",\"bench\":\"%s\",\"mbps\":%.2f,\"iters\":%d}%n", name, best, total);
+        Collections.sort(samples);
+        int n = samples.size();
+        double median = n == 0 ? 0.0
+                : (n % 2 == 1 ? samples.get(n / 2) : (samples.get(n / 2 - 1) + samples.get(n / 2)) / 2);
+        System.out.printf(
+                "{\"impl\":\"java\",\"bench\":\"%s\",\"mbps\":%.2f,\"mbps_median\":%.2f,\"iters\":%d,\"protocol\":\"%s\"}%n",
+                name, best, median, total, PROTOCOL);
     }
 
     static Op ctrOp(int variant, int keyLen, byte[] data) {

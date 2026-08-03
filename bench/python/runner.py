@@ -11,6 +11,8 @@ from __future__ import annotations
 import sys
 import time
 
+PROTOCOL = "1.2.0"  # the Gota protocol these runners implement (see bench/README.md)
+
 from dorado import blake3, skein, threefish
 
 BUF_BYTES = 1048576
@@ -32,6 +34,7 @@ def bench(name: str, warmup: float, measure: float, op) -> None:
         batch *= 2
     best = 0.0
     total = 0
+    samples = []  # per-batch MB/s; median vs peak shows run stability (protocol 1.1.0)
     t0 = time.perf_counter()
     while time.perf_counter() - t0 < measure:
         start = time.perf_counter()
@@ -40,8 +43,16 @@ def bench(name: str, warmup: float, measure: float, op) -> None:
         mbps = BUF_BYTES * batch / 1e6 / (time.perf_counter() - start)
         if mbps > best:
             best = mbps
+        samples.append(mbps)
         total += batch
-    print(f'{{"impl":"python","bench":"{name}","mbps":{best:.2f},"iters":{total}}}', flush=True)
+    samples.sort()
+    n = len(samples)
+    median = 0.0 if not n else (samples[n // 2] if n % 2 else (samples[n // 2 - 1] + samples[n // 2]) / 2)
+    print(
+        f'{{"impl":"python","bench":"{name}","mbps":{best:.2f},'
+        f'"mbps_median":{median:.2f},"iters":{total},"protocol":"{PROTOCOL}"}}',
+        flush=True,
+    )
 
 
 def ctr_op(factory, key_len: int, data: bytes):

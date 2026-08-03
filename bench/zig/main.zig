@@ -2,6 +2,9 @@
 //! protocol (see ../README.md) and emits one JSON line per benchmark.
 
 const std = @import("std");
+
+// The Gota protocol these runners implement (see bench/README.md).
+const protocol = "1.2.0";
 const dorado = @import("dorado");
 
 fn nowS(io: std.Io) f64 {
@@ -53,6 +56,10 @@ fn bench(io: std.Io, name: []const u8, op: Op, data: []u8, warmup: f64, measure:
 
     var best: f64 = 0;
     var total: u64 = 0;
+    // Per-batch MB/s samples; median vs peak shows run stability. Each measure-phase
+    // batch clears ~100ms, so a fixed buffer (measure up to ~400s) is ample.
+    var sbuf: [4096]f64 = undefined;
+    var nsamp: usize = 0;
     const t0 = nowS(io);
     while (nowS(io) - t0 < measure) {
         const start = nowS(io);
@@ -60,9 +67,15 @@ fn bench(io: std.Io, name: []const u8, op: Op, data: []u8, warmup: f64, measure:
         while (i < batch) : (i += 1) runOp(op, data, &out32);
         const mbps = @as(f64, @floatFromInt(data.len)) * @as(f64, @floatFromInt(batch)) / 1e6 / (nowS(io) - start);
         if (mbps > best) best = mbps;
+        if (nsamp < sbuf.len) {
+            sbuf[nsamp] = mbps;
+            nsamp += 1;
+        }
         total += batch;
     }
-    try w.print("{{\"impl\":\"zig\",\"bench\":\"{s}\",\"mbps\":{d:.2},\"iters\":{d}}}\n", .{ name, best, total });
+    std.mem.sort(f64, sbuf[0..nsamp], {}, std.sort.asc(f64));
+    const median: f64 = if (nsamp == 0) 0.0 else if (nsamp % 2 == 1) sbuf[nsamp / 2] else (sbuf[nsamp / 2 - 1] + sbuf[nsamp / 2]) / 2.0;
+    try w.print("{{\"impl\":\"zig\",\"bench\":\"{s}\",\"mbps\":{d:.2},\"mbps_median\":{d:.2},\"iters\":{d},\"protocol\":\"{s}\"}}\n", .{ name, best, median, total, protocol });
 }
 
 pub fn main(init: std.process.Init) !void {

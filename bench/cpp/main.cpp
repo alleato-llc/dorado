@@ -2,6 +2,7 @@
 // (see ../README.md) and emits one JSON line per benchmark. Compiled directly against
 // the three primitive translation units (no engine), so it needs neither libargon2 nor
 // OpenSSL — the same trick the C runner uses.
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
@@ -20,6 +21,9 @@ using Clock = std::chrono::steady_clock;  // monotonic; never jumps
 double secs_since(Clock::time_point t) {
     return std::chrono::duration<double>(Clock::now() - t).count();
 }
+
+// The Gota protocol these runners implement (see bench/README.md).
+constexpr const char* kProtocol = "1.2.0";
 
 enum class Op { Ctr, Skein, Blake3 };
 
@@ -71,6 +75,7 @@ void bench(const char* name, Op op, dorado::Variant variant, std::span<const std
 
     double best = 0.0;
     std::uint64_t total = 0;
+    std::vector<double> samples;  // per-batch MB/s; median vs peak shows run stability
     const auto t0 = Clock::now();
     while (secs_since(t0) < measure) {
         start = Clock::now();
@@ -79,14 +84,19 @@ void bench(const char* name, Op op, dorado::Variant variant, std::span<const std
         }
         const double mbps = static_cast<double>(data.size()) * static_cast<double>(batch) / 1e6 /
                             secs_since(start);
-        if (mbps > best) {
-            best = mbps;
-        }
+        best = std::max(best, mbps);
+        samples.push_back(mbps);
         total += batch;
     }
 
-    std::printf("{\"impl\":\"cpp\",\"bench\":\"%s\",\"mbps\":%.2f,\"iters\":%llu}\n", name, best,
-                static_cast<unsigned long long>(total));
+    std::sort(samples.begin(), samples.end());
+    const std::size_t n = samples.size();
+    const double median =
+        n == 0 ? 0.0 : (n % 2 ? samples[n / 2] : (samples[n / 2 - 1] + samples[n / 2]) / 2);
+
+    std::printf(
+        "{\"impl\":\"cpp\",\"bench\":\"%s\",\"mbps\":%.2f,\"mbps_median\":%.2f,\"iters\":%llu,\"protocol\":\"%s\"}\n",
+        name, best, median, static_cast<unsigned long long>(total), kProtocol);
 }
 
 }  // namespace

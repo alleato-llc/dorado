@@ -144,6 +144,22 @@ SPECS = [
 ]
 
 # Row order and labels, column order and labels, all dorado-specific.
+# Version probes for the toolchains this run uses, recorded into the results'
+# provenance (absent tools are skipped). A number is only reproducible alongside the
+# compiler that produced it -- without this, a 4x jump between snapshots cannot be
+# attributed to a toolchain change or anything else.
+TOOLCHAINS = {
+    "rust": ["rustc", "--version"],
+    "c": ["cc", "--version"],
+    "cpp": ["c++", "--version"],
+    "zig": ["zig", "version"],
+    "go": ["go", "version"],
+    "java": ["java", "-version"],
+    "haskell": ["ghc", "--numeric-version"],
+    "python": ["python3", "--version"],
+    "ts": ["node", "--version"],
+}
+
 IMPL_ORDER = ["rust", "c", "cpp", "zig", "go", "java", "haskell", "python", "ts", "wasm"]
 IMPL_LABELS = {
     "rust": "Rust", "c": "C", "cpp": "C++", "zig": "Zig", "go": "Go", "java": "Java",
@@ -176,7 +192,7 @@ def intro(meta: dict) -> str:
 
 def main() -> None:
     rows = harness.run_all(SPECS, BUF, WARMUP, MEASURE)
-    meta = harness.gather_metadata()
+    meta = harness.gather_metadata(toolchains=TOOLCHAINS)
     harness.write_results(
         rows,
         "results.json",

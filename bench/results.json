@@ -1,284 +1,392 @@
 {
   "machine": "Apple M4 Max",
   "os": "Darwin arm64",
-  "date": "2026-08-02",
-  "git_commit": "38a0d6c",
+  "date": "2026-08-03",
+  "git_commit": "3e1abf5",
+  "toolchains": {
+    "rust": "rustc 1.96.1 (31fca3adb 2026-06-26)",
+    "c": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
+    "cpp": "Apple clang version 21.0.0 (clang-2100.1.1.101)",
+    "zig": "0.16.0",
+    "go": "go version go1.24.5 darwin/arm64",
+    "java": "openjdk version \"25.0.2\" 2026-01-20",
+    "haskell": "9.14.1",
+    "python": "Python 3.14.2",
+    "ts": "v22.17.1"
+  },
   "params": {
     "buffer_bytes": 65536,
     "warmup_seconds": 0.5,
     "measure_seconds": 2.0
   },
+  "metric": "byte_throughput",
   "units": "MB/s (decimal, 1e6 bytes)",
+  "protocol": {
+    "harness": "1.2.0",
+    "runners": [
+      "1.2.0"
+    ]
+  },
   "results": [
     {
       "impl": "rust",
       "bench": "threefish-256-ctr",
-      "mbps": 80.93,
-      "iters": 2560
+      "mbps": 77.39,
+      "mbps_median": 76.69,
+      "iters": 2432,
+      "protocol": "1.2.0"
     },
     {
       "impl": "rust",
       "bench": "threefish-512-ctr",
-      "mbps": 118.46,
-      "iters": 3584
+      "mbps": 113.86,
+      "mbps_median": 113.39,
+      "iters": 3584,
+      "protocol": "1.2.0"
     },
     {
       "impl": "rust",
       "bench": "threefish-1024-ctr",
-      "mbps": 138.81,
-      "iters": 4352
+      "mbps": 135.35,
+      "mbps_median": 133.57,
+      "iters": 4096,
+      "protocol": "1.2.0"
     },
     {
       "impl": "rust",
       "bench": "skein-512",
-      "mbps": 116.83,
-      "iters": 3584
+      "mbps": 112.96,
+      "mbps_median": 112.62,
+      "iters": 3584,
+      "protocol": "1.2.0"
     },
     {
       "impl": "rust",
       "bench": "blake3",
-      "mbps": 1217.35,
-      "iters": 36864
+      "mbps": 1143.23,
+      "mbps_median": 1132.84,
+      "iters": 34816,
+      "protocol": "1.2.0"
     },
     {
       "impl": "c",
       "bench": "threefish-256-ctr",
-      "mbps": 79.64,
-      "iters": 2432
+      "mbps": 75.45,
+      "mbps_median": 74.34,
+      "iters": 2304,
+      "protocol": "1.2.0"
     },
     {
       "impl": "c",
       "bench": "threefish-512-ctr",
-      "mbps": 96.04,
-      "iters": 3072
+      "mbps": 91.47,
+      "mbps_median": 90.85,
+      "iters": 2816,
+      "protocol": "1.2.0"
     },
     {
       "impl": "c",
       "bench": "threefish-1024-ctr",
-      "mbps": 135.31,
-      "iters": 4352
+      "mbps": 132.11,
+      "mbps_median": 131.01,
+      "iters": 4096,
+      "protocol": "1.2.0"
     },
     {
       "impl": "c",
       "bench": "skein-512",
-      "mbps": 94.5,
-      "iters": 3072
+      "mbps": 89.67,
+      "mbps_median": 88.91,
+      "iters": 2816,
+      "protocol": "1.2.0"
     },
     {
       "impl": "c",
       "bench": "blake3",
-      "mbps": 1198.99,
-      "iters": 36864
+      "mbps": 1146.54,
+      "mbps_median": 1137.51,
+      "iters": 34816,
+      "protocol": "1.2.0"
     },
     {
       "impl": "cpp",
       "bench": "threefish-256-ctr",
-      "mbps": 71.17,
-      "iters": 2176
+      "mbps": 68.47,
+      "mbps_median": 68.0,
+      "iters": 2176,
+      "protocol": "1.2.0"
     },
     {
       "impl": "cpp",
       "bench": "threefish-512-ctr",
-      "mbps": 84.86,
-      "iters": 2560
+      "mbps": 81.3,
+      "mbps_median": 80.39,
+      "iters": 2560,
+      "protocol": "1.2.0"
     },
     {
       "impl": "cpp",
       "bench": "threefish-1024-ctr",
-      "mbps": 119.59,
-      "iters": 3840
+      "mbps": 112.84,
+      "mbps_median": 112.5,
+      "iters": 3584,
+      "protocol": "1.2.0"
     },
     {
       "impl": "cpp",
       "bench": "skein-512",
-      "mbps": 80.24,
-      "iters": 2432
+      "mbps": 78.67,
+      "mbps_median": 78.23,
+      "iters": 2432,
+      "protocol": "1.2.0"
     },
     {
       "impl": "cpp",
       "bench": "blake3",
-      "mbps": 1199.83,
-      "iters": 36864
+      "mbps": 1155.62,
+      "mbps_median": 1145.42,
+      "iters": 36864,
+      "protocol": "1.2.0"
     },
     {
       "impl": "zig",
       "bench": "threefish-256-ctr",
-      "mbps": 75.7,
-      "iters": 2304
+      "mbps": 73.22,
+      "mbps_median": 72.71,
+      "iters": 2304,
+      "protocol": "1.2.0"
     },
     {
       "impl": "zig",
       "bench": "threefish-512-ctr",
-      "mbps": 105.47,
-      "iters": 3328
+      "mbps": 103.5,
+      "mbps_median": 102.51,
+      "iters": 3328,
+      "protocol": "1.2.0"
     },
     {
       "impl": "zig",
       "bench": "threefish-1024-ctr",
-      "mbps": 68.22,
-      "iters": 2176
+      "mbps": 148.55,
+      "mbps_median": 147.54,
+      "iters": 4608,
+      "protocol": "1.2.0"
     },
     {
       "impl": "zig",
       "bench": "skein-512",
-      "mbps": 106.36,
-      "iters": 3328
+      "mbps": 103.1,
+      "mbps_median": 102.69,
+      "iters": 3328,
+      "protocol": "1.2.0"
     },
     {
       "impl": "zig",
       "bench": "blake3",
-      "mbps": 1146.21,
-      "iters": 34816
+      "mbps": 1118.57,
+      "mbps_median": 1108.52,
+      "iters": 34816,
+      "protocol": "1.2.0"
     },
     {
       "impl": "go",
       "bench": "threefish-256-ctr",
-      "mbps": 77.4,
-      "iters": 2432
+      "mbps": 76.34,
+      "mbps_median": 75.1,
+      "iters": 2304,
+      "protocol": "1.2.0"
     },
     {
       "impl": "go",
       "bench": "threefish-512-ctr",
-      "mbps": 90.49,
-      "iters": 2816
+      "mbps": 88.04,
+      "mbps_median": 85.47,
+      "iters": 2816,
+      "protocol": "1.2.0"
     },
     {
       "impl": "go",
       "bench": "threefish-1024-ctr",
-      "mbps": 87.54,
-      "iters": 2816
+      "mbps": 86.1,
+      "mbps_median": 85.73,
+      "iters": 2816,
+      "protocol": "1.2.0"
     },
     {
       "impl": "go",
       "bench": "skein-512",
-      "mbps": 84.53,
-      "iters": 2816
+      "mbps": 79.91,
+      "mbps_median": 77.85,
+      "iters": 2432,
+      "protocol": "1.2.0"
     },
     {
       "impl": "go",
       "bench": "blake3",
-      "mbps": 352.04,
-      "iters": 11264
+      "mbps": 348.18,
+      "mbps_median": 346.78,
+      "iters": 11264,
+      "protocol": "1.2.0"
     },
     {
       "impl": "java",
       "bench": "threefish-256-ctr",
-      "mbps": 65.13,
-      "iters": 2048
+      "mbps": 63.15,
+      "mbps_median": 61.7,
+      "iters": 1920,
+      "protocol": "1.2.0"
     },
     {
       "impl": "java",
       "bench": "threefish-512-ctr",
-      "mbps": 83.63,
-      "iters": 2560
+      "mbps": 81.86,
+      "mbps_median": 80.62,
+      "iters": 2560,
+      "protocol": "1.2.0"
     },
     {
       "impl": "java",
       "bench": "threefish-1024-ctr",
-      "mbps": 93.83,
-      "iters": 2816
+      "mbps": 92.47,
+      "mbps_median": 89.33,
+      "iters": 2816,
+      "protocol": "1.2.0"
     },
     {
       "impl": "java",
       "bench": "skein-512",
-      "mbps": 77.11,
-      "iters": 2304
+      "mbps": 81.36,
+      "mbps_median": 79.61,
+      "iters": 2432,
+      "protocol": "1.2.0"
     },
     {
       "impl": "java",
       "bench": "blake3",
-      "mbps": 472.39,
-      "iters": 14336
+      "mbps": 456.93,
+      "mbps_median": 440.45,
+      "iters": 14336,
+      "protocol": "1.2.0"
     },
     {
       "impl": "python",
       "bench": "threefish-256-ctr",
-      "mbps": 0.58,
-      "iters": 18
+      "mbps": 0.55,
+      "mbps_median": 0.54,
+      "iters": 17,
+      "protocol": "1.2.0"
     },
     {
       "impl": "python",
       "bench": "threefish-512-ctr",
-      "mbps": 0.66,
-      "iters": 22
+      "mbps": 0.63,
+      "mbps_median": 0.62,
+      "iters": 19,
+      "protocol": "1.2.0"
     },
     {
       "impl": "python",
       "bench": "threefish-1024-ctr",
-      "mbps": 0.65,
-      "iters": 20
+      "mbps": 0.62,
+      "mbps_median": 0.61,
+      "iters": 19,
+      "protocol": "1.2.0"
     },
     {
       "impl": "python",
       "bench": "skein-512",
-      "mbps": 0.65,
-      "iters": 19
+      "mbps": 0.62,
+      "mbps_median": 0.61,
+      "iters": 19,
+      "protocol": "1.2.0"
     },
     {
       "impl": "python",
       "bench": "blake3",
-      "mbps": 1.36,
-      "iters": 42
+      "mbps": 1.33,
+      "mbps_median": 1.31,
+      "iters": 44,
+      "protocol": "1.2.0"
     },
     {
       "impl": "haskell",
       "bench": "threefish-256-ctr",
-      "mbps": 7.88,
-      "iters": 240
+      "mbps": 7.68,
+      "mbps_median": 7.51,
+      "iters": 240,
+      "protocol": "1.2.0"
     },
     {
       "impl": "haskell",
       "bench": "threefish-512-ctr",
-      "mbps": 8.41,
-      "iters": 256
+      "mbps": 8.34,
+      "mbps_median": 8.29,
+      "iters": 256,
+      "protocol": "1.2.0"
     },
     {
       "impl": "haskell",
       "bench": "threefish-1024-ctr",
-      "mbps": 8.18,
-      "iters": 240
+      "mbps": 8.01,
+      "mbps_median": 7.73,
+      "iters": 240,
+      "protocol": "1.2.0"
     },
     {
       "impl": "haskell",
       "bench": "skein-512",
-      "mbps": 8.64,
-      "iters": 272
+      "mbps": 8.46,
+      "mbps_median": 8.33,
+      "iters": 256,
+      "protocol": "1.2.0"
     },
     {
       "impl": "haskell",
       "bench": "blake3",
-      "mbps": 36.95,
-      "iters": 1088
+      "mbps": 35.37,
+      "mbps_median": 34.65,
+      "iters": 1088,
+      "protocol": "1.2.0"
     },
     {
       "impl": "ts",
       "bench": "threefish-256-ctr",
-      "mbps": 3.23,
-      "iters": 104
+      "mbps": 3.13,
+      "mbps_median": 3.09,
+      "iters": 96,
+      "protocol": "1.2.0"
     },
     {
       "impl": "ts",
       "bench": "threefish-512-ctr",
-      "mbps": 3.27,
-      "iters": 104
+      "mbps": 3.18,
+      "mbps_median": 3.09,
+      "iters": 96,
+      "protocol": "1.2.0"
     },
     {
       "impl": "ts",
       "bench": "threefish-1024-ctr",
-      "mbps": 3.05,
-      "iters": 96
+      "mbps": 3.04,
+      "mbps_median": 3.0,
+      "iters": 96,
+      "protocol": "1.2.0"
     },
     {
       "impl": "ts",
       "bench": "skein-512",
-      "mbps": 3.09,
-      "iters": 96
+      "mbps": 3.07,
+      "mbps_median": 2.99,
+      "iters": 96,
+      "protocol": "1.2.0"
     },
     {
       "impl": "ts",
       "bench": "blake3",
-      "mbps": 63.56,
-      "iters": 1920
+      "mbps": 60.2,
+      "mbps_median": 58.54,
+      "iters": 1792,
+      "protocol": "1.2.0"
     }
   ]
 }

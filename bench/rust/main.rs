@@ -10,7 +10,7 @@ use dorado::{blake3, skein, Threefish1024, Threefish256, Threefish512};
 // reproducible rate: scheduling jitter, frequency scaling, and contention only ever
 // make a batch slower, never faster, so the fastest batch reflects the code running
 // unimpeded. The batch size is grown until a batch takes >= 100ms.
-fn bench(buf_bytes: usize, warmup: Duration, measure: Duration, mut op: impl FnMut()) -> (f64, u64) {
+fn bench(buf_bytes: usize, warmup: Duration, measure: Duration, mut op: impl FnMut()) -> (f64, f64, u64) {
     let start = Instant::now();
     while start.elapsed() < warmup {
         op();
@@ -28,6 +28,8 @@ fn bench(buf_bytes: usize, warmup: Duration, measure: Duration, mut op: impl FnM
     }
     let mut best = 0.0f64;
     let mut total: u64 = 0;
+    // Per-batch MB/s; the median beside the peak is the run's stability signal.
+    let mut samples: Vec<f64> = Vec::new();
     let start = Instant::now();
     while start.elapsed() < measure {
         let s = Instant::now();
@@ -38,14 +40,27 @@ fn bench(buf_bytes: usize, warmup: Duration, measure: Duration, mut op: impl FnM
         if mbps > best {
             best = mbps;
         }
+        samples.push(mbps);
         total += batch;
     }
-    (best, total)
+    samples.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let n = samples.len();
+    let median = if n == 0 {
+        0.0
+    } else if n % 2 == 1 {
+        samples[n / 2]
+    } else {
+        (samples[n / 2 - 1] + samples[n / 2]) / 2.0
+    };
+    (best, median, total)
 }
 
-fn emit(bench: &str, mbps: f64, iters: u64) {
+/// The Gota protocol these runners implement (see bench/README.md).
+const PROTOCOL: &str = "1.2.0";
+
+fn emit(bench: &str, mbps: f64, mbps_median: f64, iters: u64) {
     println!(
-        "{{\"impl\":\"rust\",\"bench\":\"{bench}\",\"mbps\":{mbps:.2},\"iters\":{iters}}}"
+        "{{\"impl\":\"rust\",\"bench\":\"{bench}\",\"mbps\":{mbps:.2},\"mbps_median\":{mbps_median:.2},\"iters\":{iters},\"protocol\":\"{PROTOCOL}\"}}"
     );
 }
 
@@ -59,23 +74,23 @@ fn main() {
 
     let c256 = Threefish256::new(&[7u8; 32], &[0u8; 16]);
     let iv256 = [1u8; 32];
-    let (m, i) = bench(buf_bytes, warmup, measure, || c256.ctr_apply(&iv256, &mut data));
-    emit("threefish-256-ctr", m, i);
+    let (m, md, i) = bench(buf_bytes, warmup, measure, || c256.ctr_apply(&iv256, &mut data));
+    emit("threefish-256-ctr", m, md, i);
 
     let c512 = Threefish512::new(&[7u8; 64], &[0u8; 16]);
     let iv512 = [1u8; 64];
-    let (m, i) = bench(buf_bytes, warmup, measure, || c512.ctr_apply(&iv512, &mut data));
-    emit("threefish-512-ctr", m, i);
+    let (m, md, i) = bench(buf_bytes, warmup, measure, || c512.ctr_apply(&iv512, &mut data));
+    emit("threefish-512-ctr", m, md, i);
 
     let c1024 = Threefish1024::new(&[7u8; 128], &[0u8; 16]);
     let iv1024 = [1u8; 128];
-    let (m, i) = bench(buf_bytes, warmup, measure, || c1024.ctr_apply(&iv1024, &mut data));
-    emit("threefish-1024-ctr", m, i);
+    let (m, md, i) = bench(buf_bytes, warmup, measure, || c1024.ctr_apply(&iv1024, &mut data));
+    emit("threefish-1024-ctr", m, md, i);
 
     let mut out32 = [0u8; 32];
-    let (m, i) = bench(buf_bytes, warmup, measure, || skein::hash_into(&mut out32, &data));
-    emit("skein-512", m, i);
+    let (m, md, i) = bench(buf_bytes, warmup, measure, || skein::hash_into(&mut out32, &data));
+    emit("skein-512", m, md, i);
 
-    let (m, i) = bench(buf_bytes, warmup, measure, || blake3::hash_into(&mut out32, &data));
-    emit("blake3", m, i);
+    let (m, md, i) = bench(buf_bytes, warmup, measure, || blake3::hash_into(&mut out32, &data));
+    emit("blake3", m, md, i);
 }

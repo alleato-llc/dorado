@@ -89,10 +89,21 @@ std::expected<void, std::string> validate(const Kdf& kdf) {
       [](const auto& k) -> std::expected<void, std::string> {
         using T = std::decay_t<decltype(k)>;
         if constexpr (std::is_same_v<T, Argon2id>) {
+          // Lower bounds matter as much as upper ones here: these come from an
+          // untrusted header, and a zero cost is not a weak setting but an invalid
+          // one. OpenSSL rejects it inside EVP_KDF_derive, which used to surface as a
+          // thrown exception escaping this expected-returning API and aborting the
+          // process (found by fuzz_decrypt). Reject it as the malformed input it is.
+          if (k.m_cost == 0) return std::unexpected("argon2 memory cost must be nonzero");
+          if (k.t_cost == 0) return std::unexpected("argon2 time cost must be nonzero");
+          if (k.p_cost == 0) return std::unexpected("argon2 parallelism must be nonzero");
           if (k.m_cost > 1u << 21) return std::unexpected("argon2 memory cost too large");  // > 2 GiB
           if (k.t_cost > 64) return std::unexpected("argon2 time cost too large");
           if (k.p_cost > 16) return std::unexpected("argon2 parallelism too large");
         } else if constexpr (std::is_same_v<T, Scrypt>) {
+          // Same reasoning as Argon2id above.
+          if (k.r == 0) return std::unexpected("scrypt block factor r must be nonzero");
+          if (k.p == 0) return std::unexpected("scrypt parallelism p must be nonzero");
           if (k.log_n > 21) return std::unexpected("scrypt cost (log2 N) too large");
           if (k.r > 32) return std::unexpected("scrypt block factor r too large");
           if (k.p > 16) return std::unexpected("scrypt parallelism p too large");
